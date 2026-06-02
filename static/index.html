@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Splunk Pipeline Master Studio</title>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <style>
+        body { background-color: #111113; color: #f2f4f8; font-family: monospace; margin: 20px; }
+        .panel { background-color: #1c1e24; border: 1px solid #2e3440; padding: 15px; border-radius: 4px; margin-bottom: 15px; }
+        .splunk-orange { color: #eb7b2b; }
+        .control-group { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+        label { font-weight: bold; color: #9c9c9c; }
+        select { background-color: #2e3440; color: #f2f4f8; border: 1px solid #4c566a; padding: 6px; font-family: monospace; }
+        input[type="checkbox"] { transform: scale(1.2); margin-right: 6px; cursor: pointer; }
+        
+        .sub-panel { display: none; }
+    </style>
+</head>
+<body>
+
+    <h2>Splunk Pipeline Studio v5.0<span class="splunk-orange">></span></h2>
+
+    <div class="panel control-group">
+        <div>
+            <label>STREAM SOURCE: </label>
+            <select id="record-selector" onchange="loadEcgPipeline()">
+                <option value="A01000">Record A01000</option>
+                <option value="A01004">Record A01004 (AFib)</option>
+            </select>
+        </div>
+
+        <div>
+            <label>TIMELINE SPAN: </label>
+            <select id="scale-selector" onchange="loadEcgPipeline()" style="border-color: #3498db; color: #3498db;">
+                <option value="short">Zoomed Snippet (8.3s)</option>
+                <option value="full">Full Stream (30.0s)</option>
+            </select>
+        </div>
+
+        <div>
+            <input type="checkbox" id="toggle-filter" onchange="loadEcgPipeline()">
+            <label for="toggle-filter" style="color: #5cc24a; cursor:pointer;">| apply_noise_filter</label>
+        </div>
+
+        <div>
+            <input type="checkbox" id="toggle-local" onchange="loadEcgPipeline()">
+            <label for="toggle-local" style="color: #3498db; cursor:pointer;">| local_max_r_peaks</label>
+        </div>
+
+        <div>
+            <input type="checkbox" id="toggle-pan" onchange="loadEcgPipeline()">
+            <label for="toggle-pan" style="color: #eb7b2b; cursor:pointer;">| run_pan_tompkins_segmentation</label>
+        </div>
+
+        <div>
+            <input type="checkbox" id="toggle-cancel" onchange="loadEcgPipeline()">
+            <label for="toggle-cancel" style="color: #e74c3c; cursor:pointer;">| cancel_qrst_complex</label>
+        </div>
+
+        <div>
+            <input type="checkbox" id="toggle-poincare" onchange="loadEcgPipeline()">
+            <label for="toggle-poincare" style="color: #f1c40f; cursor:pointer;">| map_poincare_variability</label>
+        </div>
+
+        <div>
+            <input type="checkbox" id="toggle-fft" onchange="loadEcgPipeline()">
+            <label for="toggle-fft" style="color: #9b59b6; cursor:pointer;">| calculate_spectrum_fft</label>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div id="chart-container" style="width:100%; height:380px;"></div>
+    </div>
+
+    <div class="panel sub-panel" id="fft-panel">
+        <div id="fft-container" style="width:100%; height:350px;"></div>
+    </div>
+
+    <div class="panel sub-panel" id="poincare-panel">
+        <div id="poincare-container" style="width:100%; height:380px;"></div>
+    </div>
+
+    <script>
+        function loadEcgPipeline() {
+const recordId = document.getElementById('record-selector').value;
+            const currentScale = document.getElementById('scale-selector').value; // Read scale parameter
+            const useFilter = document.getElementById('toggle-filter').checked;
+            const useLocal = document.getElementById('toggle-local').checked;
+            const usePan = document.getElementById('toggle-pan').checked;
+            const useCancel = document.getElementById('toggle-cancel').checked;
+            const usePoincare = document.getElementById('toggle-poincare').checked;
+            const useFft = document.getElementById('toggle-fft').checked;
+
+            document.getElementById('poincare-panel').style.display = usePoincare ? 'block' : 'none';
+            document.getElementById('fft-panel').style.display = useFft ? 'block' : 'none';
+
+            // Append scale parameter directly to the unified analytics pipeline URL
+            const targetUrl = `http://127.0.0.1:8080/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}`;
+
+            fetch(targetUrl)
+                .then(res => res.json())
+                .then(payload => {
+                    const timeIndices = payload.data.map((_, i) => i);
+                    
+                    const baseTrace = {
+                        x: timeIndices,
+                        y: payload.data,
+                        type: 'scatter', mode: 'lines', 
+                        name: useCancel ? 'Residual Atrial Wave' : 'ECG Signal',
+                        line: { color: useCancel ? '#e74c3c' : (useFilter ? '#2ecc71' : '#4c566a'), width: 1.4 }
+                    };
+                    const mainTraces = [baseTrace];
+
+                    if (useLocal && !useCancel && payload.local_r_peaks) {
+                        mainTraces.push({
+                            x: payload.local_r_peaks,
+                            y: payload.local_r_peaks.map(idx => payload.data[idx]),
+                            type: 'scatter', mode: 'markers', name: 'R Peaks',
+                            marker: { color: '#3498db', size: 10, symbol: 'diamond' }
+                        });
+                    }
+
+                    if (usePan && !useCancel && payload.features) {
+                        const waveConfig = [
+                            { key: 'P', color: '#1abc9c', name: 'P-Wave' },
+                            { key: 'Q', color: '#f1c40f', name: 'Q-Dip' },
+                            { key: 'R', color: '#eb7b2b', name: 'R-Apex' },
+                            { key: 'S', color: '#e74c3c', name: 'S-Dip' },
+                            { key: 'T', color: '#9b59b6', name: 'T-Wave' }
+                        ];
+                        waveConfig.forEach(cfg => {
+                            const indices = payload.features[cfg.key];
+                            if (indices && indices.length > 0) {
+                                mainTraces.push({
+                                    x: indices,
+                                    y: indices.map(idx => payload.data[idx]),
+                                    type: 'scatter', mode: 'markers', name: cfg.name,
+                                    marker: { color: cfg.color, size: 8 }
+                                });
+                            }
+                        });
+                    }
+
+                    const mainLayout = {
+                        paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
+                        font: { color: '#f2f4f8', family: 'monospace' },
+                        title: `Pipeline Execution: index="ecg"`,
+                        xaxis: { title: 'Samples (300 Hz)', gridcolor: '#2e3440' },
+                        yaxis: { title: 'Voltage (mV)', gridcolor: '#2e3440' }
+                    };
+                    Plotly.newPlot('chart-container', mainTraces, mainLayout);
+
+                    // --- DRAW SPECTRAL FFT CHART ---
+                    if (useFft && payload.fft.frequencies) {
+                        const fftTrace = {
+                            x: payload.fft.frequencies,
+                            y: payload.fft.magnitudes,
+                            type: 'scatter', mode: 'lines', name: 'Power Spectrum',
+                            line: { color: '#9b59b6', width: 1.8 },
+                            fill: 'tozeroy', fillcolor: 'rgba(155, 89, 182, 0.15)'
+                        };
+                        const fftLayout = {
+                            paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
+                            font: { color: '#f2f4f8', family: 'monospace' },
+                            title: useCancel ? `| FFT Spectral Density (Isolated Atrial Base)` : `| FFT Spectral Density (Raw Signal Mix)`,
+                            xaxis: { title: 'Frequency (Hz)', gridcolor: '#2e3440', range: [2, 25] },
+                            yaxis: { title: 'Magnitude Amplitude', gridcolor: '#2e3440' }
+                        };
+                        Plotly.newPlot('fft-container', [fftTrace], fftLayout);
+                    }
+
+                    // --- DRAW POINCARÉ SCATTER CHART ---
+                    if (usePoincare && payload.poincare.x.length > 0) {
+                        const scatterTrace = {
+                            x: payload.poincare.x, y: payload.poincare.y,
+                            type: 'scatter', mode: 'markers', name: 'Interval Matrix',
+                            marker: { color: '#eb7b2b', size: 8, opacity: 0.7 }
+                        };
+                        const maxVal = Math.max(...payload.poincare.x, ...payload.poincare.y, 1100);
+                        const minVal = Math.min(...payload.poincare.x, ...payload.poincare.y, 400);
+                        const identityLine = {
+                            x: [minVal, maxVal], y: [minVal, maxVal],
+                            type: 'scatter', mode: 'lines', name: 'Identity (y=x)',
+                            line: { color: '#4c566a', width: 1, dash: 'dash' }, hoverinfo: 'none'
+                        };
+                        const poincareLayout = {
+                            paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
+                            font: { color: '#f2f4f8', family: 'monospace' },
+                            title: `| stats Lorenz_Map calculated=true`,
+                            xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
+                            yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] }
+                        };
+                        Plotly.newPlot('poincare-container', [scatterTrace, identityLine], poincareLayout);
+                    }
+                });
+        }
+
+        loadEcgPipeline();
+    </script>
+</body>
+</html>
