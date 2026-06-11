@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>ECG Analytics Workspace Studio</title>
@@ -11,11 +12,14 @@
             font-family: 'Monaco', 'Consolas', monospace;
             margin: 20px;
         }
+
         h2 {
             color: #eb7b2b;
             border-bottom: 2px solid #2e3440;
             padding-bottom: 10px;
+            margin-bottom: 20px;
         }
+
         .panel {
             background-color: #1c1e24;
             border: 1px solid #2e3440;
@@ -23,15 +27,20 @@
             padding: 15px;
             margin-bottom: 20px;
         }
+
         .control-group {
             display: flex;
             flex-wrap: wrap;
             gap: 20px;
             align-items: center;
         }
-        select, input, label {
+
+        select,
+        input,
+        label {
             cursor: pointer;
         }
+
         select {
             background-color: #2e3440;
             color: #f2f4f8;
@@ -40,16 +49,19 @@
             border-radius: 4px;
             font-family: monospace;
         }
+
         .chart-frame {
             width: 100%;
             height: 450px;
-            margin-bottom: 15px;
         }
+
         .secondary-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
+            margin-bottom: 20px;
         }
+
         @media (max-width: 900px) {
             .secondary-grid {
                 grid-template-columns: 1fr;
@@ -57,9 +69,10 @@
         }
     </style>
 </head>
+
 <body>
 
-    <h2>Pipeline Workspace Studio: index="ecg_telemetry"</h2>
+    <h2>Splunk Pipeline Studio: index="ecg_telemetry"</h2>
 
     <div class="panel control-group">
         <div>
@@ -75,7 +88,7 @@
         <div>
             <label style="color: #3498db; font-weight: bold;">AVAILABLE RECORDING: </label>
             <select id="record-selector" onchange="loadEcgPipeline()">
-                </select>
+            </select>
         </div>
 
         <div>
@@ -115,6 +128,11 @@
             <input type="checkbox" id="toggle-fft" onchange="loadEcgPipeline()">
             <label for="toggle-fft" style="color: #9b59b6;">| calculate_spectrum_fft</label>
         </div>
+
+        <div>
+            <input type="checkbox" id="toggle-wavelet" onchange="loadEcgPipeline()">
+            <label for="toggle-wavelet" style="color: #3498db;">| decompose_wavelets_db4</label>
+        </div>
     </div>
 
     <div class="panel">
@@ -125,12 +143,17 @@
         <div id="fft-panel" class="panel" style="display: none;">
             <div id="fft-container" class="chart-frame"></div>
         </div>
-        
+
         <div id="poincare-panel" class="panel" style="display: none;">
             <div id="poincare-container" class="chart-frame"></div>
         </div>
+    </div> 
+
+    <div id="wavelet-panel" class="panel" style="display: none;">
+        <div id="wavelet-container" class="chart-frame" style="height: 500px;"></div>
     </div>
 
+ 
     <script>
         /**
          * Pulls matching sample IDs from the Flask registry slice endpoint
@@ -177,12 +200,15 @@
             const useCancel = document.getElementById('toggle-cancel').checked;
             const usePoincare = document.getElementById('toggle-poincare').checked;
             const useFft = document.getElementById('toggle-fft').checked;
+            const useWavelet = document.getElementById('toggle-wavelet').checked;
 
             // Manage conditional interface panel displays
             document.getElementById('poincare-panel').style.display = usePoincare ? 'block' : 'none';
             document.getElementById('fft-panel').style.display = useFft ? 'block' : 'none';
+            document.getElementById('wavelet-panel').style.display = useWavelet ? 'block' : 'none';
 
-            const targetUrl = `http://127.0.0.1:8080/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}`;
+            // FIXED: Synchronized matching variable references and cleanly mapped all toggles to URL query keys
+            const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}`;
 
             fetch(targetUrl)
                 .then(res => res.json())
@@ -190,11 +216,11 @@
                     if (payload.error) return;
 
                     const timeIndices = payload.data.map((_, i) => i);
-                    
+
                     // Trace 1: Core Timeline Matrix Line
                     const baseTrace = {
                         x: timeIndices, y: payload.data,
-                        type: 'scatter', mode: 'lines', 
+                        type: 'scatter', mode: 'lines',
                         name: useCancel ? 'Residual Atrial Wave' : 'ECG Signal',
                         line: { color: useCancel ? '#e74c3c' : (useFilter ? '#2ecc71' : '#4c566a'), width: 1.4 }
                     };
@@ -243,7 +269,7 @@
                     Plotly.newPlot('chart-container', mainTraces, mainLayout);
 
                     // Render Graph 2 (FFT Power Spectrum)
-                    if (useFft && payload.fft.frequencies) {
+                    if (useFft && payload.fft && payload.fft.frequencies) {
                         const fftTrace = {
                             x: payload.fft.frequencies, y: payload.fft.magnitudes,
                             type: 'scatter', mode: 'lines', name: 'Power Spectrum',
@@ -261,7 +287,7 @@
                     }
 
                     // Render Graph 3 (Poincaré Scatter Mapping)
-                    if (usePoincare && payload.poincare.x.length > 0) {
+                    if (usePoincare && payload.poincare && payload.poincare.x.length > 0) {
                         const scatterTrace = {
                             x: payload.poincare.x, y: payload.poincare.y,
                             type: 'scatter', mode: 'markers', name: 'Interval Matrix',
@@ -277,11 +303,81 @@
                         const poincareLayout = {
                             paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
                             font: { color: '#f2f4f8', family: 'monospace' },
-                            title: `| stats Lorenz_Map calculated=true`,
+                            title: `| stats Poincaré  map calculated=true`,
                             xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
                             yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] }
                         };
                         Plotly.newPlot('poincare-container', [scatterTrace, identityLine], poincareLayout);
+                    }
+
+                    // Render Graph 4 (Wavelet decomposition plot)
+                    if (useWavelet && payload.wavelets && Object.keys(payload.wavelets).length > 0) {
+                        console.log("Wavelet data successfully delivered in the main payload!");
+
+                        const waveletTraces = [];
+
+                        // FIXED: Removed the duplicate 'const' declaration to reuse the existing timeIndices mapping cleanly
+                        const waveletTimeIndices = payload.wavelets.baseline_wander_A5.map((_, idx) => idx);
+
+                        const baselineWander  = payload.wavelets.baseline_wander_A5;
+                        const highFreqNoise   = payload.wavelets.detail_band_D1;
+                        const D2              = payload.wavelets.detail_band_D2;
+                        const qrsComplexPeaks = payload.wavelets.detail_band_D3;
+                        const D4              = payload.wavelets.detail_band_D4;
+                        const D5              = payload.wavelets.detail_band_D5;
+                        
+                        // Plot D1 (High frequency noise/sharp R transitions)
+                        waveletTraces.push({
+                            x: waveletTimeIndices, y: highFreqNoise,
+                            type: 'scatter', mode: 'lines', name: 'D1:High-Freq Buzz',
+                            line: { width: 1, color: '#e74c3c' }
+                        });
+
+                       // Plot D2  
+                        waveletTraces.push({
+                            x: waveletTimeIndices, y: D2,
+                            type: 'scatter', mode: 'lines', name: 'D2:D2-Something',
+                            line: { width: 1, color: '#e74c3c' }
+                        });
+
+                        // Plot D3 (Main QRS complex anatomical physical velocity)
+                        waveletTraces.push({
+                            x: waveletTimeIndices, y: qrsComplexPeaks,
+                            type: 'scatter', mode: 'lines', name: 'D3:QRS R-Peaks',
+                            line: { width: 1.2, color: '#2ecc71' }
+                        });
+
+                        // Plot D4  
+                        waveletTraces.push({
+                            x: waveletTimeIndices, y: D4,
+                            type: 'scatter', mode: 'lines', name: 'D4:D4-Something',
+                            line: { width: 1, color: '#e74c3c' }
+                        });
+
+                        // Plot D5  
+                        waveletTraces.push({
+                            x: waveletTimeIndices, y: D5,
+                            type: 'scatter', mode: 'lines', name: 'D5:D5-Something',
+                            line: { width: 1, color: '#e74c3c' }
+                        });
+
+                        // Plot A5 (The rolling slow baseline drift)
+                        waveletTraces.push({
+                            x: waveletTimeIndices, y: baselineWander,
+                            type: 'scatter', mode: 'lines', name: 'A5:Baseline Wander',
+                            line: { width: 1.5, dash: 'dot', color: '#f1c40f' }
+                        });
+
+                        const waveletLayout = {
+                            paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
+                            font: { color: '#f2f4f8', family: 'monospace' },
+                            title: 'Wavelet Sub-Band Decomposition (| multi_level_dwt mode="db4")',
+                            xaxis: { title: 'Samples', gridcolor: '#2e3440' },
+                            yaxis: { title: 'Reconstructed Voltage', gridcolor: '#2e3440' },
+                            legend: { orientation: 'h', y: -0.2 }
+                        };
+
+                        Plotly.newPlot('wavelet-container', waveletTraces, waveletLayout);
                     }
                 })
                 .catch(err => console.error("Error executing unified stream pipeline:", err));
@@ -292,5 +388,7 @@
             updateSampleDropdown();
         });
     </script>
+
 </body>
+
 </html>
