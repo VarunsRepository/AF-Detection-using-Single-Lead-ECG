@@ -161,7 +161,12 @@
          */
         function updateSampleDropdown() {
             const chosenClass = document.getElementById('class-selector').value;
-            const registryUrl = `http://127.0.0.1:8080/api/v1/splunk/registry?class=${chosenClass}`;
+            
+            // hardcoded URL
+            //const registryUrl = `http://127.0.0.1:8080/api/v1/splunk/registry?class=${chosenClass}`;
+
+            // Need the url to be created and accessible dynamically if we're accessing it on the LAN via phone
+            const registryUrl = `/api/v1/splunk/registry?class=${chosenClass}`;
 
             fetch(registryUrl)
                 .then(res => res.json())
@@ -263,9 +268,10 @@
                         paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
                         font: { color: '#f2f4f8', family: 'monospace' },
                         title: `Pipeline Execution: index="ecg" | record_id="${recordId}"`,
+                        dragmode: 'zoom',
                         hovermode: 'x', // <--- Combines all trace data on this X coordinate into a single tooltip card
-                        xaxis: { 
-                            title: 'Samples (300 Hz)', 
+                        xaxis: {
+                            title: 'Samples (300 Hz)',
                             gridcolor: '#2e3440',
                             showspikes: true,             // <--- Enable the vertical cursor line
                             spikemode: 'across+marker',   // <--- Draw it all the way across the grid canvas
@@ -382,10 +388,10 @@
                             paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
                             font: { color: '#f2f4f8', family: 'monospace' },
                             title: 'Wavelet Sub-Band Decomposition (| multi_level_dwt mode="db4")',
-
+                            dragmode: 'zoom',
                             hovermode: 'x', // <--- Combines all 6 sub-band traces into a unified tooltip display
-                            xaxis: { 
-                                title: 'Samples', 
+                            xaxis: {
+                                title: 'Samples',
                                 gridcolor: '#2e3440',
                                 showspikes: true,             // <--- Enable the vertical cursor line
                                 spikemode: 'across+marker',   // <--- Draw it across the sub-bands
@@ -402,7 +408,7 @@
                         Plotly.newPlot('wavelet-container', waveletTraces, waveletLayout);
                     }
 
-        if (useWavelet) {
+                    if (useWavelet) {
                         synchronizeCharts('chart-container', 'wavelet-container');
                         synchronizeCharts('wavelet-container', 'chart-container');
                     }
@@ -413,36 +419,69 @@
         }
 
 
-        
+/**
+         * Binds cross-chart sync routines on mouse interaction and zoom loops.
+         * Includes an operational guard flag to prevent recursive infinite loops.
+         */
+        let isSyncing = false; // Guard flag to prevent infinite zoom loops
+
         function synchronizeCharts(chartId1, chartId2) {
             const chart1 = document.getElementById(chartId1);
             const chart2 = document.getElementById(chartId2);
 
             if (!chart1 || !chart2 || !chart1.data || !chart2.data) return;
 
+            // ==========================================
+            // 1. HOVER SYNCHRONIZATION
+            // ==========================================
             chart1.on('plotly_hover', function (eventData) {
                 if (!eventData || !eventData.points || eventData.points.length === 0) return;
 
-                // Extract the exact sample number (x-axis) under the cursor
                 const xVal = eventData.points[0].x;
-
-                // FIX: Map out every single curve line present in the target chart layout.
-                // This forces Plotly to light up the tooltips and spikes for ALL lines at once!
                 const targetTraces = chart2.data.map((_, index) => {
                     return { curveNumber: index, xval: xVal };
                 });
 
-                // Fire the unified hover array into the tracking engine
                 Plotly.Fx.hover(chart2, targetTraces, ['xy']);
             });
 
-            // Cleanly clear crosshairs when the cursor leaves the canvas zone
             chart1.on('plotly_unhover', function () {
                 Plotly.Fx.hover(chart2, []);
             });
+
+            // ==========================================
+            // 2. ZOOM & PAN SYNCHRONIZATION (New)
+            // ==========================================
+            chart1.on('plotly_relayout', function (eventData) {
+                // If we are already in a synchronization loop, break out immediately
+                if (isSyncing) return;
+
+                // Check if the event contains X-axis zoom/pan range changes
+                if (eventData['xaxis.range[0]'] !== undefined || eventData['xaxis.autorange'] !== undefined) {
+                    isSyncing = true; // Set guard
+
+                    let updatePayload = {};
+                    
+                    if (eventData['xaxis.autorange'] === true) {
+                        // User double-clicked to reset zoom
+                        updatePayload = { 'xaxis.autorange': true };
+                    } else {
+                        // User dragged a box to zoom into a slice
+                        updatePayload = {
+                            'xaxis.range[0]': eventData['xaxis.range[0]'],
+                            'xaxis.range[1]': eventData['xaxis.range[1]']
+                        };
+                    }
+
+                    // Update the target chart layout and turn off the guard flag when complete
+                    Plotly.relayout(chart2, updatePayload).then(() => {
+                        isSyncing = false; 
+                    });
+                }
+            });
         }
 
-
+ 
         // Automatic boot execution when HTML layer finishes initializing
         document.addEventListener("DOMContentLoaded", () => {
             updateSampleDropdown();
