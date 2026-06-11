@@ -147,13 +147,13 @@
         <div id="poincare-panel" class="panel" style="display: none;">
             <div id="poincare-container" class="chart-frame"></div>
         </div>
-    </div> 
+    </div>
 
     <div id="wavelet-panel" class="panel" style="display: none;">
         <div id="wavelet-container" class="chart-frame" style="height: 500px;"></div>
     </div>
 
- 
+
     <script>
         /**
          * Pulls matching sample IDs from the Flask registry slice endpoint
@@ -263,7 +263,17 @@
                         paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
                         font: { color: '#f2f4f8', family: 'monospace' },
                         title: `Pipeline Execution: index="ecg" | record_id="${recordId}"`,
-                        xaxis: { title: 'Samples (300 Hz)', gridcolor: '#2e3440' },
+                        hovermode: 'x', // <--- Combines all trace data on this X coordinate into a single tooltip card
+                        xaxis: { 
+                            title: 'Samples (300 Hz)', 
+                            gridcolor: '#2e3440',
+                            showspikes: true,             // <--- Enable the vertical cursor line
+                            spikemode: 'across+marker',   // <--- Draw it all the way across the grid canvas
+                            spikethickness: 1,
+                            spikedash: 'solid',
+                            spikecolor: '#a3be8c'         // <--- Sleek green crosshair line (or change to match your theme)
+                        },
+                        //xaxis: { title: 'Samples (300 Hz)', gridcolor: '#2e3440' },
                         yaxis: { title: 'Voltage (mV)', gridcolor: '#2e3440' }
                     };
                     Plotly.newPlot('chart-container', mainTraces, mainLayout);
@@ -319,13 +329,13 @@
                         // FIXED: Removed the duplicate 'const' declaration to reuse the existing timeIndices mapping cleanly
                         const waveletTimeIndices = payload.wavelets.baseline_wander_A5.map((_, idx) => idx);
 
-                        const baselineWander  = payload.wavelets.baseline_wander_A5;
-                        const highFreqNoise   = payload.wavelets.detail_band_D1;
-                        const D2              = payload.wavelets.detail_band_D2;
+                        const baselineWander = payload.wavelets.baseline_wander_A5;
+                        const highFreqNoise = payload.wavelets.detail_band_D1;
+                        const D2 = payload.wavelets.detail_band_D2;
                         const qrsComplexPeaks = payload.wavelets.detail_band_D3;
-                        const D4              = payload.wavelets.detail_band_D4;
-                        const D5              = payload.wavelets.detail_band_D5;
-                        
+                        const D4 = payload.wavelets.detail_band_D4;
+                        const D5 = payload.wavelets.detail_band_D5;
+
                         // Plot D1 (High frequency noise/sharp R transitions)
                         waveletTraces.push({
                             x: waveletTimeIndices, y: highFreqNoise,
@@ -333,11 +343,11 @@
                             line: { width: 1, color: '#e74c3c' }
                         });
 
-                       // Plot D2  
+                        // Plot D2  
                         waveletTraces.push({
                             x: waveletTimeIndices, y: D2,
                             type: 'scatter', mode: 'lines', name: 'D2:D2-Something',
-                            line: { width: 1, color: '#e74c3c' }
+                            line: { width: 1, color: '#b64bf4' }
                         });
 
                         // Plot D3 (Main QRS complex anatomical physical velocity)
@@ -358,7 +368,7 @@
                         waveletTraces.push({
                             x: waveletTimeIndices, y: D5,
                             type: 'scatter', mode: 'lines', name: 'D5:D5-Something',
-                            line: { width: 1, color: '#e74c3c' }
+                            line: { width: 1, color: '#ff7200' }
                         });
 
                         // Plot A5 (The rolling slow baseline drift)
@@ -372,16 +382,66 @@
                             paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
                             font: { color: '#f2f4f8', family: 'monospace' },
                             title: 'Wavelet Sub-Band Decomposition (| multi_level_dwt mode="db4")',
-                            xaxis: { title: 'Samples', gridcolor: '#2e3440' },
+
+                            hovermode: 'x', // <--- Combines all 6 sub-band traces into a unified tooltip display
+                            xaxis: { 
+                                title: 'Samples', 
+                                gridcolor: '#2e3440',
+                                showspikes: true,             // <--- Enable the vertical cursor line
+                                spikemode: 'across+marker',   // <--- Draw it across the sub-bands
+                                spikethickness: 1,
+                                spikedash: 'solid',
+                                spikecolor: '#a3be8c'         // <--- Keeps the crosshair line color uniform
+                            },
+
+                            //xaxis: { title: 'Samples', gridcolor: '#2e3440' },
                             yaxis: { title: 'Reconstructed Voltage', gridcolor: '#2e3440' },
                             legend: { orientation: 'h', y: -0.2 }
                         };
 
                         Plotly.newPlot('wavelet-container', waveletTraces, waveletLayout);
                     }
+
+        if (useWavelet) {
+                        synchronizeCharts('chart-container', 'wavelet-container');
+                        synchronizeCharts('wavelet-container', 'chart-container');
+                    }
+
+
                 })
                 .catch(err => console.error("Error executing unified stream pipeline:", err));
         }
+
+
+        
+        function synchronizeCharts(chartId1, chartId2) {
+            const chart1 = document.getElementById(chartId1);
+            const chart2 = document.getElementById(chartId2);
+
+            if (!chart1 || !chart2 || !chart1.data || !chart2.data) return;
+
+            chart1.on('plotly_hover', function (eventData) {
+                if (!eventData || !eventData.points || eventData.points.length === 0) return;
+
+                // Extract the exact sample number (x-axis) under the cursor
+                const xVal = eventData.points[0].x;
+
+                // FIX: Map out every single curve line present in the target chart layout.
+                // This forces Plotly to light up the tooltips and spikes for ALL lines at once!
+                const targetTraces = chart2.data.map((_, index) => {
+                    return { curveNumber: index, xval: xVal };
+                });
+
+                // Fire the unified hover array into the tracking engine
+                Plotly.Fx.hover(chart2, targetTraces, ['xy']);
+            });
+
+            // Cleanly clear crosshairs when the cursor leaves the canvas zone
+            chart1.on('plotly_unhover', function () {
+                Plotly.Fx.hover(chart2, []);
+            });
+        }
+
 
         // Automatic boot execution when HTML layer finishes initializing
         document.addEventListener("DOMContentLoaded", () => {
