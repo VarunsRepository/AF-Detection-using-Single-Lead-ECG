@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ECG Analytics Workspace Studio</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
@@ -62,9 +63,56 @@
             margin-bottom: 20px;
         }
 
-        @media (max-width: 900px) {
-            .secondary-grid {
-                grid-template-columns: 1fr;
+        /* Automatically stack panels into a single clean column on mobile screens */
+        @media (max-width: 768px) {
+
+            /* Target whatever div wrapper holds your dropdowns/toggles */
+            .selector-container,
+            .panel-controls {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                padding: 10px;
+            }
+
+            /* Make select dropdowns prominent and easy to tap */
+            select {
+                width: 100% !important;
+                height: 48px !important;
+                font-size: 16px !important;
+                /* Forces iOS/Android to NOT zoom in automatically when selected */
+                padding: 10px !important;
+                border-radius: 6px;
+            }
+
+            /* Transform small check toggles into fat clickable action rows */
+            label {
+                display: flex !important;
+                align-items: center;
+                justify-content: space-between;
+                padding: 12px 16px;
+                background-color: #2e3440;
+                /* Fits your dark theme */
+                border-radius: 6px;
+                font-size: 14px;
+                cursor: pointer;
+                min-height: 48px;
+            }
+
+            /* Make the actual checkbox inputs larger */
+            input[type="checkbox"] {
+                width: 20px;
+                height: 20px;
+                cursor: pointer;
+            }
+
+            /* Make sure Plotly charts stretch neatly to the edges of your screen */
+            .chart-holder,
+            #chart-container,
+            #wavelet-container {
+                width: 100% !important;
+                margin: 0 px !important;
+                padding: 0 px !important;
             }
         }
     </style>
@@ -75,6 +123,18 @@
     <h2>Splunk Pipeline Studio: index="ecg_telemetry"</h2>
 
     <div class="panel control-group">
+
+        <div id="orientation-status-badge"
+            style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a;">
+            Checking Hardware Status...
+        </div>
+
+        <div>
+            <input type="checkbox" id="toggle-manual-flip" onchange="loadEcgPipeline()">
+            <label for="toggle-manual-flip" style="color: #5cc24a;">| force_manual_flip</label>
+        </div>
+
+
         <div>
             <label style="color: #eb7b2b; font-weight: bold;">TARGET CLINICAL CLASS: </label>
             <select id="class-selector" onchange="updateSampleDropdown()">
@@ -161,11 +221,40 @@
          */
         function updateSampleDropdown() {
             const chosenClass = document.getElementById('class-selector').value;
-            
+
             // hardcoded URL
             //const registryUrl = `http://127.0.0.1:8080/api/v1/splunk/registry?class=${chosenClass}`;
 
             // Need the url to be created and accessible dynamically if we're accessing it on the LAN via phone
+            const registryUrl = `/api/v1/splunk/registry?class=${chosenClass}`;
+
+            fetch(registryUrl)
+                .then(res => res.json())
+                .then(payload => {
+                    const recordMenu = document.getElementById('record-selector');
+                    recordMenu.innerHTML = ""; // Wipe previous entries cleanly
+
+                    // Inject the new batch of matching recordings
+                    payload.samples.forEach((rec, idx) => {
+                        if (idx < 100) { // Safety limit for fluid DOM execution
+                            const opt = document.createElement('option');
+                            opt.value = rec;
+                            opt.textContent = `${rec} (True: ${chosenClass})`;
+                            recordMenu.appendChild(opt);
+                        }
+                    });
+
+                    // CHAIN REACTION: Instantly pull vector calculations for the first child item
+                    loadEcgPipeline();
+                })
+                .catch(err => console.error("Error compilation failing on registry slice:", err));
+        }
+
+
+
+
+        function updateSampleDropdown() {
+            const chosenClass = document.getElementById('class-selector').value;
             const registryUrl = `/api/v1/splunk/registry?class=${chosenClass}`;
 
             fetch(registryUrl)
@@ -206,6 +295,7 @@
             const usePoincare = document.getElementById('toggle-poincare').checked;
             const useFft = document.getElementById('toggle-fft').checked;
             const useWavelet = document.getElementById('toggle-wavelet').checked;
+            const forceManualFlip = document.getElementById('toggle-manual-flip').checked;
 
             // Manage conditional interface panel displays
             document.getElementById('poincare-panel').style.display = usePoincare ? 'block' : 'none';
@@ -213,12 +303,40 @@
             document.getElementById('wavelet-panel').style.display = useWavelet ? 'block' : 'none';
 
             // FIXED: Synchronized matching variable references and cleanly mapped all toggles to URL query keys
-            const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}`;
+            //const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}`;
+
+            //Add Param to forcefully flip the signal manually. 
+            const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}&manual_flip=${forceManualFlip}`;
+
 
             fetch(targetUrl)
                 .then(res => res.json())
                 .then(payload => {
                     if (payload.error) return;
+
+
+
+
+                    const badge = document.getElementById('orientation-status-badge');
+                    if (badge && payload.orientation_status) {
+                        badge.textContent = `| hardware_status="${payload.orientation_status}"`;
+
+                        if (payload.is_inverted) {
+                            // Alert layout styling (Orange Warning Alert to flag an upside-down recording)
+                            badge.style.backgroundColor = 'rgba(235, 123, 43, 0.15)';
+                            badge.style.color = '#eb7b2b';
+                            badge.style.borderColor = '#eb7b2b';
+                        } else {
+                            // Normal operational layout styling (Green Operational confirmation)
+                            badge.style.backgroundColor = 'rgba(92, 194, 74, 0.15)';
+                            badge.style.color = '#5cc24a';
+                            badge.style.borderColor = '#5cc24a';
+                        }
+                    }
+                    // ========================================================
+
+
+
 
                     const timeIndices = payload.data.map((_, i) => i);
 
@@ -419,10 +537,10 @@
         }
 
 
-/**
-         * Binds cross-chart sync routines on mouse interaction and zoom loops.
-         * Includes an operational guard flag to prevent recursive infinite loops.
-         */
+        /**
+                 * Binds cross-chart sync routines on mouse interaction and zoom loops.
+                 * Includes an operational guard flag to prevent recursive infinite loops.
+                 */
         let isSyncing = false; // Guard flag to prevent infinite zoom loops
 
         function synchronizeCharts(chartId1, chartId2) {
@@ -461,7 +579,7 @@
                     isSyncing = true; // Set guard
 
                     let updatePayload = {};
-                    
+
                     if (eventData['xaxis.autorange'] === true) {
                         // User double-clicked to reset zoom
                         updatePayload = { 'xaxis.autorange': true };
@@ -475,13 +593,13 @@
 
                     // Update the target chart layout and turn off the guard flag when complete
                     Plotly.relayout(chart2, updatePayload).then(() => {
-                        isSyncing = false; 
+                        isSyncing = false;
                     });
                 }
             });
         }
 
- 
+
         // Automatic boot execution when HTML layer finishes initializing
         document.addEventListener("DOMContentLoaded", () => {
             updateSampleDropdown();
