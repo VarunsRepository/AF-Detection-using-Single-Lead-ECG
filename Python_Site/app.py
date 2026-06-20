@@ -6,6 +6,30 @@ from flask import Flask, jsonify, request, send_from_directory # all the stuff t
                                                                # the usage of dead-sea scrools of Django 
 
 
+
+"Obtaining medical-grade diagnostic data remains a significant challenge, even in an era dominated by high-performance CPUs, expanded RAM,"
+" and advanced cloud storage. When capturing human physiological data, a fundamental trade-off exists: clinical precision and diagnostic "
+"breadth on one end, versus consumer convenience and ease of use on the other.In a hospital or clinical setting, patients are monitored "
+"using top-tier, highly calibrated instrumentation. Systems such as the Philips PageWriter (running the DXL algorithm) can utilize up to "
+"12 physical electrodes to derive a 16-lead ECG, providing multi-angle visibility into complex arrhythmias and structural blockages. "
+"Similarly, GE HealthCare systems featuring the Marquette 12SL algorithm can analyze raw cardiac signals across all heart rates in "
+"real time, deploying advanced digital signal processing to eliminate motion artifacts. While exceptionally accurate, this equipment "
+"is expensive, inaccessible to the general public during the critical first moments of symptom onset, and requires extensive clinical "
+"training to manually position the electrodes across the chest and limbs.On the opposite end of the spectrum lies day-to-day consumer "
+"monitoring. Strapping on a smartwatch or touching a digital crown allows a user to instantly capture an ECG or SpO₂ reading. "
+"While these consumer-grade wearables offer unprecedented convenience, they inherently sacrifice diagnostic depth. "
+"A standard Apple or Samsung watch, for instance, relies almost entirely on automated algorithms that analyze R-R intervals to identify"
+" rhythm irregularities. For complex cardiac monitoring, this single-dimension view is structurally insufficient. "
+"Even accessible development hardware, such as the Adafruit AD8232 single-lead sensor, requires three precisely placed electrodes;"
+" a slight misalignment by an untrained user can render the resulting data completely unusable.Consequently, "
+"a considerable diagnostic gap exists in the market. Consumers need convenient, immediate equipment capable of extracting high-value "
+"diagnostic insights the exact moment cardiac symptoms begin. While hybrid devices like AliveCor’s KardiaMobile have started bridging "
+"this gap by securing FDA clearances for wider QRS and advanced rhythm determinations, the broader pursuit remains: achieving maximum "
+"diagnostic confidence from the simplest possible user interface.As consumer hardware increasingly adopts next-generation digital signal"
+" processing (DSP) and machine learning (ML) models, the boundary of what can be extracted from minimal hardware is expanding. "
+"This paper addresses this vital frontier by deploying advanced machine learning techniques to achieve highly accurate Atrial Fibrillation"
+" (AFib) detection utilizing a single-lead ECG configuration."
+
 from DSP_modules.DSP import apply_noise_filter, \
                             detect_local_max_r_peaks, \
                             run_pan_tompkins_segmentation,\
@@ -13,6 +37,10 @@ from DSP_modules.DSP import apply_noise_filter, \
                             apply_qrst_cancellation, \
                             compute_wavelet_decomposition
 
+# importing the function to correct(invert) the flipped samples.(samples where the patients held the alliveCor device incorrectly)
+from DSP_modules.inversion_Correction import is_device_inverted, \
+                                             flip_ecg_sample, \
+                                             run_pan_tompkins_segmentation
 
 app = Flask(__name__)                   
 CACHE_DIR = "data_cache"                 # interim directory, to download the file before reading it and storing it in memory
@@ -212,6 +240,46 @@ def stream_ecg():
     raw_units = np.loadtxt(txt_filename)
     signal_values = raw_units / 1000.0
     
+    # Grab the manual override parameter from the incoming HTTP request URL
+    force_manual_flip = request.args.get('manual_flip', 'false').lower() == 'true'
+
+
+    # =========================================================================
+    # INJECTED: AUTOMATIC HARDWARE INVERSION DETECTION & RECTIFICATION
+    # =========================================================================
+    # We pass the full array to evaluate the orientation before slicing or filtering.
+    algo_detected_inversion  = is_device_inverted(signal_values, sampling_rate=300.0)
+    
+
+    # Core Decision Rule: Flip if algo says so OR if user forces it
+    # CRITICAL: If BOTH are true (Algo detected it AND User forces a flip), they cancel out.
+    # We use a logical XOR (not equal) so checking the box always acts as a "Reverse Current State" switch.
+    should_flip = algo_detected_inversion  != force_manual_flip
+ 
+    if should_flip:
+        signal_values = flip_ecg_sample(signal_values)
+        
+        # the below if-else blocks ae just meant to sent the status to the view
+        if force_manual_flip and not algo_detected_inversion:
+            inversion_status = "Manual Inversion Applied (User Override)"
+            is_inverted_payload = True
+        elif force_manual_flip and algo_detected_inversion:
+            # The algorithm automatically flipped it, but user wants it back the other way
+            inversion_status    = "Original Polarity Restored (User Override)"
+            is_inverted_payload = False
+        else:
+            inversion_status = "Inversion Correction Applied"
+            is_inverted_payload = True
+    else:
+        is_inverted_payload = False
+        if force_manual_flip and algo_detected_inversion:
+            inversion_status = "Original Polarity Restored (User Override)"
+        else:
+            inversion_status = "Normal Orientation Verified"
+    # =========================================================================
+     
+     
+        
     # 2. Extract full mathematical background buffer (30 seconds)
     long_signal = signal_values[:9000]
     
@@ -293,6 +361,8 @@ def stream_ecg():
 
     return jsonify({
         "metric": record_id,
+        "orientation_status": inversion_status,     # this simple hold the message of the orientation status
+        "is_inverted": is_inverted_payload,         # This is the flag that actually asks the UI to flip the signal
         "data": processed_signal.tolist(),
         "local_r_peaks": local_r_indices,
         "features": features,
@@ -301,6 +371,22 @@ def stream_ecg():
         "wavelets": wavelet_data
     })
 
+#    # Return payload now contains the inversion tracking state
+#    return jsonify({
+#        "metric": record_id,
+#        "orientation_status": inversion_status,
+#        "algo_detected_inversion ": algo_detected_inversion ,
+#        "data": processed_signal.tolist(),
+#        "local_r_peaks": local_r_indices,
+#        "features": features,
+#        "poincare": poincare_data,
+#        "fft": fft_data,
+#        "wavelets": wavelet_data
+
+#        "orientation_status": inversion_status,
+#        "is_inverted": is_inverted_payload, #
+
+#    })
 
 
 # think of it as the main() function of this web-sites programs  
