@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.signal import butter, lfilter
 
-
+ 
 #  inversion Detection  (Orientation Diagnosis)
 def is_device_inverted(signal, sampling_rate=300.0):
     """
