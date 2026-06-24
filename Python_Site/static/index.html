@@ -63,6 +63,29 @@
             margin-bottom: 20px;
         }
 
+
+        .panel.control-group {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 20px;
+        }
+
+        /* A dedicated wrapper that permanently bonds the status text to its override switch */
+        .hardware-module {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            /* Fixed spacing between the badge and the checkbox */
+        }
+
+        /* Ensure the text expands smoothly and naturally without breaking into two lines */
+        #orientation-status-badge {
+            white-space: nowrap;
+        }
+
+
+
         /* Automatically stack panels into a single clean column on mobile screens */
         @media (max-width: 768px) {
 
@@ -121,19 +144,8 @@
 <body>
 
     <h2>Splunk Pipeline Studio: index="ecg_telemetry"</h2>
-
+    <!-- This Panel holds the ECG sample IO from the physionet site-->
     <div class="panel control-group">
-
-        <div id="orientation-status-badge"
-            style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a;">
-            Checking Hardware Status...
-        </div>
-
-        <div>
-            <input type="checkbox" id="toggle-manual-flip" onchange="loadEcgPipeline()">
-            <label for="toggle-manual-flip" style="color: #5cc24a;">| force_manual_flip</label>
-        </div>
-
 
         <div>
             <label style="color: #eb7b2b; font-weight: bold;">TARGET CLINICAL CLASS: </label>
@@ -159,6 +171,22 @@
             </select>
         </div>
 
+
+    <div class="hardware-module">
+        <div id="orientation-status-badge" style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a;">
+            Checking Hardware Status...
+        </div>
+
+        <div>
+            <input type="checkbox" id="toggle-manual-flip" onchange="loadEcgPipeline()">
+            <label for="toggle-manual-flip" style="color: #f2994a; font-weight: bold;">| force_manual_flip</label>
+        </div>
+    </div>
+    </div>
+
+    
+     <!-- this panel holds the DSP methods and control -->
+    <div class="panel control-group">
         <div>
             <input type="checkbox" id="toggle-filter" onchange="loadEcgPipeline()">
             <label for="toggle-filter" style="color: #5cc24a;">| apply_noise_filter</label>
@@ -195,6 +223,7 @@
         </div>
     </div>
 
+    </div>
     <div class="panel">
         <div id="chart-container" class="chart-frame"></div>
     </div>
