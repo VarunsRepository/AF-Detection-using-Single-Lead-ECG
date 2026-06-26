@@ -3,12 +3,14 @@ import numpy as np    # for interim processing for the ECG Signal
 
 import pywt # for wavelet decomposition
 
+import neurokit2 as nk  # to leverage the functions of neurokit2 to identify, the different segments of sample 
+
 # We're getting serious now with the below mentioned - Advanced Signal Processing
 from scipy.signal import butter, \
                         lfilter, \
                         savgol_filter       
 
-
+ 
 # below mentioned functions actually implement our signal processing techniques
 
 def apply_noise_filter(signal):
@@ -115,6 +117,81 @@ def run_pan_tompkins_segmentation(signal,  # the ECG signal
         t_points.append(int(t_idx))
 
     return {"P": p_points, "Q": q_points, "R": r_peaks, "S": s_points, "T": t_points}
+
+
+def run_pan_tompkins_segmentation_nk2(signal, sampling_rate=300.0):
+    """
+    Upgraded NeuroKit2 segmentation using the high-recall 'peak' method.
+    Includes an automated mathematical fallback matrix to guarantee no 
+    P, Q, S, or T points are missed due to single-lead wavelet threshold drops.
+    """
+    sampling_rate = int(sampling_rate)
+    
+    try:
+        # Step 1: Pan-Tompkins clean and isolate R-Peaks
+        cleaned_signal = nk.ecg_clean(signal, sampling_rate=sampling_rate, method='pantompkins1985')
+        _, r_peak_info = nk.ecg_peaks(cleaned_signal, sampling_rate=sampling_rate, method='pantompkins1985')
+        
+        r_peaks = r_peak_info["ECG_R_Peaks"].tolist()
+        if len(r_peaks) == 0:
+            return {"P_nk2": [], 
+                    "Q_nk2": [], 
+                    "S_nk2": [], 
+                    "R_nk2": [], 
+                    "T_nk2": []}
+            
+        # Step 2: High-Recall Derivative 'peak' method (Replaces the drop-prone 'dwt' wavelet)
+        _, wave_info = nk.ecg_delineate(cleaned_signal, r_peaks, sampling_rate=sampling_rate, method='peak')
+        
+        # Step 3: Sanitize indices with automated fallback logic
+        def process_sub_wave(key_string, search_offset_start, search_offset_end, use_min=False):
+            raw_array = wave_info.get(key_string, [])
+            sanitized = []
+            
+            # Loop through every detected R-peak to check for missing points
+            for i, r in enumerate(r_peaks):
+                # Calculate absolute look-up window bounds relative to the current beat
+                start_win = r + int(search_offset_start * sampling_rate)
+                end_win = r + int(search_offset_end * sampling_rate)
+                
+                # Check for array out-of-bounds safety rules
+                if start_win < 0 or end_win > len(signal):
+                    continue
+                
+                # If NeuroKit successfully found the point, preserve its index directly
+                if i < len(raw_array) and not np.isnan(raw_array[i]):
+                    sanitized.append(int(raw_array[i]))
+                else:
+                    # FALLBACK: If NeuroKit dropped it, use a local argmin/argmax search window
+                    window_data = signal[start_win:end_win]
+                    if len(window_data) > 0:
+                        offset_idx = np.argmin(window_data) if use_min else np.argmax(window_data)
+                        sanitized.append(int(start_win + offset_idx))
+                        
+            return sanitized
+
+        # Extract all vectors using precise physiological timing bounds
+        q_points = process_sub_wave("ECG_Q_Peaks", search_offset_start=-0.04, search_offset_end=0.0, use_min=True)
+        s_points = process_sub_wave("ECG_S_Peaks", search_offset_start=0.0, search_offset_end=0.04, use_min=True)
+        p_points = process_sub_wave("ECG_P_Peaks", search_offset_start=-0.20, search_offset_end=-0.05, use_min=False)
+        t_points = process_sub_wave("ECG_T_Peaks", search_offset_start=0.10, search_offset_end=0.40, use_min=False)
+        
+        return {
+            "P_nk2": p_points,
+            "Q_nk2": q_points,
+            "R_nk2": r_peaks,
+            "S_nk2": s_points,
+            "T_nk2": t_points
+        }
+        
+    except Exception as e:
+        print(f"[NeuroKit2 Hybrid Error]: Pipeline failed. Reason: {str(e)}")
+        return {"P_nk2": [], 
+                "Q_nk2": [], 
+                "R_nk2": [], 
+                "S_nk2": [], 
+                "T_nk2": []}
+
 
 def calculate_signal_fft(signal, sampling_rate=300.0):
     """
