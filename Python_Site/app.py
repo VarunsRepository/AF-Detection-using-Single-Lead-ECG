@@ -1,719 +1,423 @@
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ECG Analytics Workspace Studio</title>
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <style>
-        body {
-            background-color: #121418;
-            color: #f2f4f8;
-            font-family: 'Monaco', 'Consolas', monospace;
-            margin: 20px;
-        }
-
-        h2 {
-            color: #eb7b2b;
-            border-bottom: 2px solid #2e3440;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
-        }
-
-        .panel {
-            background-color: #1c1e24;
-            border: 1px solid #2e3440;
-            border-radius: 6px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-
-        .control-group {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            align-items: center;
-        }
-
-        select,
-        input,
-        label {
-            cursor: pointer;
-        }
-
-        select {
-            background-color: #2e3440;
-            color: #f2f4f8;
-            border: 1px solid #4c566a;
-            padding: 6px 12px;
-            border-radius: 4px;
-            font-family: monospace;
-        }
-
-        .chart-frame {
-            width: 100%;
-            height: 450px;
-        }
-
-        .secondary-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-
-
-        .panel.control-group {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 20px;
-        }
-
-        /* A dedicated wrapper that permanently bonds the status text to its override switch */
-        .hardware-module {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            /* Fixed spacing between the badge and the checkbox */
-        }
-
-        /* Ensure the text expands smoothly and naturally without breaking into two lines */
-        #orientation-status-badge {
-            white-space: nowrap;
-        }
+import os
+import urllib.request # to send web requests to the Physionet site 
+import scipy.io       # to use plotly(), which is our star performer 
+import numpy as np    # for interim processing for the ECG Signal 
+from flask import Flask, jsonify, request, send_from_directory # all the stuff to make a web-site in minutes without needing to learn  
+                                                               # the usage of dead-sea scrools of Django 
 
 
 
-        /* Automatically stack panels into a single clean column on mobile screens */
-        @media (max-width: 768px) {
+"Obtaining medical-grade diagnostic data remains a significant challenge, even in an era dominated by high-performance CPUs, expanded RAM,"
+" and advanced cloud storage. When capturing human physiological data, a fundamental trade-off exists: clinical precision and diagnostic "
+"breadth on one end, versus consumer convenience and ease of use on the other.In a hospital or clinical setting, patients are monitored "
+"using top-tier, highly calibrated instrumentation. Systems such as the Philips PageWriter (running the DXL algorithm) can utilize up to "
+"12 physical electrodes to derive a 16-lead ECG, providing multi-angle visibility into complex arrhythmias and structural blockages. "
+"Similarly, GE HealthCare systems featuring the Marquette 12SL algorithm can analyze raw cardiac signals across all heart rates in "
+"real time, deploying advanced digital signal processing to eliminate motion artifacts. While exceptionally accurate, this equipment "
+"is expensive, inaccessible to the general public during the critical first moments of symptom onset, and requires extensive clinical "
+"training to manually position the electrodes across the chest and limbs.On the opposite end of the spectrum lies day-to-day consumer "
+"monitoring. Strapping on a smartwatch or touching a digital crown allows a user to instantly capture an ECG or SpO₂ reading. "
+"While these consumer-grade wearables offer unprecedented convenience, they inherently sacrifice diagnostic depth. "
+"A standard Apple or Samsung watch, for instance, relies almost entirely on automated algorithms that analyze R-R intervals to identify"
+" rhythm irregularities. For complex cardiac monitoring, this single-dimension view is structurally insufficient. "
+"Even accessible development hardware, such as the Adafruit AD8232 single-lead sensor, requires three precisely placed electrodes;"
+" a slight misalignment by an untrained user can render the resulting data completely unusable.Consequently, "
+"a considerable diagnostic gap exists in the market. Consumers need convenient, immediate equipment capable of extracting high-value "
+"diagnostic insights the exact moment cardiac symptoms begin. While hybrid devices like AliveCor’s KardiaMobile have started bridging "
+"this gap by securing FDA clearances for wider QRS and advanced rhythm determinations, the broader pursuit remains: achieving maximum "
+"diagnostic confidence from the simplest possible user interface.As consumer hardware increasingly adopts next-generation digital signal"
+" processing (DSP) and machine learning (ML) models, the boundary of what can be extracted from minimal hardware is expanding. "
+"This paper addresses this vital frontier by deploying advanced machine learning techniques to achieve highly accurate Atrial Fibrillation"
+" (AFib) detection utilizing a single-lead ECG configuration."
 
-            /* Target whatever div wrapper holds your dropdowns/toggles */
-            .selector-container,
-            .panel-controls {
-                display: flex;
-                flex-direction: column;
-                gap: 12px;
-                padding: 10px;
-            }
+from DSP_modules.DSP import apply_noise_filter, \
+                            detect_local_max_r_peaks, \
+                            run_pan_tompkins_segmentation,\
+                            run_pan_tompkins_segmentation_nk2,\
+                            calculate_signal_fft, \
+                            apply_qrst_cancellation, \
+                            compute_wavelet_decomposition
 
-            /* Make select dropdowns prominent and easy to tap */
-            select {
-                width: 100% !important;
-                height: 48px !important;
-                font-size: 16px !important;
-                /* Forces iOS/Android to NOT zoom in automatically when selected */
-                padding: 10px !important;
-                border-radius: 6px;
-            }
+# importing the function to correct(invert) the flipped samples.(samples where the patients held the alliveCor device incorrectly)
+from DSP_modules.inversion_Correction import is_device_inverted, \
+                                             flip_ecg_sample, \
+                                             run_pan_tompkins_segmentation
 
-            /* Transform small check toggles into fat clickable action rows */
-            label {
-                display: flex !important;
-                align-items: center;
-                justify-content: space-between;
-                padding: 12px 16px;
-                background-color: #2e3440;
-                /* Fits your dark theme */
-                border-radius: 6px;
-                font-size: 14px;
-                cursor: pointer;
-                min-height: 48px;
-            }
+import neurokit2 as nk  # to leverage the functions of neurokit2 to identify, the different segments of sample 
 
-            /* Make the actual checkbox inputs larger */
-            input[type="checkbox"] {
-                width: 20px;
-                height: 20px;
-                cursor: pointer;
-            }
+app = Flask(__name__)                   
+CACHE_DIR = "data_cache"                 # interim directory, to download the file before reading it and storing it in memory
+os.makedirs(CACHE_DIR, exist_ok=True)
+ 
+# Global memory variable to keep registry mappings fast and active
+REGISTRY_CACHE = {}
 
-            /* Make sure Plotly charts stretch neatly to the edges of your screen */
-            .chart-holder,
-            #chart-container,
-            #wavelet-container {
-                width: 100% !important;
-                margin: 0 px !important;
-                padding: 0 px !important;
-            }
-        }
-    </style>
-</head>
 
-<body>
-
-   <!-- 
-<div class="panel">
-  
-    <h3 style="color: #eb7b2b; margin-top: 0; font-size: 14px; border-bottom: 1px solid #2e3440; padding-bottom: 5px; font-family: monospace;">
-        | METRIC // REFERENCE_ANIMATION_STREAM
-    </h3>
-    -->
-
-    <!--
-    <div style="display: flex; justify-content: left; align-items: left; padding: 10px; background-color: #121418; border-radius: 4px;">
-          
+###################### the code for managing Physionet IO starts here ######################
+     
+#Connect to and Download the Labels file directly from the PhysioNet training site  
+def initialize_physionet_registry():
+    global REGISTRY_CACHE
+    if REGISTRY_CACHE:
+        return
         
-        <img src="/static/images/gta_vice_city_text.gif"  alt="ECG Reference Waveform Animation" 
-             style="max-width: 100%; height: auto; border-radius: 4px; opacity: 0.85; border: 1px solid #2e3440;">
-    </div>
-</div>
--->
-
-
-    <h2>Splunk Pipeline Studio: index="ecg_telemetry"</h2>
-    <!-- This Panel holds the ECG sample IO from the physionet site-->
-    <div class="panel control-group">
-
-        <div>
-            <label style="color: #eb7b2b; font-weight: bold;">TARGET CLINICAL CLASS: </label>
-            <select id="class-selector" onchange="updateSampleDropdown()">
-                <option value="N">Normal Sinus Rhythm (N)</option>
-                <option value="A">Atrial Fibrillation (A)</option>
-                <option value="O">Other Alternative Arrhythmia (O)</option>
-                <option value="~">Too Noisy / Compromised (~)</option>
-            </select>
-        </div>
-
-        <div>
-            <label style="color: #3498db; font-weight: bold;">AVAILABLE RECORDING: </label>
-            <select id="record-selector" onchange="loadEcgPipeline()">
-            </select>
-        </div>
-
-        <div>
-            <label>TIMELINE SPAN: </label>
-            <select id="scale-selector" onchange="loadEcgPipeline()">
-                <option value="short">Zoomed Snippet (8.3s)</option>
-                <option value="full">Full Stream (30.0s)</option>
-            </select>
-        </div>
-    </div>
-
-
-    <!-- This panel controls the signal preprocessing elements like noise removal, signal flipping, etc -->
-<div class="panel control-group">
-    <!-- Section Heading Label -->
-    <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">SIGNAL PREPROCESSING:</label>
- 
-    <!-- Unified Hardware Status Badge -->
-    <div id="orientation-status-badge"
-        style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block;">
-        Checking Hardware Status...
-    </div>
-
-    <!-- Manual Force Toggle Switch -->
-    <div style="display: inline-flex; align-items: center;">
-        <input type="checkbox" id="toggle-manual-flip" onchange="loadEcgPipeline()" style="margin-right: 6px;">
-        <label for="toggle-manual-flip" style="color: #f2994a; font-weight: bold;">| force_manual_flip</label>
-    </div>
-
-    <!-- Core Noise Filter Switch -->
-    <div style="display: inline-flex; align-items: center;">
-        <input type="checkbox" id="toggle-filter" onchange="loadEcgPipeline()" style="margin-right: 6px;">
-        <label for="toggle-filter" style="color: #5cc24a; font-weight: bold;">| apply_noise_filter</label>
-    </div>
-</div>
-
-
-    <!-- this Panel holds the Neurokit2 features -->
-    <div class="panel control-group">
-
-    <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">DSP USING NEUROKIT2 </label>
- 
- 
-        <div>
-            <input type="checkbox" id="pan_tompkins_using_nk2" onchange="loadEcgPipeline()">
-            <label for="pan_tompkins_using_nk2" style="color: #f1c40f;">| pan_tompkins_nk2 </label>
-        </div>
-    </div>
-
-
-
-    <!-- this panel holds the STATISTICAL FEATURES DSP methods and control -->
-    <div class="panel control-group">
-
-    <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">TIME-DOMAIN & HRV STATISTICS</label>
- 
- 
-        <div>
-            <input type="checkbox" id="toggle-poincare" onchange="loadEcgPipeline()">
-            <label for="toggle-poincare" style="color: #f1c40f;">| map_poincare</label>
-        </div>
-    </div>
-
+    csv_path = os.path.join(CACHE_DIR, "REFERENCE-v2.csv")
     
-    <!-- this panel holds the  DSP methods and control -->
-    <div class="panel control-group">
+    # Force download if the existing file is an HTML placeholder disguised as a CSV
+    if os.path.exists(csv_path):
+        with open(csv_path, "r", encoding="utf-8", errors="ignore") as test_f:
+            first_line = test_f.readline()
+            if "<!DOCTYPE" in first_line or "<html" in first_line:
+                print("\n[REGISTRY ENGINE] Detected corrupted HTML placeholder file. Purging cache...")
+                os.remove(csv_path)
 
-    <label style="color: #3498db; font-weight: bold; margin-right: 10px;">DSP TRANSFORMS & FILTERS </label>
+    if not os.path.exists(csv_path):
+        print("\n=======================================================")
+        print("[REGISTRY ENGINE] Fetching raw file matrix via download stream...")
+        print("=======================================================")
+        
+        # Using the direct download link to completely bypass the HTML landing portal
+        url = "https://physionet.org/files/challenge-2017/1.0.0/REFERENCE-v2.csv?download"
+        try:
+            opener = urllib.request.build_opener()
+            opener.addheaders = [
+                ('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+            ]
+            urllib.request.install_opener(opener)
+            urllib.request.urlretrieve(url, csv_path)
+            print("[REGISTRY ENGINE] Raw download stream pipe closed successfully.")
+        except Exception as e:
+            print(f"[REGISTRY ENGINE] CRITICAL ERROR: Failed downloading registry: {e}")
+            return
+
+    compiled_map = {"N": [], "A": [], "O": [], "~": []}
+    
+    total_raw_lines_in_file = 0
+    successfully_parsed_count = 0
+    skipped_or_malformed_count = 0
+    raw_sample_preview_lines = []
+
+    with open(csv_path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            total_raw_lines_in_file += 1
+            
+            if len(raw_sample_preview_lines) < 5:
+                raw_sample_preview_lines.append(line.replace("\n", "").replace("\r", ""))
+
+            clean_line = line.replace("\r", "").replace("\n", "").strip()
+            
+            if not clean_line or "," not in clean_line: 
+                skipped_or_malformed_count += 1
+                continue
+                
+            parts = clean_line.split(",", maxsplit=1)
+            record = parts[0].strip()
+            label = parts[1].strip()
+            
+            if "," in label:
+                label = label.split(",")[0].strip()
+
+            if label in compiled_map:
+                compiled_map[label].append(record)
+                successfully_parsed_count += 1
+            else:
+                skipped_or_malformed_count += 1
+
+    REGISTRY_CACHE = compiled_map
+
+##### Add logging for RCI  : After loading the site, dataset still shows zero samples of each class
+    print("\n" + "="*65)
+    print("         PHYSIONET CHALLENGE 2017 REGISTRY DATA LOG         ")
+    print("="*65)
+    print(f" [FILE METRICS]")
+    print(f"   -> Target Source Path:   {csv_path}")
+    print(f"   -> Total Lines Found:    {total_raw_lines_in_file} rows")
+    print(f"   -> Successfully Parsed:  {successfully_parsed_count} rows")
+    print(f"   -> Skipped / Ignored:    {skipped_or_malformed_count} rows")
+    print("-"*65)
+    
+    print(" [RAW FILE SAMPLES PREVIEW]")
+    for idx, raw_row in enumerate(raw_sample_preview_lines, 1):
+        print(f"   Row {idx} ->  \"{raw_row}\"")
+    print("-"*65)
+    
+    print(" [MEMORY CATEGORY ALLOCATIONS]")
+    for key, records in REGISTRY_CACHE.items():
+        class_name = {
+            "N": "Normal Sinus Rhythm (N)",
+            "A": "Atrial Fibrillation (A)",
+            "O": "Other Alternative (O)  ",
+            "~": "Too Noisy / Corrupt (~) "
+        }.get(key, key)
+        
+        pct = (len(records) / successfully_parsed_count * 100) if successfully_parsed_count > 0 else 0
+        preview_samples = records[:4]
+        
+        print(f"   -> {class_name} : {len(records):>4} items ({pct:>5.1f}%) | Samples: {preview_samples}")
+    print("="*65 + "\n")
+
+
+# Call on first time you visit the site 
+initialize_physionet_registry()
+
  
-        <div>
-            <input type="checkbox" id="toggle-local" onchange="loadEcgPipeline()">
-            <label for="toggle-local" style="color: #3498db;">| local_max_r_peaks</label>
-        </div>
-
-        <div>
-            <input type="checkbox" id="toggle-pan" onchange="loadEcgPipeline()">
-            <label for="toggle-pan" style="color: #eb7b2b;">| run_pan_tompkins</label>
-        </div>
-
-        <div>
-            <input type="checkbox" id="toggle-cancel" onchange="loadEcgPipeline()">
-            <label for="toggle-cancel" style="color: #e74c3c;">| cancel_qrst_complex</label>
-        </div>
-
-        <div>
-            <input type="checkbox" id="toggle-fft" onchange="loadEcgPipeline()">
-            <label for="toggle-fft" style="color: #9b59b6;">| calculate_spectrum_fft</label>
-        </div>
-
-        <div>
-            <input type="checkbox" id="toggle-wavelet" onchange="loadEcgPipeline()">
-            <label for="toggle-wavelet" style="color: #3498db;">| decompose_wavelets_db4</label>
-        </div>
-    </div>
-
-
-    </div>
-    <div class="panel">
-        <div id="chart-container" class="chart-frame"></div>
-    </div>
-
-    <div class="secondary-grid">
-        <div id="fft-panel" class="panel" style="display: none;">
-            <div id="fft-container" class="chart-frame"></div>
-        </div>
-
-        <div id="poincare-panel" class="panel" style="display: none;">
-            <div id="poincare-container" class="chart-frame"></div>
-        </div>
-    </div>
-
-    <div id="wavelet-panel" class="panel" style="display: none;">
-        <div id="wavelet-container" class="chart-frame" style="height: 500px;"></div>
-    </div>
-
-
-    <script>
-        /**
-         * Pulls matching sample IDs from the Flask registry slice endpoint
-         * and rebuilds the RECORDING selector automatically on modification.
-         */
-        function updateSampleDropdown() {
-            const chosenClass = document.getElementById('class-selector').value;
-
-            // hardcoded URL
-            //const registryUrl = `http://127.0.0.1:8080/api/v1/splunk/registry?class=${chosenClass}`;
-
-            // Need the url to be created and accessible dynamically if we're accessing it on the LAN via phone
-            const registryUrl = `/api/v1/splunk/registry?class=${chosenClass}`;
-
-            fetch(registryUrl)
-                .then(res => res.json())
-                .then(payload => {
-                    const recordMenu = document.getElementById('record-selector');
-                    recordMenu.innerHTML = ""; // Wipe previous entries cleanly
-
-                    // Inject the new batch of matching recordings
-                    payload.samples.forEach((rec, idx) => {
-                        if (idx < 100) { // Safety limit for fluid DOM execution
-                            const opt = document.createElement('option');
-                            opt.value = rec;
-                            opt.textContent = `${rec} (True: ${chosenClass})`;
-                            recordMenu.appendChild(opt);
-                        }
-                    });
-
-                    // CHAIN REACTION: Instantly pull vector calculations for the first child item
-                    loadEcgPipeline();
-                })
-                .catch(err => console.error("Error compilation failing on registry slice:", err));
-        }
-
-
-
-
-        function updateSampleDropdown() {
-            const chosenClass = document.getElementById('class-selector').value;
-            const registryUrl = `/api/v1/splunk/registry?class=${chosenClass}`;
-
-            fetch(registryUrl)
-                .then(res => res.json())
-                .then(payload => {
-                    const recordMenu = document.getElementById('record-selector');
-                    recordMenu.innerHTML = ""; // Wipe previous entries cleanly
-
-                    // Inject the new batch of matching recordings
-                    payload.samples.forEach((rec, idx) => {
-                        if (idx < 100) { // Safety limit for fluid DOM execution
-                            const opt = document.createElement('option');
-                            opt.value = rec;
-                            opt.textContent = `${rec} (True: ${chosenClass})`;
-                            recordMenu.appendChild(opt);
-                        }
-                    });
-
-                    // CHAIN REACTION: Instantly pull vector calculations for the first child item
-                    loadEcgPipeline();
-                })
-                .catch(err => console.error("Error compilation failing on registry slice:", err));
-        }
-
-        /**
-         * Fetches vector matrices from the active Flask stream API 
-         * and paints the resulting charts via Plotly.
-         */
-        function loadEcgPipeline() {
-            const recordId = document.getElementById('record-selector').value;
-            if (!recordId) return; // Guard clause if boot routine is active
-
-            const currentScale = document.getElementById('scale-selector').value;
-            const useFilter = document.getElementById('toggle-filter').checked;
-            const useLocal = document.getElementById('toggle-local').checked;
-            const usePan = document.getElementById('toggle-pan').checked;
-            const useCancel = document.getElementById('toggle-cancel').checked;
-            const usePoincare = document.getElementById('toggle-poincare').checked;
-            const useFft = document.getElementById('toggle-fft').checked;
-            const useWavelet = document.getElementById('toggle-wavelet').checked;
-            const forceManualFlip = document.getElementById('toggle-manual-flip').checked;
-            const usePanTompkinsWithNk2 = document.getElementById('pan_tompkins_using_nk2').checked;
-
-            // Manage conditional interface panel displays
-            document.getElementById('poincare-panel').style.display = usePoincare ? 'block' : 'none';
-            document.getElementById('fft-panel').style.display = useFft ? 'block' : 'none';
-            document.getElementById('wavelet-panel').style.display = useWavelet ? 'block' : 'none';
-
-            // FIXED: Synchronized matching variable references and cleanly mapped all toggles to URL query keys
-            //const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}`;
-
-            //Add Param to forcefully flip the signal manually.
-            //Add Pan TOmpkins using Neurokit2 Package. 
-            const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}&manual_flip=${forceManualFlip}&pan_tompkins_with_nk2=${usePanTompkinsWithNk2}`;
-
-
-            fetch(targetUrl)
-                .then(res => res.json())
-                .then(payload => {
-                    if (payload.error) return;
-
-
-
-
-                    const badge = document.getElementById('orientation-status-badge');
-                    if (badge && payload.orientation_status) {
-                        badge.textContent = `| hardware_status="${payload.orientation_status}"`;
-
-                        if (payload.is_inverted) {
-                            // Alert layout styling (Orange Warning Alert to flag an upside-down recording)
-                            badge.style.backgroundColor = 'rgba(235, 123, 43, 0.15)';
-                            badge.style.color = '#eb7b2b';
-                            badge.style.borderColor = '#eb7b2b';
-                        } else {
-                            // Normal operational layout styling (Green Operational confirmation)
-                            badge.style.backgroundColor = 'rgba(92, 194, 74, 0.15)';
-                            badge.style.color = '#5cc24a';
-                            badge.style.borderColor = '#5cc24a';
-                        }
-                    }
-                    // ========================================================
-
-
-
-
-                    const timeIndices = payload.data.map((_, i) => i);
-
-                    // Trace 1: Core Timeline Matrix Line
-                    const baseTrace = {
-                        x: timeIndices, y: payload.data,
-                        type: 'scatter', mode: 'lines',
-                        name: useCancel ? 'Residual Atrial Wave' : 'ECG Signal',
-                        line: { color: useCancel ? '#e74c3c' : (useFilter ? '#2ecc71' : '#4c566a'), width: 1.4 }
-                    };
-                    const mainTraces = [baseTrace];
-
-                    // Trace 2: Standard Peak Locations
-                    if (useLocal && !useCancel && payload.local_r_peaks) {
-                        mainTraces.push({
-                            x: payload.local_r_peaks,
-                            y: payload.local_r_peaks.map(idx => payload.data[idx]),
-                            type: 'scatter', mode: 'markers', name: 'R Peaks',
-                            marker: { color: '#3498db', size: 10, symbol: 'diamond' }
-                        });
-                    }
-
-                    // Trace 3: Full Pan-Tompkins Segment Mapping
-                    if (usePan && !useCancel && payload.features) {
-                        const waveConfig = [
-                            { key: 'P', color: '#1abc9c', name: 'P-Wave' },
-                            { key: 'Q', color: '#f1c40f', name: 'Q-Dip' },
-                            { key: 'R', color: '#eb7b2b', name: 'R-Apex' },
-                            { key: 'S', color: '#e74c3c', name: 'S-Dip' },
-                            { key: 'T', color: '#9b59b6', name: 'T-Wave' }
-                        ];
-                        waveConfig.forEach(cfg => {
-                            const indices = payload.features[cfg.key];
-                            if (indices && indices.length > 0) {
-                                mainTraces.push({
-                                    x: indices,
-                                    y: indices.map(idx => payload.data[idx]),
-                                    type: 'scatter', mode: 'markers', name: cfg.name,
-                                    marker: { color: cfg.color, size: 8 }
-                                });
-                            }
-                        });
-                    }
-
-
-                    // Trace 3: Full Pan-Tompkins Segment Mapping using NeuroKit2
-                    if (usePanTompkinsWithNk2 && !useCancel && payload.features_using_nk2) {
-                        const waveConfig = [
-                            { key: 'P_nk2', color: '#1abc9c', name: 'P-Wave_NK2' },
-                            { key: 'Q_nk2', color: '#f1c40f', name: 'Q-Dip_NK2' },
-                            { key: 'R_nk2', color: '#eb7b2b', name: 'R-Apex_NK2' },
-                            { key: 'S_nk2', color: '#e74c3c', name: 'S-Dip_NK2' },
-                            { key: 'T_nk2', color: '#9b59b6', name: 'T-Wave_NK2' }
-                        ];
-                        waveConfig.forEach(cfg => {
-                            const indices = payload.features_using_nk2[cfg.key];
-                            if (indices && indices.length > 0) {
-                                mainTraces.push({
-                                    x: indices,
-                                    y: indices.map(idx => payload.data[idx]),
-                                    type: 'scatter', mode: 'markers', name: cfg.name,
-                                    marker: { color: cfg.color, size: 8 }
-                                });
-                            }
-                        });
-                    }
-
-
-                    // Render Graph 1
-                    const mainLayout = {
-                        paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
-                        font: { color: '#f2f4f8', family: 'monospace' },
-                        title: `Pipeline Execution: index="ecg" | record_id="${recordId}"`,
-                        dragmode: 'zoom',
-                        hovermode: 'x', // <--- Combines all trace data on this X coordinate into a single tooltip card
-                        xaxis: {
-                            title: 'Samples (300 Hz)',
-                            gridcolor: '#2e3440',
-                            showspikes: true,             // <--- Enable the vertical cursor line
-                            spikemode: 'across+marker',   // <--- Draw it all the way across the grid canvas
-                            spikethickness: 1,
-                            spikedash: 'solid',
-                            spikecolor: '#a3be8c'         // <--- Sleek green crosshair line (or change to match your theme)
-                        },
-                        //xaxis: { title: 'Samples (300 Hz)', gridcolor: '#2e3440' },
-                        yaxis: { title: 'Voltage (mV)', gridcolor: '#2e3440' }
-                    };
-                    Plotly.newPlot('chart-container', mainTraces, mainLayout);
-
-                    // Render Graph 2 (FFT Power Spectrum)
-                    if (useFft && payload.fft && payload.fft.frequencies) {
-                        const fftTrace = {
-                            x: payload.fft.frequencies, y: payload.fft.magnitudes,
-                            type: 'scatter', mode: 'lines', name: 'Power Spectrum',
-                            line: { color: '#9b59b6', width: 1.8 },
-                            fill: 'tozeroy', fillcolor: 'rgba(155, 89, 182, 0.15)'
-                        };
-                        const fftLayout = {
-                            paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
-                            font: { color: '#f2f4f8', family: 'monospace' },
-                            title: useCancel ? `| FFT Spectral Density (Isolated Atrial Base)` : `| FFT Spectral Density (Raw Signal Mix)`,
-                            xaxis: { title: 'Frequency (Hz)', gridcolor: '#2e3440', range: [2, 25] },
-                            yaxis: { title: 'Magnitude Amplitude', gridcolor: '#2e3440' }
-                        };
-                        Plotly.newPlot('fft-container', [fftTrace], fftLayout);
-                    }
-
-                    // Render Graph 3 (Poincaré Scatter Mapping)
-                    if (usePoincare && payload.poincare && payload.poincare.x.length > 0) {
-                        const scatterTrace = {
-                            x: payload.poincare.x, y: payload.poincare.y,
-                            type: 'scatter', mode: 'markers', name: 'Interval Matrix',
-                            marker: { color: '#eb7b2b', size: 8, opacity: 0.7 }
-                        };
-                        const maxVal = Math.max(...payload.poincare.x, ...payload.poincare.y, 1100);
-                        const minVal = Math.min(...payload.poincare.x, ...payload.poincare.y, 400);
-                        const identityLine = {
-                            x: [minVal, maxVal], y: [minVal, maxVal],
-                            type: 'scatter', mode: 'lines', name: 'Identity (y=x)',
-                            line: { color: '#4c566a', width: 1, dash: 'dash' }, hoverinfo: 'none'
-                        };
-                        const poincareLayout = {
-                            paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
-                            font: { color: '#f2f4f8', family: 'monospace' },
-                            title: `| stats Poincaré  map calculated=true`,
-                            xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
-                            yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] }
-                        };
-                        Plotly.newPlot('poincare-container', [scatterTrace, identityLine], poincareLayout);
-                    }
-
-                    // Render Graph 4 (Wavelet decomposition plot)
-                    if (useWavelet && payload.wavelets && Object.keys(payload.wavelets).length > 0) {
-                        console.log("Wavelet data successfully delivered in the main payload!");
-
-                        const waveletTraces = [];
-
-                        // FIXED: Removed the duplicate 'const' declaration to reuse the existing timeIndices mapping cleanly
-                        const waveletTimeIndices = payload.wavelets.baseline_wander_A5.map((_, idx) => idx);
-
-                        const baselineWander = payload.wavelets.baseline_wander_A5;
-                        const highFreqNoise = payload.wavelets.detail_band_D1;
-                        const D2 = payload.wavelets.detail_band_D2;
-                        const qrsComplexPeaks = payload.wavelets.detail_band_D3;
-                        const D4 = payload.wavelets.detail_band_D4;
-                        const D5 = payload.wavelets.detail_band_D5;
-
-                        // Plot D1 (High frequency noise/sharp R transitions)
-                        waveletTraces.push({
-                            x: waveletTimeIndices, y: highFreqNoise,
-                            type: 'scatter', mode: 'lines', name: 'D1:High-Freq Buzz',
-                            line: { width: 1, color: '#e74c3c' }
-                        });
-
-                        // Plot D2  
-                        waveletTraces.push({
-                            x: waveletTimeIndices, y: D2,
-                            type: 'scatter', mode: 'lines', name: 'D2:D2-Something',
-                            line: { width: 1, color: '#b64bf4' }
-                        });
-
-                        // Plot D3 (Main QRS complex anatomical physical velocity)
-                        waveletTraces.push({
-                            x: waveletTimeIndices, y: qrsComplexPeaks,
-                            type: 'scatter', mode: 'lines', name: 'D3:QRS R-Peaks',
-                            line: { width: 1.2, color: '#2ecc71' }
-                        });
-
-                        // Plot D4  
-                        waveletTraces.push({
-                            x: waveletTimeIndices, y: D4,
-                            type: 'scatter', mode: 'lines', name: 'D4:D4-Something',
-                            line: { width: 1, color: '#e74c3c' }
-                        });
-
-                        // Plot D5  
-                        waveletTraces.push({
-                            x: waveletTimeIndices, y: D5,
-                            type: 'scatter', mode: 'lines', name: 'D5:D5-Something',
-                            line: { width: 1, color: '#ff7200' }
-                        });
-
-                        // Plot A5 (The rolling slow baseline drift)
-                        waveletTraces.push({
-                            x: waveletTimeIndices, y: baselineWander,
-                            type: 'scatter', mode: 'lines', name: 'A5:Baseline Wander',
-                            line: { width: 1.5, dash: 'dot', color: '#f1c40f' }
-                        });
-
-                        const waveletLayout = {
-                            paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
-                            font: { color: '#f2f4f8', family: 'monospace' },
-                            title: 'Wavelet Sub-Band Decomposition (| multi_level_dwt mode="db4")',
-                            dragmode: 'zoom',
-                            hovermode: 'x', // <--- Combines all 6 sub-band traces into a unified tooltip display
-                            xaxis: {
-                                title: 'Samples',
-                                gridcolor: '#2e3440',
-                                showspikes: true,             // <--- Enable the vertical cursor line
-                                spikemode: 'across+marker',   // <--- Draw it across the sub-bands
-                                spikethickness: 1,
-                                spikedash: 'solid',
-                                spikecolor: '#a3be8c'         // <--- Keeps the crosshair line color uniform
-                            },
-
-                            //xaxis: { title: 'Samples', gridcolor: '#2e3440' },
-                            yaxis: { title: 'Reconstructed Voltage', gridcolor: '#2e3440' },
-                            legend: { orientation: 'h', y: -0.2 }
-                        };
-
-                        Plotly.newPlot('wavelet-container', waveletTraces, waveletLayout);
-                    }
-
-                    if (useWavelet) {
-                        synchronizeCharts('chart-container', 'wavelet-container');
-                        synchronizeCharts('wavelet-container', 'chart-container');
-                    }
-
-
-                })
-                .catch(err => console.error("Error executing unified stream pipeline:", err));
-        }
-
-
-        /**
-                 * Binds cross-chart sync routines on mouse interaction and zoom loops.
-                 * Includes an operational guard flag to prevent recursive infinite loops.
-                 */
-        let isSyncing = false; // Guard flag to prevent infinite zoom loops
-
-        function synchronizeCharts(chartId1, chartId2) {
-            const chart1 = document.getElementById(chartId1);
-            const chart2 = document.getElementById(chartId2);
-
-            if (!chart1 || !chart2 || !chart1.data || !chart2.data) return;
-
-            // ==========================================
-            // 1. HOVER SYNCHRONIZATION
-            // ==========================================
-            chart1.on('plotly_hover', function (eventData) {
-                if (!eventData || !eventData.points || eventData.points.length === 0) return;
-
-                const xVal = eventData.points[0].x;
-                const targetTraces = chart2.data.map((_, index) => {
-                    return { curveNumber: index, xval: xVal };
-                });
-
-                Plotly.Fx.hover(chart2, targetTraces, ['xy']);
-            });
-
-            chart1.on('plotly_unhover', function () {
-                Plotly.Fx.hover(chart2, []);
-            });
-
-            // ==========================================
-            // 2. ZOOM & PAN SYNCHRONIZATION (New)
-            // ==========================================
-            chart1.on('plotly_relayout', function (eventData) {
-                // If we are already in a synchronization loop, break out immediately
-                if (isSyncing) return;
-
-                // Check if the event contains X-axis zoom/pan range changes
-                if (eventData['xaxis.range[0]'] !== undefined || eventData['xaxis.autorange'] !== undefined) {
-                    isSyncing = true; // Set guard
-
-                    let updatePayload = {};
-
-                    if (eventData['xaxis.autorange'] === true) {
-                        // User double-clicked to reset zoom
-                        updatePayload = { 'xaxis.autorange': true };
-                    } else {
-                        // User dragged a box to zoom into a slice
-                        updatePayload = {
-                            'xaxis.range[0]': eventData['xaxis.range[0]'],
-                            'xaxis.range[1]': eventData['xaxis.range[1]']
-                        };
-                    }
-
-                    // Update the target chart layout and turn off the guard flag when complete
-                    Plotly.relayout(chart2, updatePayload).then(() => {
-                        isSyncing = false;
-                    });
-                }
-            });
-        }
-
-
-        // Automatic boot execution when HTML layer finishes initializing
-        document.addEventListener("DOMContentLoaded", () => {
-            updateSampleDropdown();
-        });
-    </script>
-
-</body>
-
-</html>
+@app.route('/api/v1/splunk/registry')
+def get_registry_slice():
+    """
+    Returns lists of matching sample IDs based on a requested target class
+    """
+    target_class = request.args.get('class', 'N').upper()
+    
+    # DEBUG PRINT 1: See if the frontend is actually reaching the backend
+    print(f"\n[BACKEND] Frontend requested recordings for class: '{target_class}'")
+    
+    # DEBUG PRINT 2: Check if your global dictionary is completely empty
+    print(f"[BACKEND] Current REGISTRY_CACHE keys available: {list(REGISTRY_CACHE.keys())}")
+    
+    if target_class not in REGISTRY_CACHE:
+        print(f"[BACKEND] ERROR: '{target_class}' not found in cache keys.")
+        return jsonify({"error": "Invalid class. Choose N, A, O, or ~"}), 400
+        
+    samples_list = REGISTRY_CACHE[target_class]
+    
+    # DEBUG PRINT 3: See how many files Python actually found for that label
+    print(f"[BACKEND] Success! Found {len(samples_list)} records for class '{target_class}'")
+    print(f"[BACKEND] First 5 samples being sent: {samples_list[:5]}")
+    
+    return jsonify({
+        "class": target_class,
+        "count": len(samples_list),
+        "samples": samples_list
+    })
+###################### the code for managing Physionet IO ends here ######################
+ 
+
+#deafult app route 
+@app.route('/')
+def index():
+    return send_from_directory('static', 'index.html')
+
+#route to goto the physionet web site and fetch the actual recording  
+@app.route('/api/v1/splunk/stream')
+def stream_ecg():
+    record_id = request.args.get('record', 'A01000')
+    
+    # Grab all command toggles out of our HTTP parameters
+
+    #the control for signal processing are set by selecting the radio buttoms on the top of the code
+    enable_filter = request.args.get('filter', 'false').lower() == 'true'    # simple filter
+    enable_local_r = request.args.get('local_r', 'false').lower() == 'true'  # get peaks from the signal 
+    enable_pan = request.args.get('pan_tompkins', 'false').lower() == 'true' # run pan-tompkins algo to get QRS, P and T points - still a crude code 
+    enable_poincare = request.args.get('poincare', 'false').lower() == 'true' # poincarne plots 
+    enable_fft = request.args.get('fft', 'false').lower() == 'true' # FFT for the sample
+    enable_cancel = request.args.get('cancel', 'false').lower() == 'true' # QRST Cancellation function 
+    use_wavelet = request.args.get('wavelet', 'false').lower() == 'true'
+    use_pan_tompkins_with_nk2 = request.args.get('pan_tompkins_with_nk2', 'false').lower() == 'true' # Pan-tompkins but within neurokit 2 package
+ 
+    #  TIMELINE SCALE TOGGLE PARAMETER
+    timeline_scale = request.args.get('scale', 'short').lower() # 'short' or 'full'
+
+
+    txt_filename = os.path.join(CACHE_DIR, f"{record_id}.txt")
+
+    if not os.path.exists(txt_filename):
+        print(f"Cache version of the fie :{txt_filename} - NOT FOUND, Downloading from Physionet Now")
+        folder_prefix = record_id[:3]
+
+        # sending a request to the pjysionet website to get the sample for us
+        url = f"https://physionet.org/files/challenge-2017/1.0.0/training/{folder_prefix}/{record_id}.mat?download"
+        try:
+            opener = urllib.request.build_opener()
+            opener.addheaders = [('User-Agent', 'Mozilla/5.0')]
+            urllib.request.install_opener(opener)
+            temp_mat = f"temp_{record_id}.mat"
+            urllib.request.urlretrieve(url, temp_mat)
+            mat_data = scipy.io.loadmat(temp_mat)
+            with open(txt_filename, "w") as f:
+                f.write("\n".join(map(str, mat_data['val'][0])))
+            os.remove(temp_mat)
+        except Exception as e:
+            return jsonify({"error": str(e)})
+
+    # 1. Read base signal matrix
+    raw_units = np.loadtxt(txt_filename)
+    signal_values = raw_units / 1000.0
+    
+    # Grab the manual override parameter from the incoming HTTP request URL
+    force_manual_flip = request.args.get('manual_flip', 'false').lower() == 'true'
+
+
+    # =========================================================================
+    # INJECTED: AUTOMATIC HARDWARE INVERSION DETECTION & RECTIFICATION
+    # =========================================================================
+    # We pass the full array to evaluate the orientation before slicing or filtering.
+    algo_detected_inversion  = is_device_inverted(signal_values, sampling_rate=300.0)
+    
+
+    # Core Decision Rule: Flip if algo says so OR if user forces it
+    # CRITICAL: If BOTH are true (Algo detected it AND User forces a flip), they cancel out.
+    # We use a logical XOR (not equal) so checking the box always acts as a "Reverse Current State" switch.
+    should_flip = algo_detected_inversion  != force_manual_flip
+ 
+    if should_flip:
+        signal_values = flip_ecg_sample(signal_values)
+        
+        # the below if-else blocks ae just meant to sent the status to the view
+        if force_manual_flip and not algo_detected_inversion:
+            inversion_status = "Manual Inversion Applied (User Override)"
+            is_inverted_payload = True
+        elif force_manual_flip and algo_detected_inversion:
+            # The algorithm automatically flipped it, but user wants it back the other way
+            inversion_status    = "Original Polarity Restored (User Override)"
+            is_inverted_payload = False
+        else:
+            inversion_status = "Inversion Correction Applied"
+            is_inverted_payload = True
+    else:
+        is_inverted_payload = False
+        if force_manual_flip and algo_detected_inversion:
+            inversion_status = "Original Polarity Restored (User Override)"
+        else:
+            inversion_status = "Normal Orientation Verified"
+    # =========================================================================
+     
+     
+        
+    # 2. Extract full mathematical background buffer (30 seconds)
+    long_signal = signal_values[:9000]
+    
+    # 3. Dynamically set the visual timeline stream length based on the UI switch
+    if timeline_scale == 'full':
+        timeline_signal = signal_values[:9000] # Show full 30 seconds
+    else:
+        timeline_signal = signal_values[:2500] # Default to clean 8.3-second zoom
+    
+    processed_signal = timeline_signal.copy()
+    
+    local_r_indices = []
+    features = {"P": [], "Q": [], "R": [], "S": [], "T": []}
+    poincare_data = {"x": [], "y": []}
+    fft_data = {"frequencies": [], "magnitudes": []}
+    wavelet_data = {}  # simpler design 
+    features_Nk2 = {'P_nk2':[],
+                    'Q_nk2':[],
+                    'R_nk2':[],
+                    'S_nk2':[],
+                    'T_nk2':[]}
+
+
+ 
+    # 3. Apply Noise Filter FIRST if requested
+    if enable_filter:
+        processed_signal = apply_noise_filter(processed_signal)
+        long_signal = apply_noise_filter(long_signal) # Filter long signal to keep math clean
+
+    # 4. Now extract features from the clean, filtered timeline signal
+    if enable_local_r:
+        # the function developed earlier for detection of R peaks 
+        #local_r_indices = detect_local_max_r_peaks(processed_signal)
+        
+        #trying neurokit's fucntino to see if R detection is any better than our standard algorithm
+        signals, info = nk.ecg_process(processed_signal, sampling_rate=300) # ask NK2's ecg_process to pre-process the signal 
+        
+        raw_peaks = info.get("ECG_R_Peaks")  # get r-peaks but ths time using Nk2's method
+        local_r_indices = raw_peaks.tolist() if raw_peaks is not None else [] # convert to a list so that the design is consisent with the remaining puipeline
+
+    if enable_pan:
+        features = run_pan_tompkins_segmentation(processed_signal)
+
+    if use_pan_tompkins_with_nk2:
+        features_Nk2 = run_pan_tompkins_segmentation_nk2(processed_signal)
+
+    # 5. Handle Advanced QRST Cancellation on the timeline signal
+    if enable_cancel:
+        # Run peak detection on the current state of the timeline signal
+        r_peaks_for_cancel = run_pan_tompkins_segmentation(processed_signal)["R"]
+        processed_signal = apply_qrst_cancellation(processed_signal, r_peaks_for_cancel)
+
+    # 6. Calculate Poincaré using the high-density long signal
+    if enable_poincare:
+        long_peaks = detect_local_max_r_peaks(long_signal)
+        if len(long_peaks) > 1:
+            rr_intervals_ms = (np.diff(long_peaks) / 300.0) * 1000.0
+            if len(rr_intervals_ms) > 1:
+                poincare_data["x"] = rr_intervals_ms[:-1].tolist()
+                poincare_data["y"] = rr_intervals_ms[1:].tolist()
+        print(f"Sample ID: {request.args.get('id')} | Total Beats: {len(poincare_data['x'])} | First 3 RR intervals: {poincare_data['x'][:3]}")
+
+
+    # 7. Calculate FFT using the long signal for beautiful frequency resolution
+    if enable_fft:
+        # If cancellation is also active, cancel QRST on the long signal first so the FFT isolates f-waves!
+        if enable_cancel:
+            long_peaks_for_cancel = run_pan_tompkins_segmentation_nk2(long_signal)["R"]
+            fft_target = apply_qrst_cancellation(long_signal, long_peaks_for_cancel)
+        else:
+            fft_target = long_signal
+            
+        fft_data = calculate_signal_fft(fft_target)
+
+# 8. Inject the wavelet matrices if requested
+    if use_wavelet:
+        print(f"\n[DIAGNOSTIC] Wavelet Toggle Triggered! Decomposing signal of length: {len(processed_signal)}")
+        
+        wavelet_results = compute_wavelet_decomposition(processed_signal)
+        
+        if wavelet_results["success"]:
+            wavelet_data = wavelet_results["bands"]
+            
+            # --- ADD THIS PRINT BLOCK TO TEST BACKEND DATA ---
+            print("[DIAGNOSTIC] DWT Computation Successful!")
+            print(f"  - Available keys: {list(wavelet_data.keys())}")
+            if "baseline_wander_A5" in wavelet_data:
+                sample_slice = wavelet_data["baseline_wander_A5"][:5]
+                print(f"  - Baseline Wander A5 Sample Array (First 5 points): {sample_slice}")
+                print(f"  - Total array length being sent: {len(wavelet_data['baseline_wander_A5'])}")
+            else:
+                print("  - WARNING: Expected keys are missing from the bands object!")
+            # ------------------------------------------------
+            
+        else:
+            print(f"[DIAGNOSTIC] DWT Computation FAILED! Error: {wavelet_results.get('error')}")
+
+    return jsonify({
+        "metric": record_id,
+        "orientation_status": inversion_status,     # this simple hold the message of the orientation status
+        "is_inverted": is_inverted_payload,         # This is the flag that actually asks the UI to flip the signal
+        "data": processed_signal.tolist(),
+        "local_r_peaks": local_r_indices,
+        "features": features,
+        "features_using_nk2":features_Nk2, # pan tompkins but using nk2 instead of our custom function
+        "poincare": poincare_data,
+        "fft": fft_data,
+        "wavelets": wavelet_data
+    })
+
+#    # Return payload now contains the inversion tracking state
+#    return jsonify({
+#        "metric": record_id,
+#        "orientation_status": inversion_status,
+#        "algo_detected_inversion ": algo_detected_inversion ,
+#        "data": processed_signal.tolist(),
+#        "local_r_peaks": local_r_indices,
+#        "features": features,
+#        "poincare": poincare_data,
+#        "fft": fft_data,
+#        "wavelets": wavelet_data
+
+#        "orientation_status": inversion_status,
+#        "is_inverted": is_inverted_payload, #
+
+#    })
+
+
+# think of it as the main() function of this web-sites programs  
+if __name__ == '__main__':
+    # run  the app on the entire LAN, site is accessible by Phone/Tablets/etc any device on the same WiFi 
+    app.run(host='0.0.0.0', port=8080, debug=True)
+    
+    # Run the app only on the local machine
+    #app.run(port=8080, debug=True)
+
+
+ 
