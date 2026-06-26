@@ -143,6 +143,25 @@
 
 <body>
 
+   <!-- 
+<div class="panel">
+  
+    <h3 style="color: #eb7b2b; margin-top: 0; font-size: 14px; border-bottom: 1px solid #2e3440; padding-bottom: 5px; font-family: monospace;">
+        | METRIC // REFERENCE_ANIMATION_STREAM
+    </h3>
+    -->
+
+    <!--
+    <div style="display: flex; justify-content: left; align-items: left; padding: 10px; background-color: #121418; border-radius: 4px;">
+          
+        
+        <img src="/static/images/gta_vice_city_text.gif"  alt="ECG Reference Waveform Animation" 
+             style="max-width: 100%; height: auto; border-radius: 4px; opacity: 0.85; border: 1px solid #2e3440;">
+    </div>
+</div>
+-->
+
+
     <h2>Splunk Pipeline Studio: index="ecg_telemetry"</h2>
     <!-- This Panel holds the ECG sample IO from the physionet site-->
     <div class="panel control-group">
@@ -170,28 +189,66 @@
                 <option value="full">Full Stream (30.0s)</option>
             </select>
         </div>
+    </div>
 
 
-    <div class="hardware-module">
-        <div id="orientation-status-badge" style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a;">
-            Checking Hardware Status...
-        </div>
+    <!-- This panel controls the signal preprocessing elements like noise removal, signal flipping, etc -->
+<div class="panel control-group">
+    <!-- Section Heading Label -->
+    <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">SIGNAL PREPROCESSING:</label>
+ 
+    <!-- Unified Hardware Status Badge -->
+    <div id="orientation-status-badge"
+        style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block;">
+        Checking Hardware Status...
+    </div>
 
+    <!-- Manual Force Toggle Switch -->
+    <div style="display: inline-flex; align-items: center;">
+        <input type="checkbox" id="toggle-manual-flip" onchange="loadEcgPipeline()" style="margin-right: 6px;">
+        <label for="toggle-manual-flip" style="color: #f2994a; font-weight: bold;">| force_manual_flip</label>
+    </div>
+
+    <!-- Core Noise Filter Switch -->
+    <div style="display: inline-flex; align-items: center;">
+        <input type="checkbox" id="toggle-filter" onchange="loadEcgPipeline()" style="margin-right: 6px;">
+        <label for="toggle-filter" style="color: #5cc24a; font-weight: bold;">| apply_noise_filter</label>
+    </div>
+</div>
+
+
+    <!-- this Panel holds the Neurokit2 features -->
+    <div class="panel control-group">
+
+    <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">DSP USING NEUROKIT2 </label>
+ 
+ 
         <div>
-            <input type="checkbox" id="toggle-manual-flip" onchange="loadEcgPipeline()">
-            <label for="toggle-manual-flip" style="color: #f2994a; font-weight: bold;">| force_manual_flip</label>
+            <input type="checkbox" id="pan_tompkins_using_nk2" onchange="loadEcgPipeline()">
+            <label for="pan_tompkins_using_nk2" style="color: #f1c40f;">| pan_tompkins_nk2 </label>
         </div>
     </div>
+
+
+
+    <!-- this panel holds the STATISTICAL FEATURES DSP methods and control -->
+    <div class="panel control-group">
+
+    <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">TIME-DOMAIN & HRV STATISTICS</label>
+ 
+ 
+        <div>
+            <input type="checkbox" id="toggle-poincare" onchange="loadEcgPipeline()">
+            <label for="toggle-poincare" style="color: #f1c40f;">| map_poincare</label>
+        </div>
     </div>
 
     
-     <!-- this panel holds the DSP methods and control -->
+    <!-- this panel holds the  DSP methods and control -->
     <div class="panel control-group">
-        <div>
-            <input type="checkbox" id="toggle-filter" onchange="loadEcgPipeline()">
-            <label for="toggle-filter" style="color: #5cc24a;">| apply_noise_filter</label>
-        </div>
 
+    <label style="color: #3498db; font-weight: bold; margin-right: 10px;">DSP TRANSFORMS & FILTERS </label>
+ 
         <div>
             <input type="checkbox" id="toggle-local" onchange="loadEcgPipeline()">
             <label for="toggle-local" style="color: #3498db;">| local_max_r_peaks</label>
@@ -208,11 +265,6 @@
         </div>
 
         <div>
-            <input type="checkbox" id="toggle-poincare" onchange="loadEcgPipeline()">
-            <label for="toggle-poincare" style="color: #f1c40f;">| map_poincare</label>
-        </div>
-
-        <div>
             <input type="checkbox" id="toggle-fft" onchange="loadEcgPipeline()">
             <label for="toggle-fft" style="color: #9b59b6;">| calculate_spectrum_fft</label>
         </div>
@@ -222,6 +274,7 @@
             <label for="toggle-wavelet" style="color: #3498db;">| decompose_wavelets_db4</label>
         </div>
     </div>
+
 
     </div>
     <div class="panel">
@@ -325,6 +378,7 @@
             const useFft = document.getElementById('toggle-fft').checked;
             const useWavelet = document.getElementById('toggle-wavelet').checked;
             const forceManualFlip = document.getElementById('toggle-manual-flip').checked;
+            const usePanTompkinsWithNk2 = document.getElementById('pan_tompkins_using_nk2').checked;
 
             // Manage conditional interface panel displays
             document.getElementById('poincare-panel').style.display = usePoincare ? 'block' : 'none';
@@ -334,8 +388,9 @@
             // FIXED: Synchronized matching variable references and cleanly mapped all toggles to URL query keys
             //const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}`;
 
-            //Add Param to forcefully flip the signal manually. 
-            const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}&manual_flip=${forceManualFlip}`;
+            //Add Param to forcefully flip the signal manually.
+            //Add Pan TOmpkins using Neurokit2 Package. 
+            const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}&manual_flip=${forceManualFlip}&pan_tompkins_with_nk2=${usePanTompkinsWithNk2}`;
 
 
             fetch(targetUrl)
@@ -409,6 +464,30 @@
                             }
                         });
                     }
+
+
+                    // Trace 3: Full Pan-Tompkins Segment Mapping using NeuroKit2
+                    if (usePanTompkinsWithNk2 && !useCancel && payload.features_using_nk2) {
+                        const waveConfig = [
+                            { key: 'P_nk2', color: '#1abc9c', name: 'P-Wave_NK2' },
+                            { key: 'Q_nk2', color: '#f1c40f', name: 'Q-Dip_NK2' },
+                            { key: 'R_nk2', color: '#eb7b2b', name: 'R-Apex_NK2' },
+                            { key: 'S_nk2', color: '#e74c3c', name: 'S-Dip_NK2' },
+                            { key: 'T_nk2', color: '#9b59b6', name: 'T-Wave_NK2' }
+                        ];
+                        waveConfig.forEach(cfg => {
+                            const indices = payload.features_using_nk2[cfg.key];
+                            if (indices && indices.length > 0) {
+                                mainTraces.push({
+                                    x: indices,
+                                    y: indices.map(idx => payload.data[idx]),
+                                    type: 'scatter', mode: 'markers', name: cfg.name,
+                                    marker: { color: cfg.color, size: 8 }
+                                });
+                            }
+                        });
+                    }
+
 
                     // Render Graph 1
                     const mainLayout = {
