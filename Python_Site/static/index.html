@@ -14,6 +14,22 @@
             margin: 20px;
         }
 
+        .inline-cite {
+            color: #88c0d0;
+            /* Bright clean ice-blue for interface links */
+            font-family: monospace;
+            font-size: 13px;
+            text-decoration: none;
+            border-bottom: 1px dashed #4c566a;
+            white-space: nowrap;
+        }
+
+        .inline-cite:hover {
+            color: #f2f4f8;
+            border-bottom: 1px solid #88c0d0;
+        }
+
+
         h2 {
             color: #eb7b2b;
             border-bottom: 2px solid #2e3440;
@@ -53,7 +69,7 @@
 
         .chart-frame {
             width: 100%;
-            height: 450px;
+            height: 500px;
         }
 
         .secondary-grid {
@@ -69,6 +85,70 @@
             flex-wrap: wrap;
             align-items: center;
             gap: 20px;
+        }
+
+
+        .panel-footer-cite {
+            width: 100%;
+            margin-top: 10px;
+            font-size: 11px;
+            color: #4c566a;
+            font-family: monospace;
+            border-top: 1px solid #2e3440;
+            padding-top: 8px;
+        }
+
+        .panel-footer-cite a {
+            color: #eb7b2b;
+            text-decoration: none;
+        }
+
+        .panel-footer-cite a:hover {
+            text-decoration: underline;
+        }
+
+        .panel-footer-cite-grid {
+            width: 100%;
+            margin-top: 15px;
+            padding-top: 12px;
+            border-top: 1px dashed #2e3440;
+            /* Clean separation line */
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+        }
+
+        .cite-node {
+            display: flex;
+            flex-direction: column;
+            /* Stack label above link for a terminal feel */
+            gap: 4px;
+        }
+
+        .cite-label {
+            font-size: 10px;
+            color: #4c566a;
+            /* Subtle muted gray */
+            font-family: monospace;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+        }
+
+        .cite-link {
+            font-size: 12px;
+            color: #88c0d0;
+            /* Crisp ice-blue link color */
+            font-family: monospace;
+            text-decoration: none;
+            width: fit-content;
+            border-bottom: 1px dotted transparent;
+            transition: all 0.2s ease;
+        }
+
+        .cite-link:hover {
+            color: #f2f4f8;
+            border-bottom: 1px dotted #88c0d0;
+            /* Subtle underline on hover */
         }
 
         /* A dedicated wrapper that permanently bonds the status text to its override switch */
@@ -143,7 +223,7 @@
 
 <body>
 
-   <!-- 
+    <!-- 
 <div class="panel">
   
     <h3 style="color: #eb7b2b; margin-top: 0; font-size: 14px; border-bottom: 1px solid #2e3440; padding-bottom: 5px; font-family: monospace;">
@@ -164,6 +244,8 @@
 
     <h2>Splunk Pipeline Studio: index="ecg_telemetry"</h2>
     <!-- This Panel holds the ECG sample IO from the physionet site-->
+
+
     <div class="panel control-group">
 
         <div>
@@ -189,40 +271,54 @@
                 <option value="full">Full Stream (30.0s)</option>
             </select>
         </div>
+
+        <!-- NEW INLINE SOURCE BADGE -->
+        <div class="hardware-module">
+            <span style="font-size: 11px; color: #4c566a; font-family: monospace;">REF:</span>
+            <a href="https://physionet.org" target="_blank" class="inline-cite">
+                physionet.org ↗
+            </a>
+        </div>
+
+        <div class="panel-footer-cite">
+            Data provided by PhysioNet Challenge 2017. DOI: <a href="https://doi.org"
+                target="_blank">10.13026/C2K35R</a>
+        </div>
+
     </div>
 
 
     <!-- This panel controls the signal preprocessing elements like noise removal, signal flipping, etc -->
-<div class="panel control-group">
-    <!-- Section Heading Label -->
-    <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">SIGNAL PREPROCESSING:</label>
- 
-    <!-- Unified Hardware Status Badge -->
-    <div id="orientation-status-badge"
-        style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block;">
-        Checking Hardware Status...
-    </div>
+    <div class="panel control-group">
+        <!-- Section Heading Label -->
+        <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">SIGNAL PREPROCESSING:</label>
 
-    <!-- Manual Force Toggle Switch -->
-    <div style="display: inline-flex; align-items: center;">
-        <input type="checkbox" id="toggle-manual-flip" onchange="loadEcgPipeline()" style="margin-right: 6px;">
-        <label for="toggle-manual-flip" style="color: #f2994a; font-weight: bold;">| force_manual_flip</label>
-    </div>
+        <!-- Unified Hardware Status Badge -->
+        <div id="orientation-status-badge"
+            style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block;">
+            Checking Hardware Status...
+        </div>
 
-    <!-- Core Noise Filter Switch -->
-    <div style="display: inline-flex; align-items: center;">
-        <input type="checkbox" id="toggle-filter" onchange="loadEcgPipeline()" style="margin-right: 6px;">
-        <label for="toggle-filter" style="color: #5cc24a; font-weight: bold;">| apply_noise_filter</label>
+        <!-- Manual Force Toggle Switch -->
+        <div style="display: inline-flex; align-items: center;">
+            <input type="checkbox" id="toggle-manual-flip" onchange="loadEcgPipeline()" style="margin-right: 6px;">
+            <label for="toggle-manual-flip" style="color: #f2994a; font-weight: bold;">| force_manual_flip</label>
+        </div>
+
+        <!-- Core Noise Filter Switch -->
+        <div style="display: inline-flex; align-items: center;">
+            <input type="checkbox" id="toggle-filter" onchange="loadEcgPipeline()" style="margin-right: 6px;">
+            <label for="toggle-filter" style="color: #5cc24a; font-weight: bold;">| apply_noise_filter</label>
+        </div>
     </div>
-</div>
 
 
     <!-- this Panel holds the Neurokit2 features -->
     <div class="panel control-group">
 
-    <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">DSP USING NEUROKIT2 </label>
- 
- 
+        <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">DSP USING NEUROKIT2 </label>
+
+
         <div>
             <input type="checkbox" id="pan_tompkins_using_nk2" onchange="loadEcgPipeline()">
             <label for="pan_tompkins_using_nk2" style="color: #f1c40f;">| pan_tompkins_nk2 </label>
@@ -234,21 +330,21 @@
     <!-- this panel holds the STATISTICAL FEATURES DSP methods and control -->
     <div class="panel control-group">
 
-    <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">TIME-DOMAIN & HRV STATISTICS</label>
- 
- 
+        <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">TIME-DOMAIN & HRV STATISTICS</label>
+
+
         <div>
             <input type="checkbox" id="toggle-poincare" onchange="loadEcgPipeline()">
             <label for="toggle-poincare" style="color: #f1c40f;">| map_poincare</label>
         </div>
     </div>
 
-    
+
     <!-- this panel holds the  DSP methods and control -->
     <div class="panel control-group">
 
-    <label style="color: #3498db; font-weight: bold; margin-right: 10px;">DSP TRANSFORMS & FILTERS </label>
- 
+        <label style="color: #3498db; font-weight: bold; margin-right: 10px;">DSP TRANSFORMS & FILTERS </label>
+
         <div>
             <input type="checkbox" id="toggle-local" onchange="loadEcgPipeline()">
             <label for="toggle-local" style="color: #3498db;">| local_max_r_peaks</label>
@@ -293,6 +389,24 @@
 
     <div id="wavelet-panel" class="panel" style="display: none;">
         <div id="wavelet-container" class="chart-frame" style="height: 500px;"></div>
+
+        <!--
+        <div class="panel-footer-cite-grid">
+            <div class="cite-node">
+                <span class="cite-label">SIGNAL SOURCE:</span>
+                <a href="https://doi.org" target="_blank" class="cite-link">PhysioNet 2017</a>
+            </div>
+            <div class="cite-node">
+                <span class="cite-label">PAN-TOMPKINS:</span>
+                <a href="https://doi.org" target="_blank" class="cite-link">IEEE '85</a>
+            </div>
+            <div class="cite-node">
+                <span class="cite-label">DWT ALGORITHM:</span>
+                <a href="https://doi.org" target="_blank" class="cite-link">BSPC '20</a>
+            </div>
+        </div>
+-->
+
     </div>
 
 
@@ -547,7 +661,32 @@
                             font: { color: '#f2f4f8', family: 'monospace' },
                             title: `| stats Poincaré  map calculated=true`,
                             xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
-                            yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] }
+                            yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
+                            // 1. CHOOSE YOUR LEGEND POSITION (KEEP IT CONSISTENT WITH Y=-0.15)
+                            legend: {
+                                orientation: 'h',
+                                y: -0.15,
+                                x: 0.0,
+                                xanchor: 'left',
+                                yanchor: 'top'
+                            },
+
+                            // 2. PASTE THE CITATION BOX (JUST CHANGE THE TEXT FOR EACH METHOD)
+                            annotations: [{
+                                text: 'METHODOLOGY: <a href="https://doi.org" target="_blank" style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">YOUR ALGORITHM REFERENCE</a> | DATA: <a href="https://doi.org" target="_blank" style="color: #3498db; text-decoration: underline; font-weight: bold;">PhysioNet</a>',
+                                xref: 'paper',
+                                yref: 'paper',
+                                x: 0.0,
+                                y: -0.4,
+                                xanchor: 'left',
+                                yanchor: 'top',
+                                showarrow: false,
+                                font: { family: 'monospace', size: 11, color: '#4c566a' }
+                            }],
+
+                            // 3. FORCE THE SAME BUFFER ZONE SO IT NEVER CLIPS OUT
+                            margin: { l: 50, r: 30, t: 50, b: 110 }
+
                         };
                         Plotly.newPlot('poincare-container', [scatterTrace, identityLine], poincareLayout);
                     }
@@ -628,8 +767,35 @@
 
                             //xaxis: { title: 'Samples', gridcolor: '#2e3440' },
                             yaxis: { title: 'Reconstructed Voltage', gridcolor: '#2e3440' },
-                            legend: { orientation: 'h', y: -0.2 }
+
+                            // 1. POSITION THE HORIZONTAL LEGEND JUST BELOW THE AXIS
+                            legend: {
+                                orientation: 'h',
+                                y: -0.2,
+                                x: 0.0,
+                                xanchor: 'left',
+                                yanchor: 'top'
+                            },
+
+                            // 2. POSITION THE CITATION BANNER RIGHT BELOW THE LEGEND
+                            annotations: [{
+                                text: 'MATHEMATICS: <a href="https://doi.org" target="_blank" style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">BSPC (2020)</a> | DATA: <a href="https://doi.org" target="_blank" style="color: #3498db; text-decoration: underline; font-weight: bold;">PhysioNet</a>',
+                                xref: 'paper',
+                                yref: 'paper',
+                                x: 0.0,
+                                y: -0.4,    // trying to fit this under the legend
+                                xanchor: 'left',
+                                yanchor: 'top',
+                                showarrow: true,
+                                font: {
+                                    family: 'monospace',
+                                    size: 11,
+                                    color: '#4c566a'
+                                }
+                            }],
+
                         };
+
 
                         Plotly.newPlot('wavelet-container', waveletTraces, waveletLayout);
                     }
