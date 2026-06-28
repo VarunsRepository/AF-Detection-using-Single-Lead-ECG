@@ -69,7 +69,7 @@
 
         .chart-frame {
             width: 100%;
-            height: 500px;
+            height: 550;
         }
 
         .secondary-grid {
@@ -272,18 +272,15 @@
             </select>
         </div>
 
-        <!-- NEW INLINE SOURCE BADGE -->
+        <!-- NEW INLINE SOURCE BADGE 
         <div class="hardware-module">
             <span style="font-size: 11px; color: #4c566a; font-family: monospace;">REF:</span>
             <a href="https://physionet.org" target="_blank" class="inline-cite">
                 physionet.org ↗
             </a>
         </div>
+-->
 
-        <div class="panel-footer-cite">
-            Data provided by PhysioNet Challenge 2017. DOI: <a href="https://doi.org"
-                target="_blank">10.13026/C2K35R</a>
-        </div>
 
     </div>
 
@@ -370,11 +367,22 @@
             <label for="toggle-wavelet" style="color: #3498db;">| decompose_wavelets_db4</label>
         </div>
     </div>
-
-
     </div>
     <div class="panel">
+        <!-- 
+        Added citation directly on beneath the plot - Makes design simpler-->
         <div id="chart-container" class="chart-frame"></div>
+        <div class="panel-footer-cite">
+            PEAKS & QRS DETECTION METHOD: J. Pan and W. J. Tompkins, "A Real-Time QRS Detection Algorithm," <i>IEEE
+                Transactions on Biomedical Engineering</i>, vol. BME-32, no. 3, pp. 230-236, Mar. 1985. DOI: <a
+                href="https://doi.org" target="_blank"
+                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1109/TBME.1985.325532</a>
+            | DATA: <a href="https://physionet.org/content/challenge-2017/1.0.0/training/#files-panel" target="_blank"
+                style="color: #3498db; text-decoration: underline; font-weight: bold;">A L Goldberger, L A Amaral, L
+                Glass, J M Hausdorff, P C Ivanov, R G Mark, J E Mietus, G B Moody, C K Peng, H E Stanley. (2000)
+                PhysioBank, PhysioToolkit, and PhysioNet: Components of a new research resource for complex physiologic
+                signals. Circulation [Online]. 101 (23), pp. e215–e220</a>'
+        </div>
     </div>
 
     <div class="secondary-grid">
@@ -384,31 +392,33 @@
 
         <div id="poincare-panel" class="panel" style="display: none;">
             <div id="poincare-container" class="chart-frame"></div>
+        
+            <div class="panel-footer-cite">
+            RR INTERVALS: A L Goldberger, L A Amaral, L
+                Glass, J M Hausdorff, P C Ivanov, R G Mark, J E Mietus, G B Moody, C K Peng, H E Stanley. (2000)
+                PhysioBank, PhysioToolkit, and PhysioNet: Components of a new research resource for complex physiologic
+                signals. Circulation [Online]. 101 (23), pp. e215–e220 
+                </i>, vol. 40, no. 5, pp. 230-236, 3 June 2019. DOI: <a
+                href="https://iopscience.iop.org/article/10.1088/1361-6579/aaff04" target="_blank"
+                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1088/1361-6579/aaff04</a>
+        </div>
+
         </div>
     </div>
 
-    <div id="wavelet-panel" class="panel" style="display: none;">
-        <div id="wavelet-container" class="chart-frame" style="height: 500px;"></div>
-
-        <!--
-        <div class="panel-footer-cite-grid">
-            <div class="cite-node">
-                <span class="cite-label">SIGNAL SOURCE:</span>
-                <a href="https://doi.org" target="_blank" class="cite-link">PhysioNet 2017</a>
-            </div>
-            <div class="cite-node">
-                <span class="cite-label">PAN-TOMPKINS:</span>
-                <a href="https://doi.org" target="_blank" class="cite-link">IEEE '85</a>
-            </div>
-            <div class="cite-node">
-                <span class="cite-label">DWT ALGORITHM:</span>
-                <a href="https://doi.org" target="_blank" class="cite-link">BSPC '20</a>
-            </div>
-        </div>
--->
-
+    <div id="wavelet-panel" class="panel">
+    <h3>Wavelet Sub-Band Decomposition</h3>
+    
+    <!-- Plotly rules this box completely. Keep it empty in your HTML template! -->
+    <div id="wavelet-container" class="chart-frame"></div>
+    
+    <!-- The citation sits clean and safe completely outside of Plotly's box -->
+    <div class="panel-footer-cite">
+        WAVELET MATH: M. S. Manikandan and S. Dandapat, "Wavelet-Based Electrocardiogram Signal Compression and Noise Removal," 
+            <i>Biomedical Signal Processing and Control</i>, vol. 60, p. 102143, Aug. 2020. DOI: 
+            <a href="https://doi.org" target="_blank" style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
     </div>
-
+</div>
 
     <script>
         /**
@@ -601,27 +611,54 @@
                             }
                         });
                     }
-
-
+ 
                     // Render Graph 1
                     const mainLayout = {
-                        paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
+                        paper_bgcolor: '#1c1e24',
+                        plot_bgcolor: '#1c1e24',
                         font: { color: '#f2f4f8', family: 'monospace' },
                         title: `Pipeline Execution: index="ecg" | record_id="${recordId}"`,
                         dragmode: 'zoom',
-                        hovermode: 'x', // <--- Combines all trace data on this X coordinate into a single tooltip card
+                        hovermode: 'x',
                         xaxis: {
                             title: 'Samples (300 Hz)',
                             gridcolor: '#2e3440',
-                            showspikes: true,             // <--- Enable the vertical cursor line
-                            spikemode: 'across+marker',   // <--- Draw it all the way across the grid canvas
+                            showspikes: true,
+                            spikemode: 'across+marker',
                             spikethickness: 1,
                             spikedash: 'solid',
-                            spikecolor: '#a3be8c'         // <--- Sleek green crosshair line (or change to match your theme)
+                            spikecolor: '#a3be8c'
                         },
-                        //xaxis: { title: 'Samples (300 Hz)', gridcolor: '#2e3440' },
-                        yaxis: { title: 'Voltage (mV)', gridcolor: '#2e3440' }
+                        yaxis: { title: 'Voltage (mV)', gridcolor: '#2e3440' },
+
+                        legend: {
+                            orientation: 'h',
+                            y: -0.20, // by trial and error, best legend position y has been -0.2 or 20 %         
+                            x: 0.0,
+                            xanchor: 'left',
+                            yanchor: 'top'
+                        },
+                        annotations: [{
+                            text: '',
+                            xref: 'paper',
+                            yref: 'paper',
+                            x: 0.0,
+                            y: -0.30,  // by trial and erro, best annotation box positon x has been -0.4 or 40%
+                            xanchor: 'left',
+                            yanchor: 'top',
+                            showarrow: false,
+                            font: { family: 'monospace', size: 11, color: '#4c566a' }
+                        }],
+
+                        //  FORCE THE SAME BUFFER ZONE SO IT NEVER CLIPS OUT
+                        margin: {
+                            l: 50, r: 30,
+                            t: 100,
+                            b: 100
+                        }
+
                     };
+
                     Plotly.newPlot('chart-container', mainTraces, mainLayout);
 
                     // Render Graph 2 (FFT Power Spectrum)
@@ -662,31 +699,32 @@
                             title: `| stats Poincaré  map calculated=true`,
                             xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
                             yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
-                            // 1. CHOOSE YOUR LEGEND POSITION (KEEP IT CONSISTENT WITH Y=-0.15)
+
                             legend: {
                                 orientation: 'h',
-                                y: -0.15,
+                                y: -0.20, // by trial and error, best legend position y has been -0.2 or 20 %         
                                 x: 0.0,
                                 xanchor: 'left',
                                 yanchor: 'top'
                             },
+        //                   annotations: [{
+        //                       text: '',
+        //                       xref: 'paper',
+        //                       yref: 'paper',
+        //                       x: 0.0,
+        //                       y: -0.30,  // by trial and erro, best annotation box positon x has been -0.4 or 40%
+        //                       xanchor: 'left',
+        //                       yanchor: 'top',
+        //                       showarrow: false,
+        //                       font: { family: 'monospace', size: 11, color: '#4c566a' }
+        //                   }],
 
-                            // 2. PASTE THE CITATION BOX (JUST CHANGE THE TEXT FOR EACH METHOD)
-                            annotations: [{
-                                text: 'METHODOLOGY: <a href="https://doi.org" target="_blank" style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">YOUR ALGORITHM REFERENCE</a> | DATA: <a href="https://doi.org" target="_blank" style="color: #3498db; text-decoration: underline; font-weight: bold;">PhysioNet</a>',
-                                xref: 'paper',
-                                yref: 'paper',
-                                x: 0.0,
-                                y: -0.4,
-                                xanchor: 'left',
-                                yanchor: 'top',
-                                showarrow: false,
-                                font: { family: 'monospace', size: 11, color: '#4c566a' }
-                            }],
-
-                            // 3. FORCE THE SAME BUFFER ZONE SO IT NEVER CLIPS OUT
-                            margin: { l: 50, r: 30, t: 50, b: 110 }
-
+        //                   //  FORCE THE SAME BUFFER ZONE SO IT NEVER CLIPS OUT
+        //                   margin: {
+        //                       l: 50, r: 30,
+        //                       t: 100,
+        //                       b: 100
+        //                   }
                         };
                         Plotly.newPlot('poincare-container', [scatterTrace, identityLine], poincareLayout);
                     }
@@ -768,32 +806,31 @@
                             //xaxis: { title: 'Samples', gridcolor: '#2e3440' },
                             yaxis: { title: 'Reconstructed Voltage', gridcolor: '#2e3440' },
 
-                            // 1. POSITION THE HORIZONTAL LEGEND JUST BELOW THE AXIS
                             legend: {
                                 orientation: 'h',
-                                y: -0.2,
+                                y: -0.20, // by trial and error, best legend position y has been -0.2 or 20 %         
                                 x: 0.0,
                                 xanchor: 'left',
                                 yanchor: 'top'
                             },
-
-                            // 2. POSITION THE CITATION BANNER RIGHT BELOW THE LEGEND
                             annotations: [{
-                                text: 'MATHEMATICS: <a href="https://doi.org" target="_blank" style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">BSPC (2020)</a> | DATA: <a href="https://doi.org" target="_blank" style="color: #3498db; text-decoration: underline; font-weight: bold;">PhysioNet</a>',
+                                text: '',
                                 xref: 'paper',
                                 yref: 'paper',
                                 x: 0.0,
-                                y: -0.4,    // trying to fit this under the legend
+                                y: -0.30,  // by trial and erro, best annotation box positon x has been -0.4 or 40%
                                 xanchor: 'left',
                                 yanchor: 'top',
-                                showarrow: true,
-                                font: {
-                                    family: 'monospace',
-                                    size: 11,
-                                    color: '#4c566a'
-                                }
+                                showarrow: false,
+                                font: { family: 'monospace', size: 11, color: '#4c566a' }
                             }],
 
+                           
+                            margin: {
+                                l: 50, r: 30,
+                                t: 100,
+                                b: 100
+                            }
                         };
 
 
