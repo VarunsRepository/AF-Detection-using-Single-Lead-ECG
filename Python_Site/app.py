@@ -43,144 +43,47 @@ from DSP_modules.inversion_Correction import is_device_inverted, \
                                              flip_ecg_sample, \
                                              run_pan_tompkins_segmentation
 
+# imported for initializing the dataset labels
+# physionet has separate files contains the lables of all the 8.5K recordings
+# This function just crawls up to the physionetsite and gets those labels
+from Services.physionet_Init import PhysioNetRegistryManager
+
+
 import neurokit2 as nk  # to leverage the functions of neurokit2 to identify, the different segments of sample 
 
 app = Flask(__name__)                   
-CACHE_DIR = "data_cache"                 # interim directory, to download the file before reading it and storing it in memory
-os.makedirs(CACHE_DIR, exist_ok=True)
  
-# Global memory variable to keep registry mappings fast and active
-REGISTRY_CACHE = {}
 
 
 ###################### the code for managing Physionet IO starts here ######################
      
-#Connect to and Download the Labels file directly from the PhysioNet training site  
-def initialize_physionet_registry():
-    global REGISTRY_CACHE
-    if REGISTRY_CACHE:
-        return
-        
-    csv_path = os.path.join(CACHE_DIR, "REFERENCE-v2.csv")
-    
-    # Force download if the existing file is an HTML placeholder disguised as a CSV
-    if os.path.exists(csv_path):
-        with open(csv_path, "r", encoding="utf-8", errors="ignore") as test_f:
-            first_line = test_f.readline()
-            if "<!DOCTYPE" in first_line or "<html" in first_line:
-                print("\n[REGISTRY ENGINE] Detected corrupted HTML placeholder file. Purging cache...")
-                os.remove(csv_path)
+ 
+#  pass the configuration directories directly into the PhysioNetRegistryManager class constructor
+# we have created an object for easier state management
+physionet_mgr = PhysioNetRegistryManager(cache_dir="data_cache")
 
-    if not os.path.exists(csv_path):
-        print("\n=======================================================")
-        print("[REGISTRY ENGINE] Fetching raw file matrix via download stream...")
-        print("=======================================================")
-        
-        # Using the direct download link to completely bypass the HTML landing portal
-        url = "https://physionet.org/files/challenge-2017/1.0.0/REFERENCE-v2.csv?download"
-        try:
-            opener = urllib.request.build_opener()
-            opener.addheaders = [
-                ('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
-            ]
-            urllib.request.install_opener(opener)
-            urllib.request.urlretrieve(url, csv_path)
-            print("[REGISTRY ENGINE] Raw download stream pipe closed successfully.")
-        except Exception as e:
-            print(f"[REGISTRY ENGINE] CRITICAL ERROR: Failed downloading registry: {e}")
-            return
-
-    compiled_map = {"N": [], "A": [], "O": [], "~": []}
-    
-    total_raw_lines_in_file = 0
-    successfully_parsed_count = 0
-    skipped_or_malformed_count = 0
-    raw_sample_preview_lines = []
-
-    with open(csv_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            total_raw_lines_in_file += 1
-            
-            if len(raw_sample_preview_lines) < 5:
-                raw_sample_preview_lines.append(line.replace("\n", "").replace("\r", ""))
-
-            clean_line = line.replace("\r", "").replace("\n", "").strip()
-            
-            if not clean_line or "," not in clean_line: 
-                skipped_or_malformed_count += 1
-                continue
-                
-            parts = clean_line.split(",", maxsplit=1)
-            record = parts[0].strip()
-            label = parts[1].strip()
-            
-            if "," in label:
-                label = label.split(",")[0].strip()
-
-            if label in compiled_map:
-                compiled_map[label].append(record)
-                successfully_parsed_count += 1
-            else:
-                skipped_or_malformed_count += 1
-
-    REGISTRY_CACHE = compiled_map
-
-##### Add logging for RCI  : After loading the site, dataset still shows zero samples of each class
-    print("\n" + "="*65)
-    print("         PHYSIONET CHALLENGE 2017 REGISTRY DATA LOG         ")
-    print("="*65)
-    print(f" [FILE METRICS]")
-    print(f"   -> Target Source Path:   {csv_path}")
-    print(f"   -> Total Lines Found:    {total_raw_lines_in_file} rows")
-    print(f"   -> Successfully Parsed:  {successfully_parsed_count} rows")
-    print(f"   -> Skipped / Ignored:    {skipped_or_malformed_count} rows")
-    print("-"*65)
-    
-    print(" [RAW FILE SAMPLES PREVIEW]")
-    for idx, raw_row in enumerate(raw_sample_preview_lines, 1):
-        print(f"   Row {idx} ->  \"{raw_row}\"")
-    print("-"*65)
-    
-    print(" [MEMORY CATEGORY ALLOCATIONS]")
-    for key, records in REGISTRY_CACHE.items():
-        class_name = {
-            "N": "Normal Sinus Rhythm (N)",
-            "A": "Atrial Fibrillation (A)",
-            "O": "Other Alternative (O)  ",
-            "~": "Too Noisy / Corrupt (~) "
-        }.get(key, key)
-        
-        pct = (len(records) / successfully_parsed_count * 100) if successfully_parsed_count > 0 else 0
-        preview_samples = records[:4]
-        
-        print(f"   -> {class_name} : {len(records):>4} items ({pct:>5.1f}%) | Samples: {preview_samples}")
-    print("="*65 + "\n")
-
-
-# Call on first time you visit the site 
-initialize_physionet_registry()
+physionet_mgr.initialize_registry()
 
  
-@app.route('/api/v1/splunk/registry')
+@app.route('/api/v1/splunk/registry', methods=['GET'])
 def get_registry_slice():
     """
     Returns lists of matching sample IDs based on a requested target class
     """
     target_class = request.args.get('class', 'N').upper()
-    
-    # DEBUG PRINT 1: See if the frontend is actually reaching the backend
     print(f"\n[BACKEND] Frontend requested recordings for class: '{target_class}'")
     
-    # DEBUG PRINT 2: Check if your global dictionary is completely empty
-    print(f"[BACKEND] Current REGISTRY_CACHE keys available: {list(REGISTRY_CACHE.keys())}")
+    # Safely query live cache from our global class object instance
+    live_cache = physionet_mgr.get_registry()
+    print(f"[BACKEND] Current registry keys available: {list(live_cache.keys())}")
     
-    if target_class not in REGISTRY_CACHE:
-        print(f"[BACKEND] ERROR: '{target_class}' not found in cache keys.")
+    if target_class not in live_cache:
+        print(f"[BACKEND] ERROR: '{target_class}' not found in registry cache keys.")
         return jsonify({"error": "Invalid class. Choose N, A, O, or ~"}), 400
         
-    samples_list = REGISTRY_CACHE[target_class]
+    # Extract the matching samples using the dedicated class accessor method
+    samples_list = physionet_mgr.get_records_by_class(target_class)
     
-    # DEBUG PRINT 3: See how many files Python actually found for that label
     print(f"[BACKEND] Success! Found {len(samples_list)} records for class '{target_class}'")
     print(f"[BACKEND] First 5 samples being sent: {samples_list[:5]}")
     
@@ -218,7 +121,11 @@ def stream_ecg():
     timeline_scale = request.args.get('scale', 'short').lower() # 'short' or 'full'
 
 
-    txt_filename = os.path.join(CACHE_DIR, f"{record_id}.txt")
+    #txt_filename = os.path.join(CACHE_DIR, f"{record_id}.txt")# getting a recording 
+    
+    txt_filename = os.path.join(physionet_mgr.cache_dir, f"{record_id}.txt")
+    print(f"Fetched Record path : {txt_filename}")
+
 
     if not os.path.exists(txt_filename):
         print(f"Cache version of the fie :{txt_filename} - NOT FOUND, Downloading from Physionet Now")
@@ -299,11 +206,7 @@ def stream_ecg():
     poincare_data = {"x": [], "y": []}
     fft_data = {"frequencies": [], "magnitudes": []}
     wavelet_data = {}  # simpler design 
-    features_Nk2 = {'P_nk2':[],
-                    'Q_nk2':[],
-                    'R_nk2':[],
-                    'S_nk2':[],
-                    'T_nk2':[]}
+    features_Nk2 = {'P_nk2':[], 'Q_nk2':[], 'R_nk2':[], 'S_nk2':[], 'T_nk2':[]}
 
 
  
@@ -407,7 +310,6 @@ def stream_ecg():
 
 #        "orientation_status": inversion_status,
 #        "is_inverted": is_inverted_payload, #
-
 #    })
 
 
