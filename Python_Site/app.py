@@ -94,7 +94,6 @@ def get_registry_slice():
     })
 ###################### the code for managing Physionet IO ends here ######################
  
-
 #deafult app route 
 @app.route('/')
 def index():
@@ -125,31 +124,10 @@ def stream_ecg():
     
     txt_filename = os.path.join(physionet_mgr.cache_dir, f"{record_id}.txt")
     print(f"Fetched Record path : {txt_filename}")
+ 
 
+    signal_values = physionet_mgr.get_individual_record(record_id)
 
-    if not os.path.exists(txt_filename):
-        print(f"Cache version of the fie :{txt_filename} - NOT FOUND, Downloading from Physionet Now")
-        folder_prefix = record_id[:3]
-
-        # sending a request to the pjysionet website to get the sample for us
-        url = f"https://physionet.org/files/challenge-2017/1.0.0/training/{folder_prefix}/{record_id}.mat?download"
-        try:
-            opener = urllib.request.build_opener()
-            opener.addheaders = [('User-Agent', 'Mozilla/5.0')]
-            urllib.request.install_opener(opener)
-            temp_mat = f"temp_{record_id}.mat"
-            urllib.request.urlretrieve(url, temp_mat)
-            mat_data = scipy.io.loadmat(temp_mat)
-            with open(txt_filename, "w") as f:
-                f.write("\n".join(map(str, mat_data['val'][0])))
-            os.remove(temp_mat)
-        except Exception as e:
-            return jsonify({"error": str(e)})
-
-    # 1. Read base signal matrix
-    raw_units = np.loadtxt(txt_filename)
-    signal_values = raw_units / 1000.0
-    
     # Grab the manual override parameter from the incoming HTTP request URL
     force_manual_flip = request.args.get('manual_flip', 'false').lower() == 'true'
 
