@@ -372,16 +372,29 @@
         <!-- 
         Added citation directly on beneath the plot - Makes design simpler-->
         <div id="chart-container" class="chart-frame"></div>
-        <div class="panel-footer-cite">
-            PEAKS & QRS DETECTION METHOD: J. Pan and W. J. Tompkins, "A Real-Time QRS Detection Algorithm," <i>IEEE
-                Transactions on Biomedical Engineering</i>, vol. BME-32, no. 3, pp. 230-236, Mar. 1985. DOI: <a
-                href="https://doi.org" target="_blank"
-                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1109/TBME.1985.325532</a>
-            | DATA: <a href="https://physionet.org/content/challenge-2017/1.0.0/training/#files-panel" target="_blank"
-                style="color: #3498db; text-decoration: underline; font-weight: bold;">A L Goldberger, L A Amaral, L
-                Glass, J M Hausdorff, P C Ivanov, R G Mark, J E Mietus, G B Moody, C K Peng, H E Stanley. (2000)
-                PhysioBank, PhysioToolkit, and PhysioNet: Components of a new research resource for complex physiologic
-                signals. Circulation [Online]. 101 (23), pp. e215–e220</a>'
+        <div id="chart-container-citation" class="panel-footer-cite">
+
+               <!-- 1. PAN-TOMPKINS SLOT (HIDDEN BY DEFAULT) -->
+        <span id="cite-pan-tompkins" class="hidden-citation">
+            PEAKS & QRS DETECTION METHOD: J. Pan and W. J. Tompkins, "A Real-Time QRS Detection Algorithm," 
+            <i>IEEE Transactions on Biomedical Engineering</i>, vol. BME-32, no. 3, pp. 230-236, Mar. 1985. 
+            DOI: <a href="https://doi.org" target="_blank" style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1109/TBME.1985.325532</a> 
+            | 
+        </span>
+
+        <!-- 2. WAVELET DECOMPOSITION SLOT (HIDDEN BY DEFAULT) -->
+        <span id="cite-wavelets" class="hidden-citation">
+            WAVELET MATH: M. S. Manikandan and S. Dandapat, "Wavelet-Based Electrocardiogram Signal Compression and Noise Removal," 
+            <i>Biomedical Signal Processing and Control</i>, vol. 60, p. 102143, Aug. 2020. 
+            DOI: <a href="https://doi.org" target="_blank" style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a> 
+            | 
+        </span>
+
+        <!-- 3. MAIN DATASET SLOT (PERMANENTLY VISIBLE) -->
+        <span id="cite-physionet">
+            DATA: <a href="https://physionet.org" target="_blank"
+                style="color: #3498db; text-decoration: underline; font-weight: bold;">Goldberger et al. PhysioNet Database</a>
+        </span>
         </div>
     </div>
 
@@ -393,7 +406,7 @@
         <div id="poincare-panel" class="panel" style="display: none;">
             <div id="poincare-container" class="chart-frame"></div>
         
-            <div class="panel-footer-cite">
+            <div id="poincare-panel-citation"  class="panel-footer-cite">
             RR INTERVALS: A L Goldberger, L A Amaral, L
                 Glass, J M Hausdorff, P C Ivanov, R G Mark, J E Mietus, G B Moody, C K Peng, H E Stanley. (2000)
                 PhysioBank, PhysioToolkit, and PhysioNet: Components of a new research resource for complex physiologic
@@ -405,6 +418,25 @@
 
         </div>
     </div>
+
+
+    <!-- DEDICATED BEAT OVERLAY ANALYSIS CARD -->
+<div id="morphology-panel" class="panel">
+    <h3>Morphological Beat Alignment Studio (| ensemble_average mode="p-to-p")</h3>
+    
+    <!-- Unique canvas container for the heartbeat overlay stack -->
+    <div id="overlay-chart-container" class="chart-frame"></div>
+    
+    <!-- Separate, independent citation footer for this method -->
+    <div id="morphology-citation" class="panel-footer-cite">
+        <span id="cite-ensemble">
+            OVERLAY COEFFICIENTS: J. L. Willems et al., "Common Standards for Quantitative Electrocardiography: The CSE Pilot Study," 
+            <i>Medical Informatics</i>, vol. 5, no. 4, pp. 277-286, Oct. 1980. 
+            DOI: <a href="https://doi.org" target="_blank" style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.3109/14639238009022646</a>
+        </span>
+    </div>
+</div>
+
 
     <div id="wavelet-panel" class="panel">
     <h3>Wavelet Sub-Band Decomposition</h3>
@@ -587,6 +619,11 @@
                                 });
                             }
                         });
+                    
+                    document.getElementById("chart-container-citation").innerText = document.getElementById("chart-container-citation").innerText + 'PEAKS & QRS DETECTION METHOD: J. Pan and W. J. Tompkins, "A Real-Time QRS Detection Algorithm," <i>IEEE\
+                Transactions on Biomedical Engineering</i>, vol. BME-32, no. 3, pp. 230-236, Mar. 1985. DOI: <a \
+                href="https://doi.org" target="_blank" \
+                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1109/TBME.1985.325532</a>'
                     }
 
 
@@ -612,6 +649,92 @@
                         });
                     }
  
+
+
+// Check if the user wants to see the overlay matrix
+//if (useMorphology && payload.data && payload.local_r_peaks) {
+//    const signalData = payload.data;
+//    const rPeaks = payload.local_r_peaks;
+//    
+//    const overlayTraces = [];
+//    
+//    // Define a standard clinical window around your R-peaks (at 300 Hz sampling rate)
+//    const preRWindow = 90;   // 90 samples before R-peak (captures P-wave and PR interval)
+//    const postRWindow = 150; // 150 samples after R-peak (captures QRS drop, ST segment, and T-wave)
+//    const totalLength = preRWindow + postRWindow; // 240 samples total per beat
+//    
+//    // Generate a uniform X-axis index timeline for your 240-sample window
+//    const normalizedXAxis = Array.from({length: totalLength}, (_, i) => i - preRWindow);
+//
+//    let sumBeat = new Array(totalLength).fill(0);
+//    let validBeatCount = 0;
+//
+//    // 1. Loop through your existing R-peaks and slice out individual P-R-S-T cycles
+//    rPeaks.forEach((rIdx) => {
+//        const startIdx = rIdx - preRWindow;
+//        const endIdx = rIdx + postRWindow;
+//
+//        // Ensure the slice boundaries don't bleed off the edges of your raw signal array
+//        if (startIdx >= 0 && endIdx <= signalData.length) {
+//            const beatSlice = signalData.slice(startIdx, endIdx);
+//            
+//            // Add a translucent background line for this individual cycle trace
+//            overlayTraces.push({
+//                x: normalizedXAxis,
+//                y: beatSlice,
+//                type: 'scatter',
+//                mode: 'lines',
+//                line: { color: 'rgba(136, 192, 208, 0.12)', width: 1 }, // Ultra-thin muted blue string
+//                hoverinfo: 'none'
+//            });
+//
+//            // Accumulate values to calculate the Ensemble Average trace later
+//            for (let j = 0; j < totalLength; j++) {
+//                sumBeat[j] += beatSlice[j];
+//            }
+//            validBeatCount++;
+//        }
+//    });
+//
+//    // 2. Compute the actual Ensemble Average array across your slice matrix
+//    if (validBeatCount > 0) {
+//        const meanBeat = sumBeat.map(val => val / validBeatCount);
+//
+//        // Append the bold signature template trace right through the median center
+//        overlayTraces.push({
+//            x: normalizedXAxis,
+//            y: meanBeat,
+//            type: 'scatter',
+//            mode: 'lines',
+//            name: 'ENSEMBLE TEMPLATE',
+//            line: { color: '#a3be8c', width: 3.5 } // Solid bold signature green line
+//        });
+//    }
+//
+//    // 3. Render the separate morphology canvas box
+//    const overlayLayout = {
+//        paper_bgcolor: '#1c1e24',
+//        plot_bgcolor: '#1c1e24',
+//        font: { color: '#f2f4f8', family: 'monospace' },
+//        title: `Morphological Beat Overlay Matrix (N=${validBeatCount} Synchronised Cycles)`,
+//        dragmode: 'zoom',
+//        hovermode: 'closest',
+//        xaxis: { 
+//            title: 'Relative Cycle Timeline Offset from R-Peak (Samples)', 
+//            gridcolor: '#2e3440',
+//            zerolinecolor: '#4c566a' // Emphasises where the R-peak center aligns at 0
+//        },
+//        yaxis: { title: 'Voltage (mV)', gridcolor: '#2e3440' },
+//        showlegend: false,
+//        margin: { l: 50, r: 30, t: 80, b: 80 }
+//    };
+//
+//    Plotly.newPlot('overlay-chart-container', overlayTraces, overlayLayout);
+//}
+
+
+
+                    
                     // Render Graph 1
                     const mainLayout = {
                         paper_bgcolor: '#1c1e24',
