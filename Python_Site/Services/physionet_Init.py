@@ -1,7 +1,9 @@
-
 # Services/physionet_manager.py
 import os
 import urllib.request
+
+import scipy.io
+import numpy as np
 
 #we've moved the entire logic of fetchign the physionet recordings from the app.py to this file
 # we've used a class to prevent the use of free- floating variables in the global namespace
@@ -138,3 +140,46 @@ class PhysioNetRegistryManager:
 
     def get_records_by_class(self, target_class: str) -> list:
         return self._registry_cache.get(target_class, [])
+
+    def get_individual_record(self, record_id: str) -> np.ndarray:
+        """
+        Checks local cache for a specific recording, downloads it if missing,
+        and returns a normalized NumPy vector of signal voltages.
+        """
+        # Centralized path using the public instance property
+        txt_filename = os.path.join(self.cache_dir, f"{record_id}.txt")
+        
+        if not os.path.exists(txt_filename):
+            print(f"[MANAGER] Cache file missing for record {record_id}. Initiating streaming download...")
+            folder_prefix = record_id[:3]
+            
+            # Direct PhysioNet Matrice URL Stream Endpoint
+            url = f"https://physionet.org{folder_prefix}/{record_id}.mat?download"
+            
+            try:
+                opener = urllib.request.build_opener()
+                opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)')]
+                urllib.request.install_opener(opener)
+                
+                temp_mat = os.path.join(self.cache_dir, f"temp_{record_id}.mat")
+                urllib.request.urlretrieve(url, temp_mat)
+                
+                # Load the binary MATLAB array structure
+                mat_data = scipy.io.loadmat(temp_mat)
+                
+                # Save out raw signal rows to a flat text cache file line by line
+                with open(txt_filename, "w") as f:
+                    f.write("\n".join(map(str, mat_data['val'][0])))
+                    
+                # Garbage clean the temporary download workspace buffer
+                os.remove(temp_mat)
+                print(f"[MANAGER] Successfully downloaded and cached recording: {record_id}")
+            except Exception as e:
+                raise IOError(f"PhysioNet Network/IO Failure for record {record_id}: {str(e)}")
+
+        # 1. Read base signal matrix text lines
+        raw_units = np.loadtxt(txt_filename)
+        
+        # 2. Divide by 1000.0 to rescale millivolt parameters
+        signal_values = raw_units / 1000.0
+        return signal_values
