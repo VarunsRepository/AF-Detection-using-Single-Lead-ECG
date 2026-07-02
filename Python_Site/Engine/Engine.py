@@ -82,7 +82,7 @@ def run_ecg_pipeline(signal_values: np.ndarray,
         features = run_pan_tompkins_segmentation(processed_signal)
         
     if config['use_pan_tompkins_with_nk2']:
-        output["features_nk2"] = run_pan_tompkins_segmentation_nk2(processed_signal)
+        features_Nk2 = run_pan_tompkins_segmentation_nk2(processed_signal)
 
     if config['enable_cancel']:
         r_peaks_for_cancel = run_pan_tompkins_segmentation(processed_signal)["R"]
