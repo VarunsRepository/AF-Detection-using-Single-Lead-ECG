@@ -287,19 +287,19 @@
 
 
 
-    
-    <!-- This Panel holds the ECG sample IO from the physionet site-->
+
+    <!-- This Panel holds the Peaks(QRS complexes) detectino algorithm for the pipeline -->
     <div class="panel control-group">
 
         <div>
             <label style="color: #eb7b2b; font-weight: bold;">PEAK DETECTION: </label>
-            <select id="Peak-Detection-Selector" onchange="updateSampleDropdown()">
-                <option value="N">Pan Tompkins Inhouse</option>
-                <option value="A">Pan Tompkins using Neurokit2</option> 
+            <select id="Peak-Detection-Selector" onchange="loadEcgPipeline()">
+                <option value="false">No Peak Detection</option>
+                <option value="Pan-Tompkins-Native">Pan Tompkins Inhouse</option>
+                <option value="Pan-Tompkins-Neurokit2">Pan Tompkins using Neurokit2</option>
+                <option value="Pan-Tompkins-Space-Age">Pan-Tomps Sci-Fi Space Age</option>
             </select>
         </div>
- 
-
     </div>
 
 
@@ -342,7 +342,7 @@
         </div>
     </div>
 
-  
+
 
     <!-- this panel holds the STATISTICAL FEATURES DSP methods and control -->
     <div class="panel control-group">
@@ -387,7 +387,7 @@
             <label for="toggle-wavelet" style="color: #3498db;">| decompose_wavelets_db4</label>
         </div>
     </div>
-     
+
     <div class="panel">
         <!-- 
         Added citation directly on beneath the plot - Makes design simpler-->
@@ -517,7 +517,36 @@
         }
 
 
- 
+        async function updatePeakDetectionDropdown() {
+            const url = `/api/v1/splunk/peak_detection_algorithms`;
+            console.log("inside updatePeakDetectionDropdown now")
+
+            try {
+
+                const response = await fetch(url);
+                const algoList = await response.json();
+                console.log(algoList);
+
+                const algoMenu = document.getElementById('Peak-Detection-Selector');
+                algoMenu.innerHTML = '<option value="false"> No Peak Detection </option>';
+
+                for (const algoName of algoList) {
+                    console.log(algoName);
+                    const opt = document.createElement('option');
+                    opt.value = algoName;
+                    opt.textContent = algoName;
+                    algoMenu.appendChild(opt);
+                }
+
+                console.log("algotithms loaded successfully.");
+
+            } catch (err) {
+                console.error("Failed to load algorithm registry:", err);
+            }
+
+
+        }
+
         /**
          * Fetches vector matrices from the active Flask stream API 
          * and paints the resulting charts via Plotly.
@@ -537,6 +566,9 @@
             const forceManualFlip = document.getElementById('toggle-manual-flip').checked;
             const usePanTompkinsWithNk2 = document.getElementById('pan_tompkins_using_nk2').checked;
 
+            const peakDetectionMethod = document.getElementById('Peak-Detection-Selector').value;
+            console.log("Peak Detection method passed to the Controller : ", peakDetectionMethod) // ohh yes, we're still using the classic Javascript debugging Technique
+
             // Manage conditional interface panel displays
             document.getElementById('poincare-panel').style.display = usePoincare ? 'block' : 'none';
             document.getElementById('fft-panel').style.display = useFft ? 'block' : 'none';
@@ -545,9 +577,33 @@
             // FIXED: Synchronized matching variable references and cleanly mapped all toggles to URL query keys
             //const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}`;
 
+            // Depracted as the list keeps gettng longer, we are using the below method to pass all the params using the url 
             //Add Param to forcefully flip the signal manually.
             //Add Pan TOmpkins using Neurokit2 Package. 
-            const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}&manual_flip=${forceManualFlip}&pan_tompkins_with_nk2=${usePanTompkinsWithNk2}`;
+            //const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}&manual_flip=${forceManualFlip}&pan_tompkins_with_nk2=${usePanTompkinsWithNk2}&peak_detection_method=${peakDetectionMethod}`;
+
+
+            // we are trying a better way to consolidate all the arg as the list of arguments is increasing continously
+            const params = {
+                record: recordId,
+                scale: currentScale,
+                filter: useFilter,
+                local_r: useLocal,
+                pan_tompkins: usePan,
+                cancel: useCancel,
+                poincare: usePoincare,
+                fft: useFft,
+                wavelet: useWavelet,
+                manual_flip: forceManualFlip,
+                pan_tompkins_with_nk2: usePanTompkinsWithNk2,
+                peak_detection_method: peakDetectionMethod  
+            };
+
+            // Pass the object to URLSearchParams to auto-format and encode it
+            const queryString = new URLSearchParams(params).toString();
+
+            // final URL which is clean and tidy 
+            const targetUrl = `/api/v1/splunk/stream?${queryString}`;
 
 
             fetch(targetUrl)
@@ -629,7 +685,7 @@
 
 
                     // Trace 3: Full Pan-Tompkins Segment Mapping using NeuroKit2
-                    if (usePanTompkinsWithNk2 && !useCancel && payload.features_using_nk2) {
+                    if (peakDetectionMethod!='false' && !useCancel && payload.features) {
                         const waveConfig = [
                             { key: 'P', color: '#1abc9c', name: 'P-Wave_NK2' },
                             { key: 'Q', color: '#f1c40f', name: 'Q-Dip_NK2' },
@@ -638,7 +694,7 @@
                             { key: 'T', color: '#9b59b6', name: 'T-Wave_NK2' }
                         ];
                         waveConfig.forEach(cfg => {
-                            const indices = payload.features_using_nk2[cfg.key];
+                            const indices = payload.features[cfg.key];
                             if (indices && indices.length > 0) {
                                 mainTraces.push({
                                     x: indices,
@@ -1038,6 +1094,7 @@
         // Automatic boot execution when HTML layer finishes initializing
         document.addEventListener("DOMContentLoaded", () => {
             updateSampleDropdown();
+            updatePeakDetectionDropdown();
         });
     </script>
 
