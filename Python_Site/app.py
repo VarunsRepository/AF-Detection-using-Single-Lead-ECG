@@ -32,18 +32,18 @@ from flask import Flask, Blueprint, jsonify, request, send_from_directory  # blu
 "This paper addresses this vital frontier by deploying advanced machine learning techniques to achieve highly accurate Atrial Fibrillation"
 " (AFib) detection utilizing a single-lead ECG configuration."
 
-from DSP_modules.DSP import apply_noise_filter, \
-                            detect_local_max_r_peaks, \
-                            run_pan_tompkins_segmentation,\
-                            run_pan_tompkins_segmentation_nk2,\
-                            calculate_signal_fft, \
-                            apply_qrst_cancellation, \
-                            compute_wavelet_decomposition
+#from DSP_modules.DSP import apply_noise_filter, \
+#                            detect_local_max_r_peaks, \
+#                            run_pan_tompkins_segmentation,\
+#                            run_pan_tompkins_segmentation_nk2,\
+#                            calculate_signal_fft, \
+#                            apply_qrst_cancellation, \
+#                            compute_wavelet_decomposition
 
-# importing the function to correct(invert) the flipped samples.(samples where the patients held the alliveCor device incorrectly)
-from DSP_modules.inversion_Correction import is_device_inverted, \
-                                             flip_ecg_sample, \
-                                             run_pan_tompkins_segmentation
+## importing the function to correct(invert) the flipped samples.(samples where the patients held the alliveCor device incorrectly)
+#from DSP_modules.inversion_Correction import is_device_inverted, \
+#                                             flip_ecg_sample, \
+#                                             run_pan_tompkins_segmentation
 
 # imported for initializing the dataset labels
 # physionet has separate files contains the lables of all the 8.5K recordings
@@ -52,10 +52,11 @@ from Services.physionet_Init import PhysioNetRegistryManager
 
 
 #The main pipeline that's called everyytime the app registers a change accross any of the controls 
-from Engine.Engine import run_ecg_pipeline
+from Engine.Engine import run_ecg_pipeline, peak_detection_algorithms, get_dropdown_options
 
 
 import neurokit2 as nk  # to leverage the functions of neurokit2 to identify, the different segments of sample 
+
 
 #Now using blueprint
 featureEngg_bp = Blueprint('features', __name__)
@@ -71,7 +72,16 @@ physionet_mgr = PhysioNetRegistryManager(cache_dir="data_cache")
 
 physionet_mgr.initialize_registry()
 
- 
+
+# this route is used to pupulate the dropdown in the view 
+@featureEngg_bp.route('/peak_detection_algorithms', methods=['GET'])
+def fetch_algorithms():
+    # Gets ['Pan Tompkins Native', 'Pan Tompkins nk2', etc ]
+    algo_list = get_dropdown_options() 
+    return jsonify(algo_list)
+
+
+
 @featureEngg_bp.route('/registry', methods=['GET'])
 def get_registry_slice():
     """
@@ -124,7 +134,8 @@ def stream_ecg():
         'use_wavelet': request.args.get('wavelet', 'false').lower() == 'true',
         'use_pan_tompkins_with_nk2': request.args.get('pan_tompkins_with_nk2', 'false').lower() == 'true',
         'timeline_scale': request.args.get('scale', 'short').lower(),
-        'force_manual_flip': request.args.get('manual_flip', 'false').lower() == 'true'
+        'force_manual_flip': request.args.get('manual_flip', 'false').lower() == 'true',
+        'peak_detection_method' : request.args.get('peak_detection_method', 'false').lower()  
     }
 
     try:
@@ -142,7 +153,7 @@ def stream_ecg():
         return jsonify({"error": str(e)}), 500
     
 
-    
+"""    
 #    # Grab all command toggles out of our HTTP parameters
 #    #the control for signal processing are set by selecting the radio buttoms on the top of the code
 #    enable_filter = request.args.get('filter', 'false').lower() == 'true'    # simple filter
@@ -327,7 +338,7 @@ def stream_ecg():
 #        "orientation_status": inversion_status,
 #        "is_inverted": is_inverted_payload, #
 #    })
-
+"""
 
 app.register_blueprint(featureEngg_bp, url_prefix='/api/v1/splunk')
 
