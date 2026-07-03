@@ -16,6 +16,28 @@ from DSP_modules.inversion_Correction import is_device_inverted, \
                                              flip_ecg_sample, \
                                              run_pan_tompkins_segmentation
 
+import sys
+import inspect
+from  DSP_modules import peak_detection_algorithms # Import the file containing all the Peak-detection Algorithms
+
+
+
+#get All the available peak detection algorithms from the file : peak_detection_algorithms 
+def get_peak_detection_algorithms():
+    """gets All the available peak detection algorithms from the file : peak_detection_algorithms"""
+    algos = {}
+    for name, obj in inspect.getmembers(peak_detection_algorithms):
+        if inspect.isfunction(obj) and name.startswith('run_'): # adding th condition to chec if the func name starts with run, else it will import all the functions(even those from import statements too!)
+            # quick renaming to remove the _ sign for the UI to display it clearly 
+            ui_name = name.replace('_', ' ').title()
+            algos[ui_name] = obj
+    return algos
+
+#this function is just meant to update the UI with the list of avalable algorithms
+def get_dropdown_options():
+    peak_detection_algorithms =  get_peak_detection_algorithms()
+    return list(peak_detection_algorithms.keys())
+
 
 def run_ecg_pipeline(signal_values: np.ndarray,
                       config: dict) -> dict: # we've used Rust style declaration here < d -> dict >, this ensures that the return type of this function would always be a dictionary 
@@ -47,6 +69,7 @@ def run_ecg_pipeline(signal_values: np.ndarray,
     timeline_signal = signal_values[:9000] if config['timeline_scale'] == 'full' else signal_values[:2500]
     processed_signal = timeline_signal.copy()
     
+    # No longer doing that as we're forcing the memebrs to be compacted to a dict at the end of this function
     # Initialize features payload structures
 #    output = {
 #        "inversion_status": inversion_status,
@@ -67,6 +90,8 @@ def run_ecg_pipeline(signal_values: np.ndarray,
     features_Nk2 = {'P_nk2':[], 'Q_nk2':[], 'R_nk2':[], 'S_nk2':[], 'T_nk2':[]}
 
 
+    peak_detection_algorithms =  get_peak_detection_algorithms()
+
     # 3. Apply Filtering Steps
     if config['enable_filter']:
         processed_signal = apply_noise_filter(processed_signal)
@@ -78,15 +103,52 @@ def run_ecg_pipeline(signal_values: np.ndarray,
         raw_peaks = info.get("ECG_R_Peaks")
         local_r_indices = raw_peaks.tolist() if raw_peaks is not None else []
 
-    if config['enable_pan']:
-        features = run_pan_tompkins_segmentation(processed_signal)
+    #if config['enable_pan']:
+    #    features = run_pan_tompkins_segmentation(processed_signal)
         
-    if config['use_pan_tompkins_with_nk2']:
-        features_Nk2 = run_pan_tompkins_segmentation_nk2(processed_signal)
+    #if config['use_pan_tompkins_with_nk2']:
+    #    features_Nk2 = run_pan_tompkins_segmentation_nk2(processed_signal)
 
     if config['enable_cancel']:
         r_peaks_for_cancel = run_pan_tompkins_segmentation(processed_signal)["R"]
         processed_signal = apply_qrst_cancellation(processed_signal, r_peaks_for_cancel)
+
+
+    #Handling  the QRS-Detection,
+    #  now we use the peak_detection_method to detect one of the following values if not false
+    # 1. "Pan-Tompkins-Native"
+    # 2. "Pan-Tompkins-Neurokit2"
+    # 3. "Pan-Tompkins-Space-Age"
+    if config['peak_detection_method'] != 'false':
+        # Clean the string completely and normalize it to match the dictionary key name for algo list
+        # This turns "pan+tompkins+native" into "Pan Tompkins Native"
+        corrected_method_name = config['peak_detection_method'].replace("+", " ").replace("_", " ").title()
+
+        print(f"input algo key name from from view : {config['peak_detection_method']}; corrected key name : {corrected_method_name}")
+
+        # get the functor or fmnction pointer from algolist dictionary 
+        peak_algo_function = peak_detection_algorithms.get(corrected_method_name)
+
+        # Ensure the function name actually exists before calling it or else it will end up in error 
+        if peak_algo_function:
+            features = peak_algo_function(processed_signal)
+        else:
+            #error occured
+            raise ValueError(f"Algorithm '{corrected_method_name}' could not be resolved in the registry.")
+
+        
+        # we used a function pointer to avoid writing the below lines evrytine we get ourselves a new peak detection function
+        #if config['peak_detection_method'] == 'Pan-Tompkins-Native':
+        #    features = run_pan_tompkins_segmentation(processed_signal)
+        #
+        #if config['peak_detection_method'] == 'Pan-Tompkins-Neurokit2':
+        #    features = run_pan_tompkins_segmentation(processed_signal)
+#
+        #if config['peak_detection_method'] == 'Pan-Tompkins-Space-Age':
+        #    features = run_pan_tompkins_segmentation(processed_signal)
+        
+ 
+
 
     if config['enable_poincare']:
         long_peaks = detect_local_max_r_peaks(long_signal)
