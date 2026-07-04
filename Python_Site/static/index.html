@@ -330,7 +330,7 @@
     </div>
 
 
-    <!-- this Panel holds the Neurokit2 features -->
+    <!-- this Panel holds the Neurokit2 features 
     <div class="panel control-group">
 
         <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">DSP USING NEUROKIT2 </label>
@@ -341,7 +341,7 @@
             <label for="pan_tompkins_using_nk2" style="color: #f1c40f;">| pan_tompkins_nk2 </label>
         </div>
     </div>
-
+-->
 
 
     <!-- this panel holds the STATISTICAL FEATURES DSP methods and control -->
@@ -367,14 +367,16 @@
             <label for="toggle-local" style="color: #3498db;">| local_max_r_peaks</label>
         </div>
 
+         <!--
         <div>
             <input type="checkbox" id="toggle-pan" onchange="loadEcgPipeline()">
             <label for="toggle-pan" style="color: #eb7b2b;">| run_pan_tompkins</label>
         </div>
+         -->
 
         <div>
-            <input type="checkbox" id="toggle-cancel" onchange="loadEcgPipeline()">
-            <label for="toggle-cancel" style="color: #e74c3c;">| cancel_qrst_complex</label>
+             <input type="checkbox" id="toggle-cancel" onchange="loadEcgPipeline()">
+             <label for="toggle-cancel" style="color: #e74c3c;">| cancel_qrst_complex</label> 
         </div>
 
         <div>
@@ -558,13 +560,13 @@
             const currentScale = document.getElementById('scale-selector').value;
             const useFilter = document.getElementById('toggle-filter').checked;
             const useLocal = document.getElementById('toggle-local').checked;
-            const usePan = document.getElementById('toggle-pan').checked;
+            // const usePan = document.getElementById('toggle-pan').checked;
             const useCancel = document.getElementById('toggle-cancel').checked;
             const usePoincare = document.getElementById('toggle-poincare').checked;
             const useFft = document.getElementById('toggle-fft').checked;
             const useWavelet = document.getElementById('toggle-wavelet').checked;
             const forceManualFlip = document.getElementById('toggle-manual-flip').checked;
-            const usePanTompkinsWithNk2 = document.getElementById('pan_tompkins_using_nk2').checked;
+            // const usePanTompkinsWithNk2 = document.getElementById('pan_tompkins_using_nk2').checked;
 
             const peakDetectionMethod = document.getElementById('Peak-Detection-Selector').value;
             console.log("Peak Detection method passed to the Controller : ", peakDetectionMethod) // ohh yes, we're still using the classic Javascript debugging Technique
@@ -589,14 +591,14 @@
                 scale: currentScale,
                 filter: useFilter,
                 local_r: useLocal,
-                pan_tompkins: usePan,
+            //    pan_tompkins: usePan,
                 cancel: useCancel,
                 poincare: usePoincare,
                 fft: useFft,
                 wavelet: useWavelet,
                 manual_flip: forceManualFlip,
-                pan_tompkins_with_nk2: usePanTompkinsWithNk2,
-                peak_detection_method: peakDetectionMethod  
+                //                pan_tompkins_with_nk2: usePanTompkinsWithNk2,
+                peak_detection_method: peakDetectionMethod
             };
 
             // Pass the object to URLSearchParams to auto-format and encode it
@@ -637,7 +639,8 @@
 
                     const timeIndices = payload.data.map((_, i) => i);
 
-                    // Trace 1: Core Timeline Matrix Line
+                    // Trace 1: Core Timeline Matrix Line -  
+                    // This code just plots the blank canvas where we plot all the signals
                     const baseTrace = {
                         x: timeIndices, y: payload.data,
                         type: 'scatter', mode: 'lines',
@@ -646,7 +649,9 @@
                     };
                     const mainTraces = [baseTrace];
 
+                    //commenting this part out as now we get a separate control to select peak detection algorithms 
                     // Trace 2: Standard Peak Locations
+                    // this code just sets the ECG Peak markers, no plots drawn yet
                     if (useLocal && !useCancel && payload.local_r_peaks) {
                         mainTraces.push({
                             x: payload.local_r_peaks,
@@ -656,36 +661,40 @@
                         });
                     }
 
-                    // Trace 3: Full Pan-Tompkins Segment Mapping
-                    if (usePan && !useCancel && payload.features) {
-                        const waveConfig = [
-                            { key: 'P', color: '#1abc9c', name: 'P-Wave' },
-                            { key: 'Q', color: '#f1c40f', name: 'Q-Dip' },
-                            { key: 'R', color: '#eb7b2b', name: 'R-Apex' },
-                            { key: 'S', color: '#e74c3c', name: 'S-Dip' },
-                            { key: 'T', color: '#9b59b6', name: 'T-Wave' }
-                        ];
-                        waveConfig.forEach(cfg => {
-                            const indices = payload.features[cfg.key];
-                            if (indices && indices.length > 0) {
-                                mainTraces.push({
-                                    x: indices,
-                                    y: indices.map(idx => payload.data[idx]),
-                                    type: 'scatter', mode: 'markers', name: cfg.name,
-                                    marker: { color: cfg.color, size: 8 }
-                                });
-                            }
-                        });
+                    // Trace 3: Full Pan-Tompkins Segment Mappinrun_pan_tompkinsg
+ //                   if (usePan && !useCancel && payload.features) {
+//                        const waveConfig = [
+//                            { key: 'P', color: '#1abc9c', name: 'P-Wave' },
+//                            { key: 'Q', color: '#f1c40f', name: 'Q-Dip' },
+//                            { key: 'R', color: '#eb7b2b', name: 'R-Apex' },
+//                            { key: 'S', color: '#e74c3c', name: 'S-Dip' },
+//                            { key: 'T', color: '#9b59b6', name: 'T-Wave' }
+//                        ];
+//                        waveConfig.forEach(cfg => {
+//                            const indices = payload.features[cfg.key];
+//                            if (indices && indices.length > 0) {
+//                                mainTraces.push({
+//                                    x: indices,
+//                                    y: indices.map(idx => payload.data[idx]),
+//                                    type: 'scatter', mode: 'markers', name: cfg.name,
+//                                    marker: { color: cfg.color, size: 8 }
+//                                });
+//                            }
+//                        }
+//                        );
+ 
+//                       document.getElementById("chart-container-citation").innerText = document.getElementById("chart-container-citation").innerText + 'PEAKS & QRS DETECTION METHOD: J. Pan and W. J. Tompkins, "A Real-Time QRS Detection Algorithm," <i>IEEE\
+//               Transactions on Biomedical Engineering</i>, vol. BME-32, no. 3, pp. 230-236, Mar. 1985. DOI: <a \
+//               href="https://doi.org" target="_blank" \
+//               style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1109/TBME.1985.325532</a>'
+                    
+            
+            
+//            }
 
-                        document.getElementById("chart-container-citation").innerText = document.getElementById("chart-container-citation").innerText + 'PEAKS & QRS DETECTION METHOD: J. Pan and W. J. Tompkins, "A Real-Time QRS Detection Algorithm," <i>IEEE\
-                Transactions on Biomedical Engineering</i>, vol. BME-32, no. 3, pp. 230-236, Mar. 1985. DOI: <a \
-                href="https://doi.org" target="_blank" \
-                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1109/TBME.1985.325532</a>'
-                    }
 
-
-                    // Trace 3: Full Pan-Tompkins Segment Mapping using NeuroKit2
-                    if (peakDetectionMethod!='false' && !useCancel && payload.features) {
+                    // Trace 4: Full Pan-Tompkins Segment Mapping using NeuroKit2
+                    if (peakDetectionMethod != 'false' && !useCancel && payload.features) {
                         const waveConfig = [
                             { key: 'P', color: '#1abc9c', name: 'P-Wave_NK2' },
                             { key: 'Q', color: '#f1c40f', name: 'Q-Dip_NK2' },
@@ -1018,8 +1027,8 @@
                     }
 
                     if (useWavelet) {
-                        synchronizeCharts('chart-container', 'wavelet-container');
-                        synchronizeCharts('wavelet-container', 'chart-container');
+                        synchronizeCharts('chart-container', 'wavelet-container'); //chart container syncs with wavelet container
+                        synchronizeCharts('wavelet-container', 'chart-container'); // wavelet container syncs with chart container
                     }
 
 
