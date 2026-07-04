@@ -4,7 +4,7 @@ import scipy.io       # to use plotly(), which is our star performer
 import numpy as np    # for interim processing for the ECG Signal 
 
  # all the stuff to make a web-site in minutes without needing to learn  the usage of dead-sea scrools of Django 
-from flask import Flask, Blueprint, jsonify, request, send_from_directory  # blueprint is used to modularise the app, without BP, the app will hold all the functionality, with BP we van modularise the code into several sub-apps 
+from flask import Flask, Blueprint, jsonify, request, send_from_directory, redirect  # blueprint is used to modularise the app, without BP, the app will hold all the functionality, with BP we van modularise the code into several sub-apps 
  
 
 
@@ -116,6 +116,11 @@ def get_registry_slice():
 def index():
     return send_from_directory('static', 'index.html')
 
+# app route to redirect the user to the right(complete) route 
+@app.route('/')
+def index():
+    return redirect('/api/v1/splunk/')
+
 #route to goto the physionet web site and fetch the actual recording  
 @featureEngg_bp.route('/stream')
 def stream_ecg():
@@ -132,7 +137,7 @@ def stream_ecg():
         'enable_fft': request.args.get('fft', 'false').lower() == 'true',
         'enable_cancel': request.args.get('cancel', 'false').lower() == 'true',
         'use_wavelet': request.args.get('wavelet', 'false').lower() == 'true',
-        'use_pan_tompkins_with_nk2': request.args.get('pan_tompkins_with_nk2', 'false').lower() == 'true',
+#        'use_pan_tompkins_with_nk2': request.args.get('pan_tompkins_with_nk2', 'false').lower() == 'true',
         'timeline_scale': request.args.get('scale', 'short').lower(),
         'force_manual_flip': request.args.get('manual_flip', 'false').lower() == 'true',
         'peak_detection_method' : request.args.get('peak_detection_method', 'false').lower()  
