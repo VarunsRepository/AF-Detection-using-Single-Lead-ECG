@@ -140,7 +140,8 @@ def stream_ecg():
 #        'use_pan_tompkins_with_nk2': request.args.get('pan_tompkins_with_nk2', 'false').lower() == 'true',
         'timeline_scale': request.args.get('scale', 'short').lower(),
         'force_manual_flip': request.args.get('manual_flip', 'false').lower() == 'true',
-        'peak_detection_method' : request.args.get('peak_detection_method', 'false').lower()  
+        'peak_detection_method' : request.args.get('peak_detection_method', 'false').lower(),  
+        'stacked_beats': request.args.get('StackedBeats', 'false').lower() == 'true'
     }
 
     try:
