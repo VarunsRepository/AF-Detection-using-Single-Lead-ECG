@@ -9,7 +9,8 @@ from DSP_modules.DSP import apply_noise_filter, \
                             run_pan_tompkins_segmentation_nk2,\
                             calculate_signal_fft, \
                             apply_qrst_cancellation, \
-                            compute_wavelet_decomposition
+                            compute_wavelet_decomposition, \
+                            generate_stacked_pqrst_dataset
 
 # importing the function to correct(invert) the flipped samples.(samples where the patients held the alliveCor device incorrectly)
 from DSP_modules.inversion_Correction import is_device_inverted, \
@@ -88,8 +89,8 @@ def run_ecg_pipeline(signal_values: np.ndarray,
     fft_data = {"frequencies": [], "magnitudes": []}
     wavelet_data = {}  # simpler design 
     features_Nk2 = {'P_nk2':[], 'Q_nk2':[], 'R_nk2':[], 'S_nk2':[], 'T_nk2':[]}
-
-
+    stacked_beats_dataset={}
+ 
     peak_detection_algorithms =  get_peak_detection_algorithms()
 
     # 3. Apply Filtering Steps
@@ -103,8 +104,8 @@ def run_ecg_pipeline(signal_values: np.ndarray,
         raw_peaks = info.get("ECG_R_Peaks")
         local_r_indices = raw_peaks.tolist() if raw_peaks is not None else []
 
-    #if config['enable_pan']:
-    #    features = run_pan_tompkins_segmentation(processed_signal)
+    if config['enable_pan']:
+        features = run_pan_tompkins_segmentation(processed_signal)
         
     #if config['use_pan_tompkins_with_nk2']:
     #    features_Nk2 = run_pan_tompkins_segmentation_nk2(processed_signal)
@@ -167,6 +168,11 @@ def run_ecg_pipeline(signal_values: np.ndarray,
             fft_target = long_signal
         fft_data = calculate_signal_fft(fft_target)
 
+    print(f"config['stacked_beats']: {config['stacked_beats']}")
+    if config['stacked_beats']:
+        stacked_beats_dataset =  generate_stacked_pqrst_dataset(processed_signal, 300)  
+
+
     if config['use_wavelet']:
         wavelet_results = compute_wavelet_decomposition(processed_signal)
         
@@ -183,7 +189,9 @@ def run_ecg_pipeline(signal_values: np.ndarray,
             else:
                 print("  - WARNING: Expected keys are missing from the bands object!")
             # ------------------------------------------------
-            
+    
+    
+
         else:
             print(f"[DIAGNOSTIC] DWT Computation FAILED! Error: {wavelet_results.get('error')}")
 
@@ -194,8 +202,9 @@ def run_ecg_pipeline(signal_values: np.ndarray,
         "data": processed_signal.tolist(),
         "local_r_peaks": local_r_indices,
         "features": features,
-        "features_using_nk2":features_Nk2, # pan tompkins but using nk2 instead of our custom function
+        #"features_using_nk2":features_Nk2, # pan tompkins but using nk2 instead of our custom function
         "poincare": poincare_data,
         "fft": fft_data,
-        "wavelets": wavelet_data
+        "wavelets": wavelet_data,
+        "stacked_beats_dataset": stacked_beats_dataset
     })
