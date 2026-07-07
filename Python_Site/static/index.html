@@ -330,18 +330,18 @@
     </div>
 
 
-    <!-- this Panel holds the Neurokit2 features 
+
     <div class="panel control-group">
 
-        <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">DSP USING NEUROKIT2 </label>
+        <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">R-R INTERVALS</label>
 
 
         <div>
-            <input type="checkbox" id="pan_tompkins_using_nk2" onchange="loadEcgPipeline()">
-            <label for="pan_tompkins_using_nk2" style="color: #f1c40f;">| pan_tompkins_nk2 </label>
+            <input type="checkbox" id="stacked-beats" onchange="loadEcgPipeline()">
+            <label for="stacked-beats" style="color: #f1c40f;">| Plot Stacked Beats </label>
         </div>
     </div>
--->
+
 
 
     <!-- this panel holds the STATISTICAL FEATURES DSP methods and control -->
@@ -367,7 +367,7 @@
             <label for="toggle-local" style="color: #3498db;">| local_max_r_peaks</label>
         </div>
 
-         <!--
+        <!--
         <div>
             <input type="checkbox" id="toggle-pan" onchange="loadEcgPipeline()">
             <label for="toggle-pan" style="color: #eb7b2b;">| run_pan_tompkins</label>
@@ -375,8 +375,8 @@
          -->
 
         <div>
-             <input type="checkbox" id="toggle-cancel" onchange="loadEcgPipeline()">
-             <label for="toggle-cancel" style="color: #e74c3c;">| cancel_qrst_complex</label> 
+            <input type="checkbox" id="toggle-cancel" onchange="loadEcgPipeline()">
+            <label for="toggle-cancel" style="color: #e74c3c;">| cancel_qrst_complex</label>
         </div>
 
         <div>
@@ -482,6 +482,21 @@
         </div>
     </div>
 
+        <div id="stacked-overlay-panel" class="panel">
+        <h3>Stacked beats Comparison</h3>
+
+         
+        <div id="stacked-overlay-container" class="chart-frame"></div>
+        <div class="panel-footer-cite">
+            STACKED ECG BEATS (R-central  )
+            This plot stacks individual heartbeats using the R-peak as a common starting point. Overlaying the signals makes it instantly clear whether other physiological phases—such as atrial depolarization (P-wave) and ventricular repolarization (T-wave)—are perfectly synchronized.
+            </i>, vol. 60, p. 102143, Aug. 2020. DOI:
+            <a href="https://doi.org" target="_blank"
+                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
+        </div>
+    </div>
+
+  
     <script>
         /**
          * Pulls matching sample IDs from the Flask registry slice endpoint
@@ -571,10 +586,15 @@
             const peakDetectionMethod = document.getElementById('Peak-Detection-Selector').value;
             console.log("Peak Detection method passed to the Controller : ", peakDetectionMethod) // ohh yes, we're still using the classic Javascript debugging Technique
 
-            // Manage conditional interface panel displays
+            const showStackedBeats = document.getElementById('stacked-beats').checked;
+            console.log("stacked_beats_dataset in the request", showStackedBeats)
+
+
+            // conditional statements with ternary operator for displaying the selected visuaization only when the corresponding control is activated 
             document.getElementById('poincare-panel').style.display = usePoincare ? 'block' : 'none';
             document.getElementById('fft-panel').style.display = useFft ? 'block' : 'none';
             document.getElementById('wavelet-panel').style.display = useWavelet ? 'block' : 'none';
+            document.getElementById('stacked-overlay-panel').style.display = showStackedBeats ? 'block' : 'none';
 
             // FIXED: Synchronized matching variable references and cleanly mapped all toggles to URL query keys
             //const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}`;
@@ -591,23 +611,24 @@
                 scale: currentScale,
                 filter: useFilter,
                 local_r: useLocal,
-            //    pan_tompkins: usePan,
+                //    pan_tompkins: usePan,
                 cancel: useCancel,
                 poincare: usePoincare,
                 fft: useFft,
                 wavelet: useWavelet,
                 manual_flip: forceManualFlip,
                 //                pan_tompkins_with_nk2: usePanTompkinsWithNk2,
-                peak_detection_method: peakDetectionMethod
+                peak_detection_method: peakDetectionMethod,
+                StackedBeats: showStackedBeats
             };
-
+//***************** TILL THIS POINT WE HAVE JUST GENERATED THE REQEUST, NOTHING MORE  *****************
             // Pass the object to URLSearchParams to auto-format and encode it
             const queryString = new URLSearchParams(params).toString();
 
             // final URL which is clean and tidy 
             const targetUrl = `/api/v1/splunk/stream?${queryString}`;
 
-
+            // sending the reqeust to the server via the URL params generated aboove and capturing the response into payload
             fetch(targetUrl)
                 .then(res => res.json())
                 .then(payload => {
@@ -615,7 +636,8 @@
 
 
 
-
+//***************** TILL THIS POINT WE HAVE SENT THE REQEUST, RECEIVED THE RESPONSE AND CONVERTED THE PAYLOAD INTO JSON *****************
+//***************** BELOW THIS POINT, EVERYTHING HAPPENS IN THE BROWSER ON THE CLIENT SIDE  *****************
                     const badge = document.getElementById('orientation-status-badge');
                     if (badge && payload.orientation_status) {
                         badge.textContent = `| hardware_status="${payload.orientation_status}"`;
@@ -633,10 +655,7 @@
                         }
                     }
                     // ========================================================
-
-
-
-
+ 
                     const timeIndices = payload.data.map((_, i) => i);
 
                     // Trace 1: Core Timeline Matrix Line -  
@@ -662,35 +681,34 @@
                     }
 
                     // Trace 3: Full Pan-Tompkins Segment Mappinrun_pan_tompkinsg
- //                   if (usePan && !useCancel && payload.features) {
-//                        const waveConfig = [
-//                            { key: 'P', color: '#1abc9c', name: 'P-Wave' },
-//                            { key: 'Q', color: '#f1c40f', name: 'Q-Dip' },
-//                            { key: 'R', color: '#eb7b2b', name: 'R-Apex' },
-//                            { key: 'S', color: '#e74c3c', name: 'S-Dip' },
-//                            { key: 'T', color: '#9b59b6', name: 'T-Wave' }
-//                        ];
-//                        waveConfig.forEach(cfg => {
-//                            const indices = payload.features[cfg.key];
-//                            if (indices && indices.length > 0) {
-//                                mainTraces.push({
-//                                    x: indices,
-//                                    y: indices.map(idx => payload.data[idx]),
-//                                    type: 'scatter', mode: 'markers', name: cfg.name,
-//                                    marker: { color: cfg.color, size: 8 }
-//                                });
-//                            }
-//                        }
-//                        );
- 
-//                       document.getElementById("chart-container-citation").innerText = document.getElementById("chart-container-citation").innerText + 'PEAKS & QRS DETECTION METHOD: J. Pan and W. J. Tompkins, "A Real-Time QRS Detection Algorithm," <i>IEEE\
-//               Transactions on Biomedical Engineering</i>, vol. BME-32, no. 3, pp. 230-236, Mar. 1985. DOI: <a \
-//               href="https://doi.org" target="_blank" \
-//               style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1109/TBME.1985.325532</a>'
-                    
-            
-            
-//            }
+                    //                   if (usePan && !useCancel && payload.features) {
+                    //                        const waveConfig = [
+                    //                            { key: 'P', color: '#1abc9c', name: 'P-Wave' },
+                    //                            { key: 'Q', color: '#f1c40f', name: 'Q-Dip' },
+                    //                            { key: 'R', color: '#eb7b2b', name: 'R-Apex' },
+                    //                            { key: 'S', color: '#e74c3c', name: 'S-Dip' },
+                    //                            { key: 'T', color: '#9b59b6', name: 'T-Wave' }
+                    //                        ];
+                    //                        waveConfig.forEach(cfg => {
+                    //                            const indices = payload.features[cfg.key];
+                    //                            if (indices && indices.length > 0) {
+                    //                                mainTraces.push({
+                    //                                    x: indices,
+                    //                                    y: indices.map(idx => payload.data[idx]),
+                    //                                    type: 'scatter', mode: 'markers', name: cfg.name,
+                    //                                    marker: { color: cfg.color, size: 8 }
+                    //                                });
+                    //                            }
+                    //                        }
+                    //                        );
+
+                    //                       document.getElementById("chart-container-citation").innerText = document.getElementById("chart-container-citation").innerText + 'PEAKS & QRS DETECTION METHOD: J. Pan and W. J. Tompkins, "A Real-Time QRS Detection Algorithm," <i>IEEE\
+                    //               Transactions on Biomedical Engineering</i>, vol. BME-32, no. 3, pp. 230-236, Mar. 1985. DOI: <a \
+                    //               href="https://doi.org" target="_blank" \
+                    //               style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1109/TBME.1985.325532</a>'
+
+
+                    //            }
 
 
                     // Trace 4: Full Pan-Tompkins Segment Mapping using NeuroKit2
@@ -714,7 +732,6 @@
                             }
                         });
                     }
-
 
 
                     // Check if the user wants to see the overlay matrix
@@ -1032,6 +1049,87 @@
                     }
 
 
+                        console.log("showStackedBeats:",showStackedBeats )
+                        console.log("payload.stacked_beats_dataset:",payload.stacked_beats_dataset )
+                        console.log("payload.stacked_beats_dataset.length:",payload.stacked_beats_dataset.length )
+
+                    const container = document.getElementById('stacked-overlay-container');
+                    if (!showStackedBeats || !payload.stacked_beats_dataset || payload.stacked_beats_dataset.length === 0) {
+                        console.warn("Stacked heartbeat data unavailable. Check the control and stacked_beats_dataset from payload first, mate");
+                        return;
+                    }
+
+                    if(showStackedBeats && payload.stacked_beats_dataset && payload.stacked_beats_dataset.length > 0)
+                    {
+                    console.log("generating superimposed beats now, seems everything is in order");
+                    const finalPlotTraces = [];
+
+                    // Arrays to collect PQRST dots across all sub-signals into consolidated traces 
+                    const featureMap = {
+                        P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
+                        Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
+                        R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
+                        S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
+                        T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
+                    };
+
+                    // Looping though the collection payload.stacked_beats_dataset  
+                    for (const beat of payload.stacked_beats_dataset) {
+                        // Some boilerplate code to plot the Grid, axes and other background stuff  
+                        finalPlotTraces.push({
+                            x: beat.time_ms,
+                            y: beat.amplitude_mv,
+                            type: 'scatter',
+                            mode: 'lines',
+                            line: { color: 'rgba(76, 86, 106, 0.12)', width: 1.1 },
+                            showlegend: false,
+                            hoverinfo: 'skip'
+                        });
+
+                        // Layer up coordinates into consolidated tracking buckets
+                        if (beat.features.P) { featureMap.P.x.push(beat.features.P.x); featureMap.P.y.push(beat.features.P.y); }
+                        if (beat.features.Q) { featureMap.Q.x.push(beat.features.Q.x); featureMap.Q.y.push(beat.features.Q.y); }
+
+                        // Force R point to be at a fixed spot all the times irrespective of the rest of the beat
+                        featureMap.R.x.push(0.0);
+                        featureMap.R.y.push(beat.features.r_val);
+
+                        if (beat.features.S) { featureMap.S.x.push(beat.features.S.x); featureMap.S.y.push(beat.features.S.y); }
+                        if (beat.features.T) { featureMap.T.x.push(beat.features.T.x); featureMap.T.y.push(beat.features.T.y); }
+                    }
+
+                    //  Add individual beats to the main collection : finalPlotTraces 
+                    for (const [key, cfg] of Object.entries(featureMap)) {
+                        if (cfg.x.length > 0) {
+                            finalPlotTraces.push({
+                                x: cfg.x,
+                                y: cfg.y,
+                                type: 'scatter',
+                                mode: 'markers',
+                                name: cfg.name,
+                                marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
+                                hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                            });
+                        }
+                    }
+
+                    // Finally plotting the stacked Beats
+                    const overlayLayout = {
+                        title: { text: '<b>Superimposed Beats with R-central</b>', font: { size: 16 } },
+                        xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, 400], gridcolor: '#e5e9f0' },
+                        yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#e5e9f0' },
+                        plot_bgcolor: '#ffffff',
+                        paper_bgcolor: '#ffffff',
+                        showlegend: true,
+                        legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+                        hovermode: 'closest'
+                    };
+
+                    
+                    Plotly.newPlot('stacked-overlay-container', finalPlotTraces, overlayLayout);
+                    console.log("Stacked overlay rendering assembly successfully finalized.");
+}
+
                 })
                 .catch(err => console.error("Error executing unified stream pipeline:", err));
         }
@@ -1041,7 +1139,7 @@
                  * Binds cross-chart sync routines on mouse interaction and zoom loops.
                  * Includes an operational guard flag to prevent recursive infinite loops.
                  */
-        let isSyncing = false; // Guard flag to prevent infinite zoom loops
+        let isSyncing = false; // prevent infinite zoom loops
 
         function synchronizeCharts(chartId1, chartId2) {
             const chart1 = document.getElementById(chartId1);
