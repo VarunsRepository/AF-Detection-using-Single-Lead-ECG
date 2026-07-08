@@ -333,13 +333,19 @@
 
     <div class="panel control-group">
 
-        <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">R-R INTERVALS</label>
+        <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">R-R INTERVALS</label>
 
 
         <div>
             <input type="checkbox" id="stacked-beats" onchange="loadEcgPipeline()">
-            <label for="stacked-beats" style="color: #f1c40f;">| Plot Stacked Beats </label>
+            <label for="stacked-beats" style="color: #5cc24a;">| Plot Stacked Beats </label>
         </div>
+
+        <div>
+            <input type="checkbox" id="stacked-beats-on-beats" onchange="loadEcgPipeline()">
+            <label for="stacked-beats-on-beats" style="color: #f1c40f;">| Plot Stacked Beat(s)-on-Beat(s) </label>
+        </div>
+
     </div>
 
 
@@ -446,7 +452,7 @@
     </div>
 
 
- 
+
 
     <div id="wavelet-panel" class="panel">
         <h3>Wavelet Sub-Band Decomposition</h3>
@@ -464,21 +470,40 @@
         </div>
     </div>
 
-        <div id="stacked-overlay-panel" class="panel">
+    <div id="stacked-overlay-panel" class="panel">
         <h3>Stacked beats Comparison</h3>
 
-         
+
         <div id="stacked-overlay-container" class="chart-frame"></div>
         <div class="panel-footer-cite">
-            STACKED ECG BEATS (R-central  )
-            This plot stacks individual heartbeats using the R-peak as a common starting point. Overlaying the signals makes it instantly clear whether other physiological phases—such as atrial depolarization (P-wave) and ventricular repolarization (T-wave)—are perfectly synchronized.
+            STACKED ECG BEATS (R-central )
+            This plot stacks individual heartbeats using the R-peak as a common starting point. Overlaying the signals
+            makes it instantly clear whether other physiological phases—such as atrial depolarization (P-wave) and
+            ventricular repolarization (T-wave)—are perfectly synchronized.
             </i>, vol. 60, p. 102143, Aug. 2020. DOI:
             <a href="https://doi.org" target="_blank"
                 style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
         </div>
     </div>
 
-  
+
+    <div id="stacked-beats-on-beats-overlay-panel" class="panel">
+        <h3>Beat(s) on Beat(s) Comparison</h3>
+
+
+        <div id="stacked-beats-on-beats-overlay-container" class="chart-frame"></div>
+        <div class="panel-footer-cite">
+            STACKED n-ECG BEATS (R-central)
+            This plot stacks individual heartbeats using the R-peak as a common starting point. Overlaying the signals
+            makes it instantly clear whether other physiological phases—such as atrial depolarization (P-wave) and
+            ventricular repolarization (T-wave)—are perfectly synchronized.
+            </i>, vol. 60, p. 102143, Aug. 2020. DOI:
+            <a href="https://doi.org" target="_blank"
+                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
+        </div>
+    </div>
+
+
     <script>
         /**
          * Pulls matching sample IDs from the Flask registry slice endpoint
@@ -571,12 +596,18 @@
             const showStackedBeats = document.getElementById('stacked-beats').checked;
             console.log("stacked_beats_dataset in the request", showStackedBeats)
 
+            // to display the n beats on beats comparison
+            const showStackedBeatsOnBeats = document.getElementById('stacked-beats-on-beats').checked;
+            
+
 
             // conditional statements with ternary operator for displaying the selected visuaization only when the corresponding control is activated 
-            document.getElementById('poincare-panel').style.display = usePoincare ? 'block' : 'none';
-            document.getElementById('fft-panel').style.display = useFft ? 'block' : 'none';
-            document.getElementById('wavelet-panel').style.display = useWavelet ? 'block' : 'none';
-            document.getElementById('stacked-overlay-panel').style.display = showStackedBeats ? 'block' : 'none';
+            document.getElementById('poincare-panel').style.display                       = usePoincare ? 'block' : 'none';
+            document.getElementById('fft-panel').style.display                            = useFft ? 'block' : 'none';
+            document.getElementById('wavelet-panel').style.display                        = useWavelet ? 'block' : 'none';
+            document.getElementById('stacked-overlay-panel').style.display                = showStackedBeats ? 'block' : 'none';            
+            document.getElementById('stacked-beats-on-beats-overlay-panel').style.display = showStackedBeatsOnBeats ? 'block' : 'none';
+
 
             // FIXED: Synchronized matching variable references and cleanly mapped all toggles to URL query keys
             //const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}`;
@@ -601,9 +632,10 @@
                 manual_flip: forceManualFlip,
                 //                pan_tompkins_with_nk2: usePanTompkinsWithNk2,
                 peak_detection_method: peakDetectionMethod,
-                StackedBeats: showStackedBeats
+                StackedBeats: showStackedBeats,
+                StackedBeatsOnBeats: showStackedBeatsOnBeats
             };
-//***************** TILL THIS POINT WE HAVE JUST GENERATED THE REQEUST, NOTHING MORE  *****************
+            //***************** TILL THIS POINT WE HAVE JUST GENERATED THE REQEUST, NOTHING MORE  *****************
             // Pass the object to URLSearchParams to auto-format and encode it
             const queryString = new URLSearchParams(params).toString();
 
@@ -618,8 +650,8 @@
 
 
 
-//***************** TILL THIS POINT WE HAVE SENT THE REQEUST, RECEIVED THE RESPONSE AND CONVERTED THE PAYLOAD INTO JSON *****************
-//***************** BELOW THIS POINT, EVERYTHING HAPPENS IN THE BROWSER ON THE CLIENT SIDE  *****************
+                    //***************** TILL THIS POINT WE HAVE SENT THE REQEUST, RECEIVED THE RESPONSE AND CONVERTED THE PAYLOAD INTO JSON *****************
+                    //***************** BELOW THIS POINT, EVERYTHING HAPPENS IN THE BROWSER ON THE CLIENT SIDE  *****************
                     const badge = document.getElementById('orientation-status-badge');
                     if (badge && payload.orientation_status) {
                         badge.textContent = `| hardware_status="${payload.orientation_status}"`;
@@ -637,7 +669,7 @@
                         }
                     }
                     // ========================================================
- 
+
                     const timeIndices = payload.data.map((_, i) => i);
 
                     // Trace 1: Core Timeline Matrix Line -  
@@ -1031,86 +1063,165 @@
                     }
 
 
-                        console.log("showStackedBeats:",showStackedBeats )
-                        console.log("payload.stacked_beats_dataset:",payload.stacked_beats_dataset )
-                        console.log("payload.stacked_beats_dataset.length:",payload.stacked_beats_dataset.length )
+                    console.log("showStackedBeats:", showStackedBeats)
+                    console.log("payload.stacked_beats_dataset:", payload.stacked_beats_dataset)
+                    console.log("payload.stacked_beats_dataset.length:", payload.stacked_beats_dataset.length)
 
-                  
+//******************** This Block is meant to display SINGLE/INDIVIDUAL ECG BEATS ******************** //  
                     if (!showStackedBeats || !payload.stacked_beats_dataset || payload.stacked_beats_dataset.length === 0) {
                         console.warn("Stacked heartbeat data unavailable. Check the control and stacked_beats_dataset from payload first, mate");
-                        return;
+                        //return;
                     }
 
-                    if(showStackedBeats && payload.stacked_beats_dataset && payload.stacked_beats_dataset.length > 0)
-                    {
-                    console.log("generating superimposed beats now, seems everything is in order");
-                    const finalPlotTraces = [];
+                    if (showStackedBeats && payload.stacked_beats_dataset && payload.stacked_beats_dataset.length > 0) {
+                        console.log("generating superimposed beats now, seems everything is in order");
+                        const finalPlotTraces = [];
 
-                    // Arrays to collect PQRST dots across all sub-signals into consolidated traces 
-                    const featureMap = {
-                        P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
-                        Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
-                        R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
-                        S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
-                        T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
-                    };
+                        // Arrays to collect PQRST dots across all sub-signals into consolidated traces 
+                        const featureMap = {
+                            P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
+                            Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
+                            R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
+                            S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
+                            T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
+                        };
 
-                    // Looping though the collection payload.stacked_beats_dataset  
-                    for (const beat of payload.stacked_beats_dataset) {
-                        // Some boilerplate code to plot the Grid, axes and other background stuff  
-                        finalPlotTraces.push({
-                            x: beat.time_ms,
-                            y: beat.amplitude_mv,
-                            type: 'scatter',
-                            mode: 'lines',
-                            line: { color: 'rgba(76, 86, 106, 0.42)', width: 1.5 },
-                            showlegend: false,
-                            hoverinfo: 'skip'
-                        });
-
-                        // Layer up coordinates into consolidated tracking buckets
-                        if (beat.features.P) { featureMap.P.x.push(beat.features.P.x); featureMap.P.y.push(beat.features.P.y); }
-                        if (beat.features.Q) { featureMap.Q.x.push(beat.features.Q.x); featureMap.Q.y.push(beat.features.Q.y); }
-
-                        // Force R point to be at a fixed spot all the times irrespective of the rest of the beat
-                        featureMap.R.x.push(0.0);
-                        featureMap.R.y.push(beat.features.r_val);
-
-                        if (beat.features.S) { featureMap.S.x.push(beat.features.S.x); featureMap.S.y.push(beat.features.S.y); }
-                        if (beat.features.T) { featureMap.T.x.push(beat.features.T.x); featureMap.T.y.push(beat.features.T.y); }
-                    }
-
-                    //  Add individual beats to the main collection : finalPlotTraces 
-                    for (const [key, cfg] of Object.entries(featureMap)) {
-                        if (cfg.x.length > 0) {
+                        // Looping though the collection payload.stacked_beats_dataset  
+                        for (const beat of payload.stacked_beats_dataset) {
+                            // Some boilerplate code to plot the Grid, axes and other background stuff  
                             finalPlotTraces.push({
-                                x: cfg.x,
-                                y: cfg.y,
+                                x: beat.time_ms,
+                                y: beat.amplitude_mv,
                                 type: 'scatter',
-                                mode: 'markers',
-                                name: cfg.name,
-                                marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
-                                hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                                mode: 'lines',
+                                line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.5 },
+                                showlegend: false,
+                                hoverinfo: 'skip'
                             });
+
+                            // Layer up coordinates into consolidated tracking buckets
+                            if (beat.features.P) { featureMap.P.x.push(beat.features.P.x); featureMap.P.y.push(beat.features.P.y); }
+                            if (beat.features.Q) { featureMap.Q.x.push(beat.features.Q.x); featureMap.Q.y.push(beat.features.Q.y); }
+
+                            // Force R point to be at a fixed spot all the times irrespective of the rest of the beat
+                            featureMap.R.x.push(0.0);
+                            featureMap.R.y.push(beat.features.r_val);
+
+                            if (beat.features.S) { featureMap.S.x.push(beat.features.S.x); featureMap.S.y.push(beat.features.S.y); }
+                            if (beat.features.T) { featureMap.T.x.push(beat.features.T.x); featureMap.T.y.push(beat.features.T.y); }
                         }
+
+                        //  Add individual beats to the main collection : finalPlotTraces 
+                        for (const [key, cfg] of Object.entries(featureMap)) {
+                            if (cfg.x.length > 0) {
+                                finalPlotTraces.push({
+                                    x: cfg.x,
+                                    y: cfg.y,
+                                    type: 'scatter',
+                                    mode: 'markers',
+                                    name: cfg.name,
+                                    marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
+                                    hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                                });
+                            }
+                        }
+
+                        // Finally plotting the stacked Beats
+                        const overlayLayout = {
+                            title: { text: '<b>Superimposed Beats with R-centres</b>', font: { size: 16 } },
+                            xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, 400], gridcolor: '#2e3440' },
+                            yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+                            plot_bgcolor: '#1c1e24',
+                            paper_bgcolor: '#1c1e24',
+                            showlegend: true,
+                            legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+                            hovermode: 'closest'
+                        };
+
+
+                        Plotly.newPlot('stacked-overlay-container', finalPlotTraces, overlayLayout);
+                        console.log("Stacked overlay rendering assembly successfully finalized.");
+                    }
+//************************************************************************************************* //
+
+
+                    console.log("showStackedBeatsOnBeats:", showStackedBeatsOnBeats)
+                    console.log("payload.Stacked_Beats_On_Beats:", payload.Stacked_Beats_On_Beats)
+                    console.log("payload.Stacked_Beats_On_Beats.length:", payload.Stacked_Beats_On_Beats.length)
+
+
+                    // STACKED BEATS ON BEATS RENDERING LOGIC HERE 
+                    if (showStackedBeatsOnBeats && payload.Stacked_Beats_On_Beats && payload.Stacked_Beats_On_Beats.length > 0) {
+                        console.log("generating R-R beats now, seems everything is in order");
+                        const finalPlotTraces = [];
+
+                        // Arrays to collect PQRST dots across all sub-signals into consolidated traces 
+                        const featureMap = {
+                            P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
+                            Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
+                            R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
+                            S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
+                            T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
+                        };
+
+                        // Looping though the collection payload.Stacked_Beats_On_Beats  
+                        for (const beat of payload.Stacked_Beats_On_Beats) {
+                            // Some boilerplate code to plot the Grid, axes and other background stuff  
+                            finalPlotTraces.push({
+                                x: beat.time_ms,
+                                y: beat.amplitude_mv,
+                                type: 'scatter',
+                                mode: 'lines',
+                                line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.5 },
+                                showlegend: false,
+                                hoverinfo: 'skip'
+                            });
+
+                            // Layer up coordinates into consolidated tracking buckets
+                            if (beat.features.P) { featureMap.P.x.push(beat.features.P.x); featureMap.P.y.push(beat.features.P.y); }
+                            if (beat.features.Q) { featureMap.Q.x.push(beat.features.Q.x); featureMap.Q.y.push(beat.features.Q.y); }
+
+                            // Force R point to be at a fixed spot all the times irrespective of the rest of the beat
+                            featureMap.R.x.push(0.0);
+                            featureMap.R.y.push(beat.features.r_val);
+
+                            if (beat.features.S) { featureMap.S.x.push(beat.features.S.x); featureMap.S.y.push(beat.features.S.y); }
+                            if (beat.features.T) { featureMap.T.x.push(beat.features.T.x); featureMap.T.y.push(beat.features.T.y); }
+                        }
+
+                        //  Add individual beats to the main collection : finalPlotTraces 
+                        for (const [key, cfg] of Object.entries(featureMap)) {
+                            if (cfg.x.length > 0) {
+                                finalPlotTraces.push({
+                                    x: cfg.x,
+                                    y: cfg.y,
+                                    type: 'scatter',
+                                    mode: 'markers',
+                                    name: cfg.name,
+                                    marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
+                                    hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                                });
+                            }
+                        }
+
+                        // Finally plotting the stacked Beats
+                        const overlayLayout = {
+                            title: { text: '<b>Consequitive beats showing RR Distances</b>', font: { size: 16 } },
+                            xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, 1100], gridcolor: '#2e3440' },
+                            yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+                            plot_bgcolor: '#1c1e24',
+                            paper_bgcolor: '#1c1e24',
+                            showlegend: true,
+                            legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+                            hovermode: 'closest'
+                        };
+
+
+                        Plotly.newPlot('stacked-beats-on-beats-overlay-container', finalPlotTraces, overlayLayout);
+                        console.log("Stacked overlay rendering assembly successfully finalized.");
                     }
 
-                    // Finally plotting the stacked Beats
-                    const overlayLayout = {
-                        title: { text : '<b>Superimposed Beats with R-central</b>', font: { size: 16 } },
-                        xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, 400], gridcolor: '#2e3440' },
-                        yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
-                        plot_bgcolor  : '#1c1e24',
-                        paper_bgcolor : '#1c1e24',
-                        showlegend    : true,
-                        legend        : { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
-                        hovermode     : 'closest'
-                    };
 
-                    
-                    Plotly.newPlot('stacked-overlay-container', finalPlotTraces, overlayLayout);
-                    console.log("Stacked overlay rendering assembly successfully finalized.");
-}
 
                 })
                 .catch(err => console.error("Error executing unified stream pipeline:", err));
