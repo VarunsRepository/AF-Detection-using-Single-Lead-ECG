@@ -10,7 +10,8 @@ from DSP_modules.DSP import apply_noise_filter, \
                             calculate_signal_fft, \
                             apply_qrst_cancellation, \
                             compute_wavelet_decomposition, \
-                            generate_stacked_pqrst_dataset
+                            generate_stacked_pqrst_dataset, \
+                            generate_stacked_RR_dataset
 
 # importing the function to correct(invert) the flipped samples.(samples where the patients held the alliveCor device incorrectly)
 from DSP_modules.inversion_Correction import is_device_inverted, \
@@ -89,7 +90,8 @@ def run_ecg_pipeline(signal_values: np.ndarray,
     fft_data = {"frequencies": [], "magnitudes": []}
     wavelet_data = {}  # simpler design 
     features_Nk2 = {'P_nk2':[], 'Q_nk2':[], 'R_nk2':[], 'S_nk2':[], 'T_nk2':[]}
-    stacked_beats_dataset={}
+    stacked_beats_dataset = {}
+    Stacked_Beats_On_Beats_dataset = {}
  
     peak_detection_algorithms =  get_peak_detection_algorithms()
 
@@ -173,6 +175,11 @@ def run_ecg_pipeline(signal_values: np.ndarray,
         stacked_beats_dataset =  generate_stacked_pqrst_dataset(processed_signal, 300)  
 
 
+    print(f"config['Stacked_Beats_On_Beats']: {config['Stacked_Beats_On_Beats']}")
+    if config['Stacked_Beats_On_Beats']:
+        Stacked_Beats_On_Beats_dataset =  generate_stacked_RR_dataset(processed_signal, 300)  
+
+
     if config['use_wavelet']:
         wavelet_results = compute_wavelet_decomposition(processed_signal)
         
@@ -206,5 +213,6 @@ def run_ecg_pipeline(signal_values: np.ndarray,
         "poincare": poincare_data,
         "fft": fft_data,
         "wavelets": wavelet_data,
-        "stacked_beats_dataset": stacked_beats_dataset
+        "stacked_beats_dataset": stacked_beats_dataset,
+        "Stacked_Beats_On_Beats" : Stacked_Beats_On_Beats_dataset
     })
