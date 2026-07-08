@@ -364,7 +364,7 @@ def generate_stacked_pqrst_dataset(processed_signal, sampling_rate=300.0):
 
 
 
-def generate_stacked_RR_dataset(processed_signal, sampling_rate=300.0): 
+def generate_stacked_RR_dataset(processed_signal, sampling_rate=300.0):
 #def generate_stacked_pqrst_dataset(processed_signal, sampling_rate=300.0):
     """
     Slices the continuous ECG data stream into independent heartbeat sub-signals
@@ -391,6 +391,8 @@ def generate_stacked_RR_dataset(processed_signal, sampling_rate=300.0):
     # Iterate through each R-point from the  r_peak_indices array
     for idx, r_index in enumerate(r_peak_indices[:-1]):
         start_sample = r_index - samples_before
+        
+        # going from the current R-Peak(which is at index:idx) to the next R-Peak(which is at index:idx + 1) plus some data points after that R-peak 
         end_sample = r_peak_indices[idx + 1]  + samples_after
         
         # Guard clause against boundary overflow errors near file endpoints
@@ -400,9 +402,17 @@ def generate_stacked_RR_dataset(processed_signal, sampling_rate=300.0):
         # Slice the ECG recording from R-point to the next R-point  
         amplitudes = processed_signal[start_sample:end_sample].tolist()
         
+        # we cannot use the generated timeline for y-axis stated below because now the R-R intervals are not going to be fixed
         # Synthesize standard millisecond time baseline (X-Axis track where R is 0ms)
-        times_ms = [round(((s - samples_before) / sampling_rate) * 1000.0, 1) for s in range(total_samples)]
-        
+        #times_ms = [round(((s - samples_before) / sampling_rate) * 1000.0, 1) for s in range(total_samples)]
+
+        # we just simply take the length of the current subarray and then reevaluate the timming interval 
+        actual_points = len(amplitudes)
+        times_ms = [
+            round((((start_sample + s) - r_index) / sampling_rate) * 1000.0, 1) 
+            for s in range(actual_points)
+        ]
+
         # Instantiate empty frame for relative feature markers belonging to this contraction cycle
         beat_features = {"P": None, "Q": None, "r_val": float(processed_signal[r_index]), "S": None, "T": None}
         
@@ -420,8 +430,11 @@ def generate_stacked_RR_dataset(processed_signal, sampling_rate=300.0):
         beat_features["P"] = match_wave_peak(pan_tompkins_output.get("P", []), start_sample, r_index - 1)
         beat_features["Q"] = match_wave_peak(pan_tompkins_output.get("Q", []), r_index - 20, r_index - 1)
         beat_features["S"] = match_wave_peak(pan_tompkins_output.get("S", []), r_index + 1, r_index + 20)
-        beat_features["T"] = match_wave_peak(pan_tompkins_output.get("T", []), r_index + 1, end_sample)
+        #beat_features["T"] = match_wave_peak(pan_tompkins_output.get("T", []), r_index + 1, end_sample)
         
+        # Stop looking for this beat's T-wave once we hit the next R-peak
+        beat_features["T"] = match_wave_peak(pan_tompkins_output.get("T", []), r_index + 1, r_peak_indices[idx + 1])
+
         stacked_beats_dataset.append({
             "beat_number": idx + 1,
             "time_ms": times_ms,
