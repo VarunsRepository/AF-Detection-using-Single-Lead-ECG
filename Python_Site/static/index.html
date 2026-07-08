@@ -446,25 +446,7 @@
     </div>
 
 
-    <!-- DEDICATED BEAT OVERLAY ANALYSIS CARD -->
-    <div id="morphology-panel" class="panel">
-        <h3>Morphological Beat Alignment Studio (| ensemble_average mode="p-to-p")</h3>
-
-        <!-- Unique canvas container for the heartbeat overlay stack -->
-        <div id="overlay-chart-container" class="chart-frame"></div>
-
-        <!-- Separate, independent citation footer for this method -->
-        <div id="morphology-citation" class="panel-footer-cite">
-            <span id="cite-ensemble">
-                OVERLAY COEFFICIENTS: J. L. Willems et al., "Common Standards for Quantitative Electrocardiography: The
-                CSE Pilot Study,"
-                <i>Medical Informatics</i>, vol. 5, no. 4, pp. 277-286, Oct. 1980.
-                DOI: <a href="https://doi.org" target="_blank"
-                    style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.3109/14639238009022646</a>
-            </span>
-        </div>
-    </div>
-
+ 
 
     <div id="wavelet-panel" class="panel">
         <h3>Wavelet Sub-Band Decomposition</h3>
@@ -1053,7 +1035,7 @@
                         console.log("payload.stacked_beats_dataset:",payload.stacked_beats_dataset )
                         console.log("payload.stacked_beats_dataset.length:",payload.stacked_beats_dataset.length )
 
-                    const container = document.getElementById('stacked-overlay-container');
+                  
                     if (!showStackedBeats || !payload.stacked_beats_dataset || payload.stacked_beats_dataset.length === 0) {
                         console.warn("Stacked heartbeat data unavailable. Check the control and stacked_beats_dataset from payload first, mate");
                         return;
@@ -1081,7 +1063,7 @@
                             y: beat.amplitude_mv,
                             type: 'scatter',
                             mode: 'lines',
-                            line: { color: 'rgba(76, 86, 106, 0.12)', width: 1.1 },
+                            line: { color: 'rgba(76, 86, 106, 0.42)', width: 1.5 },
                             showlegend: false,
                             hoverinfo: 'skip'
                         });
@@ -1115,14 +1097,14 @@
 
                     // Finally plotting the stacked Beats
                     const overlayLayout = {
-                        title: { text: '<b>Superimposed Beats with R-central</b>', font: { size: 16 } },
-                        xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, 400], gridcolor: '#e5e9f0' },
-                        yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#e5e9f0' },
-                        plot_bgcolor: '#ffffff',
-                        paper_bgcolor: '#ffffff',
-                        showlegend: true,
-                        legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
-                        hovermode: 'closest'
+                        title: { text : '<b>Superimposed Beats with R-central</b>', font: { size: 16 } },
+                        xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, 400], gridcolor: '#2e3440' },
+                        yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+                        plot_bgcolor  : '#1c1e24',
+                        paper_bgcolor : '#1c1e24',
+                        showlegend    : true,
+                        legend        : { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+                        hovermode     : 'closest'
                     };
 
                     
