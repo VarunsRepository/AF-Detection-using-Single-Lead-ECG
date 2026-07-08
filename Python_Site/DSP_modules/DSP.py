@@ -118,7 +118,6 @@ def run_pan_tompkins_segmentation(signal,  # the ECG signal
 
     return {"P": p_points, "Q": q_points, "R": r_peaks, "S": s_points, "T": t_points}
 
-
 def run_pan_tompkins_segmentation_nk2(signal, sampling_rate=300.0):
     """
     Upgraded NeuroKit2 segmentation using the high-recall 'peak' method.
@@ -134,11 +133,11 @@ def run_pan_tompkins_segmentation_nk2(signal, sampling_rate=300.0):
         
         r_peaks = r_peak_info["ECG_R_Peaks"].tolist()
         if len(r_peaks) == 0:
-            return {"P_nk2": [], 
-                    "Q_nk2": [], 
-                    "S_nk2": [], 
-                    "R_nk2": [], 
-                    "T_nk2": []}
+            return {"P": [], 
+                    "Q": [], 
+                    "S": [], 
+                    "R": [], 
+                    "T": []}
             
         # Step 2: High-Recall Derivative 'peak' method (Replaces the drop-prone 'dwt' wavelet)
         _, wave_info = nk.ecg_delineate(cleaned_signal, r_peaks, sampling_rate=sampling_rate, method='peak')
@@ -177,20 +176,20 @@ def run_pan_tompkins_segmentation_nk2(signal, sampling_rate=300.0):
         t_points = process_sub_wave("ECG_T_Peaks", search_offset_start=0.10, search_offset_end=0.40, use_min=False)
         
         return {
-            "P_nk2": p_points,
-            "Q_nk2": q_points,
-            "R_nk2": r_peaks,
-            "S_nk2": s_points,
-            "T_nk2": t_points
+            "P": p_points,
+            "Q": q_points,
+            "R": r_peaks,
+            "S": s_points,
+            "T": t_points
         }
         
     except Exception as e:
         print(f"[NeuroKit2 Hybrid Error]: Pipeline failed. Reason: {str(e)}")
-        return {"P_nk2": [], 
-                "Q_nk2": [], 
-                "R_nk2": [], 
-                "S_nk2": [], 
-                "T_nk2": []}
+        return {"P": [], 
+                "Q": [], 
+                "R": [], 
+                "S": [], 
+                "T": []}
 
 
 def calculate_signal_fft(signal, sampling_rate=300.0):
@@ -295,3 +294,64 @@ def compute_wavelet_decomposition(signal_data, wavelet_name="db4", level=5):
         print(f"[INTERNAL ERROR] Wavelet Math Crash: {str(e)}")
         return {"success": False, "error": str(e)}
 #  Signal Processing functions end here
+
+def generate_stacked_pqrst_dataset(processed_signal, sampling_rate=300.0):
+    """
+    Slices the continuous ECG data stream into independent heartbeat sub-signals
+    and converts absolute file index pointers into relative millisecond time coordinates.
+    All beats are centered perfectly at R-peak (Time = 0.0 ms).
+    """
+    # 1. Execute your core Pan-Tompkins calculation module
+    # Returns {"P": [...], "Q": [...], "R": [...], "S": [...], "T": [...]}
+    pan_tompkins_output = run_pan_tompkins_segmentation(processed_signal, sampling_rate)
+    r_peak_indices = pan_tompkins_output.get("R", [])
+    
+    # Precise window boundaries: -200ms (60 samples) to +400ms (120 samples)
+    samples_before = int(0.20 * sampling_rate) # 60
+    samples_after = int(0.40 * sampling_rate)  # 120
+    total_samples = samples_before + samples_after
+    
+    stacked_beats_dataset = []
+    
+    # 2. Loop through each isolated R-peak pointer to slice sub-signals
+    for idx, r_index in enumerate(r_peak_indices):
+        start_sample = r_index - samples_before
+        end_sample = r_index + samples_after
+        
+        # Guard clause against boundary overflow errors near file endpoints
+        if start_sample < 0 or end_sample >= len(processed_signal):
+            continue
+            
+        # Slices out raw biopotential amplitude voltage segment data (Y-Axis track)
+        amplitudes = processed_signal[start_sample:end_sample].tolist()
+        
+        # Synthesize standard millisecond time baseline (X-Axis track where R is 0ms)
+        times_ms = [round(((s - samples_before) / sampling_rate) * 1000.0, 1) for s in range(total_samples)]
+        
+        # Instantiate empty frame for relative feature markers belonging to this contraction cycle
+        beat_features = {"P": None, "Q": None, "r_val": float(processed_signal[r_index]), "S": None, "T": None}
+        
+        # Helper function to find and map specific feature keys to this sub-window frame
+        def match_wave_peak(feature_indices, lower_bound, upper_bound):
+            for sample_idx in feature_indices:
+                if lower_bound <= sample_idx <= upper_bound:
+                    return {
+                        "x": round(((sample_idx - r_index) / sampling_rate) * 1000.0, 1),
+                        "y": float(processed_signal[sample_idx])
+                    }
+            return None
+
+        # Synchronize explicit wave pointers based on structural distance bounds
+        beat_features["P"] = match_wave_peak(pan_tompkins_output.get("P", []), start_sample, r_index - 1)
+        beat_features["Q"] = match_wave_peak(pan_tompkins_output.get("Q", []), r_index - 20, r_index - 1)
+        beat_features["S"] = match_wave_peak(pan_tompkins_output.get("S", []), r_index + 1, r_index + 20)
+        beat_features["T"] = match_wave_peak(pan_tompkins_output.get("T", []), r_index + 1, end_sample)
+        
+        stacked_beats_dataset.append({
+            "beat_number": idx + 1,
+            "time_ms": times_ms,
+            "amplitude_mv": amplitudes,
+            "features": beat_features
+        })
+        
+    return stacked_beats_dataset
