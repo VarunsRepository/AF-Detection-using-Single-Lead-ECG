@@ -306,7 +306,13 @@ def generate_stacked_pqrst_dataset(processed_signal, sampling_rate=300.0):
     pan_tompkins_output = run_pan_tompkins_segmentation(processed_signal, sampling_rate)
     r_peak_indices = pan_tompkins_output.get("R", [])
     
-    # Precise window boundaries: -200ms (60 samples) to +400ms (120 samples)
+    #A pre-determined number of ECG-points before and after our R-peak
+    # As the plot would be centered around the R point, we would need to decide on the number of points 
+    # that are enough to display a complete beat
+    # sometimes the beat can be long, and sometimes the beat can be short we need to accomodate that with some logic
+    # hardcoding the ECG-points for now to 
+    # 0.2 seconds or 60 sample before the R-point
+    # 0.4 seconds or 120 samples after the R point 
     samples_before = int(0.20 * sampling_rate) # 60
     samples_after = int(0.40 * sampling_rate)  # 120
     total_samples = samples_before + samples_after
@@ -323,6 +329,75 @@ def generate_stacked_pqrst_dataset(processed_signal, sampling_rate=300.0):
             continue
             
         # Slices out raw biopotential amplitude voltage segment data (Y-Axis track)
+        amplitudes = processed_signal[start_sample:end_sample].tolist()
+        
+        # Synthesize standard millisecond time baseline (X-Axis track where R is 0ms)
+        times_ms = [round(((s - samples_before) / sampling_rate) * 1000.0, 1) for s in range(total_samples)]
+        
+        # Instantiate empty frame for relative feature markers belonging to this contraction cycle
+        beat_features = {"P": None, "Q": None, "r_val": float(processed_signal[r_index]), "S": None, "T": None}
+        
+        # Helper function to find and map specific feature keys to this sub-window frame
+        def match_wave_peak(feature_indices, lower_bound, upper_bound):
+            for sample_idx in feature_indices:
+                if lower_bound <= sample_idx <= upper_bound:
+                    return {
+                        "x": round(((sample_idx - r_index) / sampling_rate) * 1000.0, 1),
+                        "y": float(processed_signal[sample_idx])
+                    }
+            return None
+
+        # Synchronize explicit wave pointers based on structural distance bounds
+        beat_features["P"] = match_wave_peak(pan_tompkins_output.get("P", []), start_sample, r_index - 1)
+        beat_features["Q"] = match_wave_peak(pan_tompkins_output.get("Q", []), r_index - 20, r_index - 1)
+        beat_features["S"] = match_wave_peak(pan_tompkins_output.get("S", []), r_index + 1, r_index + 20)
+        beat_features["T"] = match_wave_peak(pan_tompkins_output.get("T", []), r_index + 1, end_sample)
+        
+        stacked_beats_dataset.append({
+            "beat_number": idx + 1,
+            "time_ms": times_ms,
+            "amplitude_mv": amplitudes,
+            "features": beat_features
+        })
+        
+    return stacked_beats_dataset
+
+
+
+def generate_stacked_RR_dataset(processed_signal, sampling_rate=300.0):
+#def generate_stacked_pqrst_dataset(processed_signal, sampling_rate=300.0):
+    """
+    Slices the continuous ECG data stream into independent heartbeat sub-signals
+    starting from R-Peaks and going all the way till the next R-Peaks. This will help 
+    us detetmining if the a sample is a normal Rhythm or if it posses some degree of fibrillation
+    """
+    # Step 1 would be to run a peak detection algorithm - Pan-tompkins to get all the points
+    pan_tompkins_output = run_pan_tompkins_segmentation(processed_signal, sampling_rate)
+    r_peak_indices = pan_tompkins_output.get("R", [])
+    
+    #A pre-determined number of ECG-points before and after our R-peak
+    # As the plot would be centered around the R point, we would need to decide on the number of points 
+    # that are enough to display a complete beat
+    # sometimes the beat can be long, and sometimes the beat can be short we need to accomodate that with some logic
+    # hardcoding the ECG-points for now to 
+    # 0.2 seconds or 60 sample before the R-point
+    # 0.4 seconds or 120 samples after the R point 
+    samples_before = int(0.20 * sampling_rate) # 60
+    samples_after = int(0.40 * sampling_rate)  # 120
+    total_samples = samples_before + samples_after
+    
+    stacked_beats_dataset = []
+    
+    # Iterate through each R-point from the  r_peak_indices array
+    for idx, r_index in enumerate(r_peak_indices[:-1]):
+        start_sample = r_index - samples_before
+        end_sample = r_peak_indices[idx + 1]  + samples_after
+        
+        # Guard clause against boundary overflow errors near file endpoints
+        if start_sample < 0 or end_sample >= len(processed_signal):
+            continue
+            
+        # Slice the ECG recording from R-point to the next R-point  
         amplitudes = processed_signal[start_sample:end_sample].tolist()
         
         # Synthesize standard millisecond time baseline (X-Axis track where R is 0ms)
