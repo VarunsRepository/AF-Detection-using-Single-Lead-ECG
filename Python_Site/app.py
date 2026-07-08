@@ -141,7 +141,9 @@ def stream_ecg():
         'timeline_scale': request.args.get('scale', 'short').lower(),
         'force_manual_flip': request.args.get('manual_flip', 'false').lower() == 'true',
         'peak_detection_method' : request.args.get('peak_detection_method', 'false').lower(),  
-        'stacked_beats': request.args.get('StackedBeats', 'false').lower() == 'true'
+        'stacked_beats': request.args.get('StackedBeats', 'false').lower() == 'true',
+        'Stacked_Beats_On_Beats': request.args.get('StackedBeatsOnBeats', 'false').lower() == 'true'
+        
     }
 
     try:
