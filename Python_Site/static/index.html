@@ -330,7 +330,7 @@
     </div>
 
 
-
+    <!-- THIS CONTROL IS MEANT TO VISUALSE THE R-R DISTANCES MORE EFFECTIVELY -->
     <div class="panel control-group">
 
         <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">R-R INTERVALS</label>
@@ -341,9 +341,15 @@
             <label for="stacked-beats" style="color: #5cc24a;">| Plot Stacked Beats </label>
         </div>
 
+ 
         <div>
             <input type="checkbox" id="stacked-beats-on-beats" onchange="loadEcgPipeline()">
             <label for="stacked-beats-on-beats" style="color: #f1c40f;">| Plot Stacked Beat(s)-on-Beat(s) </label>
+        </div>
+
+        <div>
+            <input type="checkbox" id="stacked-n-RR-beats" onchange="loadEcgPipeline()">
+            <label for="stacked-n-RR-beats" style="color: #f1c40f;">| Plot Stacked n-RR beats  </label>
         </div>
 
     </div>
@@ -471,7 +477,7 @@
     </div>
 
     <div id="stacked-overlay-panel" class="panel">
-        <h3>Stacked beats Comparison</h3>
+        <!-- <h3>Stacked beats Comparison</h3> -->
 
 
         <div id="stacked-overlay-container" class="chart-frame"></div>
@@ -488,10 +494,25 @@
 
 
     <div id="stacked-beats-on-beats-overlay-panel" class="panel">
-        <h3>Beat(s) on Beat(s) Comparison</h3>
-
+        <!-- <h3>Beat(s) on Beat(s) Comparison</h3> -->
 
         <div id="stacked-beats-on-beats-overlay-container" class="chart-frame"></div>
+        <div class="panel-footer-cite">
+            STACKED 2 ECG BEATS (R-central)
+            This plot stacks individual heartbeats using the R-peak as a common starting point. Overlaying the signals
+            makes it instantly clear whether other physiological phases—such as atrial depolarization (P-wave) and
+            ventricular repolarization (T-wave)—are perfectly synchronized.
+            </i>, vol. 60, p. 102143, Aug. 2020. DOI:
+            <a href="https://doi.org" target="_blank"
+                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
+        </div>
+    </div>
+
+
+        <div id="stacked-n-RR-beats-overlay-panel" class="panel">
+        <!-- <h3>Beat(s) on Beat(s) Comparison</h3> -->
+
+        <div id="stacked-n-RR-beats-overlay-container" class="chart-frame"></div>
         <div class="panel-footer-cite">
             STACKED n-ECG BEATS (R-central)
             This plot stacks individual heartbeats using the R-peak as a common starting point. Overlaying the signals
@@ -502,7 +523,6 @@
                 style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
         </div>
     </div>
-
 
     <script>
         /**
@@ -571,9 +591,178 @@
 
         }
 
+
+        /*
+        This function does the actual heavylifting for generating the custom dataset for the plotly view.
+        Earlier we had this functionlaity on the server-side{On the python back end via generate_stacked_RR_dataset()} 
+        Now since we want the option to view single, double or tripple beats-on-beats, we're moving that functionality to the front end i.e. JS 
+        1. This offloads some work from the server. 
+        2. This also gives us the flexibility to design elaborate features in the front end without needing 
+        to design/update/haul complex data-structures as Payloads to-and-fro through the server 
+        */
+        function sliceStackedBeatsFrontend(signal,           // the input ECG signal 
+            absoluteIndices,  // The P,Q,R,S and T points returned from Pan-Tompkins or similar peak detection Algorithm 
+            beatsToStack = 2, // If you want to a stack a single-beat or 2-consequitive beats or 3-beats and so on
+            samplingRate = 300// Sampling rate
+        ) {
+            const rPeaks = absoluteIndices.R || [];
+            const stackedDataset = [];
+
+            //A pre-determined number of ECG-points before and after our R-peak
+            // As the plot would be centered around the R point, we would need to decide on the number of points 
+            // that are enough to display a complete beat
+            // sometimes the beat can be long, and sometimes the beat can be short we need to accomodate that with some logic
+            // hardcoding the ECG-points for now to 
+            // 0.2 seconds or 60 sample before the R-point
+            // 0.4 seconds or 120 samples after the R point 
+            const samplesBefore = Math.floor(0.20 * samplingRate); // 60 samples
+            const samplesAfter = Math.floor(0.40 * samplingRate);  // 120 samples
+
+            // Loop through R-peaks, stopping safely before we run out of neighboring beats
+            for (let idx = 0; idx < rPeaks.length - (beatsToStack - 1); idx++) {
+                const rCurrent = rPeaks[idx];                        // This represents the current R-peak in the view
+                const rTargetEnd = rPeaks[idx + (beatsToStack - 1)]; // This represents the last R-peak in the view
+
+
+                const startSample = rCurrent - samplesBefore; //represents the first Sample ID from the signal Array 
+                const endSample = rTargetEnd + samplesAfter;  //represents the Last  Sample ID from the signal Array 
+
+                // Guard clause against boundary overflow errors near file endpoints
+                if (startSample < 0 || endSample >= signal.length) continue;
+
+                // Slice the ECG recording from first designated R-point to the last R-point that we want  
+                const amplitudes = signal.slice(startSample, endSample);
+
+                // generate the x-axis timeline(same as what we did earlier in our generate_stacked_RR_dataset()  in python)
+                const timesMs = Array.from({ length: amplitudes.length }, (_, s) => {
+                    const absoluteSampleIndex = startSample + s;
+                    return Number((((absoluteSampleIndex - rCurrent) / samplingRate) * 1000).toFixed(1));
+                });
+
+                // Map the PQRST Markers
+                const features = { P: [], Q: [], R: [], S: [], T: [] };
+
+                ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+                    const indices = absoluteIndices[wave] || [];
+                    indices.forEach(sampleIdx => {
+                        // If the marker falls within our current window slice
+                        if (sampleIdx >= startSample && sampleIdx <= endSample) {
+                            features[wave].push({
+                                x: Number((((sampleIdx - rCurrent) / samplingRate) * 1000).toFixed(1)),
+                                y: signal[sampleIdx]
+                            });
+                        }
+                    });
+                });
+
+                //finally push everything onto the stackedDataset
+                stackedDataset.push({
+                    beat_number: idx + 1,
+                    time_ms: timesMs,
+                    amplitude_mv: amplitudes,
+                    features: features
+                });
+            }
+
+            return stackedDataset;
+        }
+
+
+        /* THIS FUNCTION TAKES CARE OF ALL THE R-R BEATS PLOTS. IT DOES THE FOLLOWING :
+           * Moves the R-R plotting and rendering math from server to the browser side
+           * simplies the stacked plots. earlier we has a separate data structure in the 
+             server's payload for each R-R plot, but now the server just sends the Processed signal array and the feature array(Pan-Tompkins/Peak detection) 
+             and rest of figured out by the browser in real time 
+        */
+        function updateStackedChart(serverPayload,
+            beatsToStack = 2,
+            samplingRate = 300) {
+
+            // Run the math function to slice the data on the fly without needing to ask the server to do it for us
+            const stackedBeats = sliceStackedBeatsFrontend(
+                serverPayload.data,
+                serverPayload.features, // e.g. { P:[...], Q:[...], R:[...] }
+                beatsToStack,
+                samplingRate
+            );
+
+            const finalPlotTraces = [];
+
+            // Consolidated tracking buckets for all PQRST markers
+            const featureMap = {
+                P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
+                Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
+                R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
+                S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
+                T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
+            };
+
+            // Loop through the frontend-sliced chunks to push lines and collect dots
+            for (const chunk of stackedBeats) {
+
+                // Push the continuous ECG trace lines
+                finalPlotTraces.push({
+                    x: chunk.time_ms,
+                    y: chunk.amplitude_mv,
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.2 },
+                    showlegend: false,
+                    hoverinfo: 'skip'
+                });
+
+                // Loop through P, Q, R, S, T waves to harvest their shifted offsets
+                ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+                    chunk.features[wave].forEach(marker => {
+                        featureMap[wave].x.push(marker.x);
+                        featureMap[wave].y.push(marker.y);
+                    });
+                });
+            }
+
+            // Add the grouped markers to the chart array
+            for (const [key, cfg] of Object.entries(featureMap)) {
+                if (cfg.x.length > 0) {
+                    finalPlotTraces.push({
+                        x: cfg.x,
+                        y: cfg.y,
+                        type: 'scatter',
+                        mode: 'markers',
+                        name: cfg.name,
+                        marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
+                        hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                    });
+                }
+            }
+
+            // Set dynamic X-axis range width based on how many beats are stacked
+            // right now we are hardcoding the interval but in future we might need some logic to ge the longest or the most frequenct beat length or something like that 
+            // 1 beat  : 450ms wide
+            // 2 beats : 1100ms wide 
+            // 3 beats : 1800ms wide
+            const maxRangeX = beatsToStack === 1 ? 450 : beatsToStack === 2 ? 1100 : 1800;
+
+            const overlayLayout = {
+                title: { text: `<b>Superimposed Cycles (${beatsToStack}x Beat Phase View)</b>`, font: { size: 16 } },
+                xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, maxRangeX], gridcolor: '#2e3440' },
+                yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+                plot_bgcolor: '#1c1e24',
+                paper_bgcolor: '#1c1e24',
+                showlegend: true,
+                legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+                hovermode: 'closest'
+            };
+
+            Plotly.newPlot('stacked-n-RR-beats-overlay-container', finalPlotTraces, overlayLayout);
+        }
+
+
+
         /**
          * Fetches vector matrices from the active Flask stream API 
-         * and paints the resulting charts via Plotly.
+         * and renders the resulting charts via python's Plotly's via JS.
+         * Think if it as the main() function or the default app route for the application.
+         * it does all the heavy lifiting on the browser side of things
          */
         function loadEcgPipeline() {
             const recordId = document.getElementById('record-selector').value;
@@ -596,18 +785,22 @@
             const showStackedBeats = document.getElementById('stacked-beats').checked;
             console.log("stacked_beats_dataset in the request", showStackedBeats)
 
-            // to display the n beats on beats comparison
+            // to display the double beats on beats comparison
             const showStackedBeatsOnBeats = document.getElementById('stacked-beats-on-beats').checked;
             
-
+            // to display the n beats on beats comparison
+            const showStacked_n_RR_Beats = document.getElementById('stacked-n-RR-beats').checked;
+            console.log("showStacked_n_RR_Beats in the request", showStacked_n_RR_Beats)
 
             // conditional statements with ternary operator for displaying the selected visuaization only when the corresponding control is activated 
-            document.getElementById('poincare-panel').style.display                       = usePoincare ? 'block' : 'none';
-            document.getElementById('fft-panel').style.display                            = useFft ? 'block' : 'none';
-            document.getElementById('wavelet-panel').style.display                        = useWavelet ? 'block' : 'none';
-            document.getElementById('stacked-overlay-panel').style.display                = showStackedBeats ? 'block' : 'none';            
+            document.getElementById('poincare-panel').style.display = usePoincare ? 'block' : 'none';
+            document.getElementById('fft-panel').style.display = useFft ? 'block' : 'none';
+            document.getElementById('wavelet-panel').style.display = useWavelet ? 'block' : 'none';
+            document.getElementById('stacked-overlay-panel').style.display = showStackedBeats ? 'block' : 'none';
             document.getElementById('stacked-beats-on-beats-overlay-panel').style.display = showStackedBeatsOnBeats ? 'block' : 'none';
+            document.getElementById('stacked-n-RR-beats-overlay-panel').style.display = showStacked_n_RR_Beats ? 'block' : 'none';
 
+ 
 
             // FIXED: Synchronized matching variable references and cleanly mapped all toggles to URL query keys
             //const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}`;
@@ -620,20 +813,21 @@
 
             // we are trying a better way to consolidate all the arg as the list of arguments is increasing continously
             const params = {
-                record: recordId,
-                scale: currentScale,
-                filter: useFilter,
-                local_r: useLocal,
-                //    pan_tompkins: usePan,
-                cancel: useCancel,
-                poincare: usePoincare,
-                fft: useFft,
-                wavelet: useWavelet,
+                record     : recordId,
+                scale      : currentScale,
+                filter     : useFilter,
+                local_r    : useLocal,
+//             pan_tompkins: usePan,
+                cancel     : useCancel,
+                poincare   : usePoincare,
+                fft        : useFft,
+                wavelet    : useWavelet,
                 manual_flip: forceManualFlip,
-                //                pan_tompkins_with_nk2: usePanTompkinsWithNk2,
-                peak_detection_method: peakDetectionMethod,
-                StackedBeats: showStackedBeats,
-                StackedBeatsOnBeats: showStackedBeatsOnBeats
+//    pan_tompkins_with_nk2: usePanTompkinsWithNk2,
+      peak_detection_method: peakDetectionMethod,
+               StackedBeats: showStackedBeats,
+        StackedBeatsOnBeats: showStackedBeatsOnBeats,
+         Stacked_n_RR_Beats: showStacked_n_RR_Beats
             };
             //***************** TILL THIS POINT WE HAVE JUST GENERATED THE REQEUST, NOTHING MORE  *****************
             // Pass the object to URLSearchParams to auto-format and encode it
@@ -1067,7 +1261,7 @@
                     console.log("payload.stacked_beats_dataset:", payload.stacked_beats_dataset)
                     console.log("payload.stacked_beats_dataset.length:", payload.stacked_beats_dataset.length)
 
-//******************** This Block is meant to display SINGLE/INDIVIDUAL ECG BEATS ******************** //  
+                    //******************** This Block is meant to display SINGLE/INDIVIDUAL ECG BEATS ******************** //  
                     if (!showStackedBeats || !payload.stacked_beats_dataset || payload.stacked_beats_dataset.length === 0) {
                         console.warn("Stacked heartbeat data unavailable. Check the control and stacked_beats_dataset from payload first, mate");
                         //return;
@@ -1142,7 +1336,7 @@
                         Plotly.newPlot('stacked-overlay-container', finalPlotTraces, overlayLayout);
                         console.log("Stacked overlay rendering assembly successfully finalized.");
                     }
-//************************************************************************************************* //
+                    //************************************************************************************************* //
 
 
                     console.log("showStackedBeatsOnBeats:", showStackedBeatsOnBeats)
@@ -1150,7 +1344,7 @@
                     console.log("payload.Stacked_Beats_On_Beats.length:", payload.Stacked_Beats_On_Beats.length)
 
 
-                    // STACKED BEATS ON BEATS RENDERING LOGIC HERE 
+                    // STACKED DOUBLE BEATS ON BEATS RENDERING LOGIC HERE 
                     if (showStackedBeatsOnBeats && payload.Stacked_Beats_On_Beats && payload.Stacked_Beats_On_Beats.length > 0) {
                         console.log("generating R-R beats now, seems everything is in order");
                         const finalPlotTraces = [];
@@ -1206,8 +1400,11 @@
 
                         // Finally plotting the stacked Beats
                         const overlayLayout = {
-                            title: { text: '<b>Consequitive beats showing RR Distances</b>', font: { size: 16 } },
-                            xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, 1100], gridcolor: '#2e3440' },
+                            title: {
+                                text: '<b>Consequitive beats showing RR Distances</b>',
+                                color: '#f2f4f8', family: 'monospace'
+                            },
+                            xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, 1200], gridcolor: '#2e3440' },
                             yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
                             plot_bgcolor: '#1c1e24',
                             paper_bgcolor: '#1c1e24',
@@ -1221,6 +1418,9 @@
                         console.log("Stacked overlay rendering assembly successfully finalized.");
                     }
 
+                    if(showStacked_n_RR_Beats && payload.features){
+                        updateStackedChart(serverPayload=payload , beatsToStack=2, samplingRate=300)
+                    }
 
 
                 })
