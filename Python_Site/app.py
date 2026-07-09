@@ -130,20 +130,20 @@ def stream_ecg():
 
         # 1. Consolidate Toggle State Parameters
     config = {
-        'enable_filter': request.args.get('filter', 'false').lower() == 'true',
-        'enable_local_r': request.args.get('local_r', 'false').lower() == 'true',
-        'enable_pan': request.args.get('pan_tompkins', 'false').lower() == 'true',
-        'enable_poincare': request.args.get('poincare', 'false').lower() == 'true',
-        'enable_fft': request.args.get('fft', 'false').lower() == 'true',
-        'enable_cancel': request.args.get('cancel', 'false').lower() == 'true',
-        'use_wavelet': request.args.get('wavelet', 'false').lower() == 'true',
+        'enable_filter'         : request.args.get('filter', 'false').lower() == 'true',
+        'enable_local_r'        : request.args.get('local_r', 'false').lower() == 'true',
+        'enable_pan'            : request.args.get('pan_tompkins', 'false').lower() == 'true',
+        'enable_poincare'       : request.args.get('poincare', 'false').lower() == 'true',
+        'enable_fft'            : request.args.get('fft', 'false').lower() == 'true',
+        'enable_cancel'         : request.args.get('cancel', 'false').lower() == 'true',
+        'use_wavelet'           : request.args.get('wavelet', 'false').lower() == 'true',
 #        'use_pan_tompkins_with_nk2': request.args.get('pan_tompkins_with_nk2', 'false').lower() == 'true',
-        'timeline_scale': request.args.get('scale', 'short').lower(),
-        'force_manual_flip': request.args.get('manual_flip', 'false').lower() == 'true',
+        'timeline_scale'        : request.args.get('scale', 'short').lower(),
+        'force_manual_flip'     : request.args.get('manual_flip', 'false').lower() == 'true',
         'peak_detection_method' : request.args.get('peak_detection_method', 'false').lower(),  
-        'stacked_beats': request.args.get('StackedBeats', 'false').lower() == 'true',
-        'Stacked_Beats_On_Beats': request.args.get('StackedBeatsOnBeats', 'false').lower() == 'true'
-        
+        'stacked_beats'         : request.args.get('StackedBeats', 'false').lower() == 'true',
+        'Stacked_Beats_On_Beats': request.args.get('StackedBeatsOnBeats', 'false').lower() == 'true',
+        'Stacked_n_RR_Beats'    : request.args.get('Stacked_n_RR_Beats', 'false').lower() == 'true' 
     }
 
     try:
