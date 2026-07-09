@@ -149,10 +149,7 @@ def run_ecg_pipeline(signal_values: np.ndarray,
 #
         #if config['peak_detection_method'] == 'Pan-Tompkins-Space-Age':
         #    features = run_pan_tompkins_segmentation(processed_signal)
-        
- 
-
-
+          
     if config['enable_poincare']:
         long_peaks = detect_local_max_r_peaks(long_signal)
         if len(long_peaks) > 1:
@@ -160,8 +157,7 @@ def run_ecg_pipeline(signal_values: np.ndarray,
             if len(rr_intervals_ms) > 1:
                 poincare_data["x"] = rr_intervals_ms[:-1].tolist()
                 poincare_data["y"] = rr_intervals_ms[1:].tolist()
-                
-
+                 
     if config['enable_fft']:
         if config['enable_cancel']:
             long_peaks_for_cancel = run_pan_tompkins_segmentation_nk2(long_signal)["R"]
@@ -169,16 +165,6 @@ def run_ecg_pipeline(signal_values: np.ndarray,
         else:
             fft_target = long_signal
         fft_data = calculate_signal_fft(fft_target)
-
-    print(f"config['stacked_beats']: {config['stacked_beats']}")
-    if config['stacked_beats']:
-        stacked_beats_dataset =  generate_stacked_pqrst_dataset(processed_signal, 300)  
-
-
-    print(f"config['Stacked_Beats_On_Beats']: {config['Stacked_Beats_On_Beats']}")
-    if config['Stacked_Beats_On_Beats']:
-        Stacked_Beats_On_Beats_dataset =  generate_stacked_RR_dataset(processed_signal, 300)  
-
 
     if config['use_wavelet']:
         wavelet_results = compute_wavelet_decomposition(processed_signal)
@@ -201,6 +187,17 @@ def run_ecg_pipeline(signal_values: np.ndarray,
 
         else:
             print(f"[DIAGNOSTIC] DWT Computation FAILED! Error: {wavelet_results.get('error')}")
+ 
+    print(f"config['stacked_beats']: {config['stacked_beats']}")
+    if config['stacked_beats']:
+        stacked_beats_dataset =  generate_stacked_pqrst_dataset(processed_signal, 300)  
+
+    print(f"config['Stacked_Beats_On_Beats']: {config['Stacked_Beats_On_Beats']}")
+    if config['Stacked_Beats_On_Beats']:
+        Stacked_Beats_On_Beats_dataset =  generate_stacked_RR_dataset(processed_signal, 300)  
+
+    if config['Stacked_n_RR_Beats']:
+        features = run_pan_tompkins_segmentation(processed_signal)  
 
 
     return ({
