@@ -742,10 +742,118 @@
             // 3 beats : 1800ms wide
             const maxRangeX = beatsToStack === 1 ? 450 : beatsToStack === 2 ? 1100 : 1800;
 
+
+
+
+                // we will generate vertical indicator lines that literally show the  R-R interval lengths
+    const rrIntervalLines = [];
+    
+    // Looping into the feature map that we genearted above using the signal and the Pan-tompkins Markers
+    featureMap.R.x.forEach((r2OffsetMs, i) => {
+        if (r2OffsetMs > 0) {
+            // Get the corresponding voltage peak so the line reaches all the way up to the apex
+            const r2Voltage = featureMap.R.y[i];
+            
+            rrIntervalLines.push({
+                type: 'line',
+                x0: 0,           // Starts at the first R-peak 
+                y0: r2Voltage,   // Connects horizontally at the peak voltage level
+                x1: r2OffsetMs,  // Stretches to the second R-peak location
+                y1: r2Voltage,   // Keeps it flat
+                line: {
+                    color: 'rgba(235, 123, 43, 0.30)', // splunk style orange color, with 30% opacity. not too bright or else it will steal the spotlight from the main signal  
+                    width: 1 // not too thick  or else it will take off the spotlight from the main signal 
+                }
+            });
+        }
+    });
+
+
+  //************************ THE CODE BELOW MANAGES THE STATS FOR THE CURRENT SAMPLE ************************ //
+  
+      // Filter out the 0ms starting R-peaks to get pure RR interval durations
+    const pureRRIntervals = featureMap.R.x.filter(x => x > 0);
+    const totalValidBeats = pureRRIntervals.length;
+    
+    let statsAnnotation = [];
+    
+    if (totalValidBeats > 0) {
+        // A. Calculate Mean (Average)
+        const meanRR = pureRRIntervals.reduce((sum, val) => sum + val, 0) / totalValidBeats;
+        
+        // B. Calculate Standard Deviation (Variance/Spread)
+        const variance = pureRRIntervals.reduce((sum, val) => sum + Math.pow(val - meanRR, 2), 0) / totalValidBeats;
+        const stdDevRR = Math.sqrt(variance);
+        
+        // C. Calculate Mode (Most common interval length grouped into 10ms bins)
+        const bins = {};
+        pureRRIntervals.forEach(val => {
+            const binned = Math.round(val / 10) * 10;
+            bins[binned] = (bins[binned] || 0) + 1;
+        });
+        const modeRR = Object.keys(bins).reduce((a, b) => bins[a] > bins[b] ? a : b);
+
+        // D. Create a Central Tendency Summary Box on the chart canvas
+        statsAnnotation = [{
+            x: 0.98, y: 0.95, // Positioned neatly in the top-right corner
+            xref: 'paper', yref: 'paper',
+            text: `<b>R-R Analytics Summary</b><br>` +
+                  `━━━━━━━━━━━━━━━<br>` +
+                  `Mean RR: <b>${meanRR.toFixed(1)} ms</b><br>` +
+                  `Mode RR: <b>${Number(modeRR).toFixed(0)} ms</b><br>` +
+                  `Std Dev (SDNN): <span style="color:${stdDevRR > 50 ? '#e74c3c' : '#2ecc71'}"><b>${stdDevRR.toFixed(1)} ms</b></span><br>` +
+                  `Total Beats: <b>${totalValidBeats}</b><br>` +
+                  `${stdDevRR > 50 ? 'CHAOTIC ERA Sir Bacon Francis : High SD (Potentially AF)' : 'STABLE ERA Dr Coppernicus : Low SD (Normal Rhythm) '}`,
+            align: 'left',
+            showarrow: false,
+            bgcolor: 'rgba(46, 52, 64, 0.9)', // Clean dark matching your theme background
+            bordercolor: stdDevRR > 50 ? '#e74c3c' : '#4c566a',
+            borderwidth: 1.5,
+            borderpad: 8,
+            font: { color: '#d8dee9', size: 11, family: 'monospace' }
+        }];
+
+        // E. DRAW THE STRONG SUMMARY BAND (Mean Line + Standard Deviation Shadow)
+        // Add a vertical thick solid reference line exactly at the calculated Average Mean
+        rrIntervalLines.push({
+            type: 'line',
+            xref: 'x', yref: 'paper', // Standardized vertical line stretching bottom-to-top
+            x0: meanRR, y0: 0,
+            x1: meanRR, y1: 1,
+            line: {
+                color: '#2ecc71', // Clean solid green line for the historical center
+                width: 2.5
+            }
+        });
+
+        // Add a light shaded horizontal area representing +/- 1 Standard Deviation 
+        // This physically frames the "Normal Cluster Area". In AFib, the points will explode far outside this shaded path.
+        rrIntervalLines.push({
+            type: 'rect',
+            xref: 'x', yref: 'paper',
+            x0: meanRR - stdDevRR, y0: 0,
+            x1: meanRR + stdDevRR, y1: 1,
+            fillcolor: 'rgba(46, 204, 113, 0.04)', // Ghost green background shadow boundary
+            line: { width: 0 }
+        });
+    }
+
+
+  //******************************  CODE FOR MANAGING/DISPLYAING SIGNAL STATS END HERE  ******************************  //
+
+
+    // The constant overlayLayout will hold the data to do the actual plotting. 
+    // in plotly, if we need to draw something the we need a dictinary like the below with some pre-defined mandatory keys
+    // such as what we have below 
             const overlayLayout = {
                 title: { text: `<b>Superimposed Cycles (${beatsToStack}x Beat Phase View)</b>`, font: { size: 16 } },
                 xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, maxRangeX], gridcolor: '#2e3440' },
                 yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+                
+                shapes: rrIntervalLines,  // This member manages the shape for RR intervals 
+
+                annotations: statsAnnotation,  // This member manages the lines for stats 
+
                 plot_bgcolor: '#1c1e24',
                 paper_bgcolor: '#1c1e24',
                 showlegend: true,
