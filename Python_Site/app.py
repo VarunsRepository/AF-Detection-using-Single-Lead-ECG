@@ -143,7 +143,8 @@ def stream_ecg():
         'peak_detection_method' : request.args.get('peak_detection_method', 'false').lower(),  
         'stacked_beats'         : request.args.get('StackedBeats', 'false').lower() == 'true',
         'Stacked_Beats_On_Beats': request.args.get('StackedBeatsOnBeats', 'false').lower() == 'true',
-        'Stacked_n_RR_Beats'    : request.args.get('Stacked_n_RR_Beats', 'false').lower() == 'true' 
+        'Stacked_n_RR_Beats'    : request.args.get('Stacked_n_RR_Beats', 'false').lower() == 'true',
+        'VIX_Beats'             : request.args.get('VIX_Beats', 'false').lower() == 'true' 
     }
 
     try:
