@@ -199,6 +199,11 @@ def run_ecg_pipeline(signal_values: np.ndarray,
     if config['Stacked_n_RR_Beats']:
         features = run_pan_tompkins_segmentation(processed_signal)  
 
+    if config['VIX_Beats']:
+        features = run_pan_tompkins_segmentation(processed_signal)  
+
+
+
 
     return ({
         "orientation_status": inversion_status,     # this simple hold the message of the orientation status
