@@ -316,13 +316,13 @@
             Checking Hardware Status...
         </div>
 
-        <!-- Manual Force Toggle Switch -->
+        <!-- Manuallly Force option  -->
         <div style="display: inline-flex; align-items: center;">
             <input type="checkbox" id="toggle-manual-flip" onchange="loadEcgPipeline()" style="margin-right: 6px;">
             <label for="toggle-manual-flip" style="color: #f2994a; font-weight: bold;">| force_manual_flip</label>
         </div>
 
-        <!-- Core Noise Filter Switch -->
+        <!-- Noise Filter  -->
         <div style="display: inline-flex; align-items: center;">
             <input type="checkbox" id="toggle-filter" onchange="loadEcgPipeline()" style="margin-right: 6px;">
             <label for="toggle-filter" style="color: #5cc24a; font-weight: bold;">| apply_noise_filter</label>
@@ -351,6 +351,12 @@
             <input type="checkbox" id="stacked-n-RR-beats" onchange="loadEcgPipeline()">
             <label for="stacked-n-RR-beats" style="color: #f1c40f;">| Plot Stacked n-RR beats  </label>
         </div>
+
+        <div>
+            <input type="checkbox" id="beats-VIX" onchange="loadEcgPipeline()">
+            <label for="beats-VIX" style="color: #f1c40f;">| Plot Volatility-Index for Beats  </label>
+        </div>
+
 
     </div>
 
@@ -463,10 +469,10 @@
     <div id="wavelet-panel" class="panel">
         <h3>Wavelet Sub-Band Decomposition</h3>
 
-        <!-- Plotly rules this box completely. Keep it empty in your HTML template! -->
+        <!-- the Wavelet container, this is the HTML element controlled by Plotly. Any  graphs/charts/ECG signals would come up here  -->
         <div id="wavelet-container" class="chart-frame"></div>
 
-        <!-- The citation sits clean and safe completely outside of Plotly's box -->
+        <!-- The citation box's Code -->
         <div class="panel-footer-cite">
             WAVELET MATH: M. S. Manikandan and S. Dandapat, "Wavelet-Based Electrocardiogram Signal Compression and
             Noise Removal,"
@@ -524,6 +530,22 @@
         </div>
     </div>
 
+    <div id="beats-voltility-index-overlay-panel" class="panel">
+        <!-- <h3>checking the volatility index for the beats</h3> -->
+
+        <div id="beats-voltility-index-overlay-container" class="chart-frame"></div>
+        <div class="panel-footer-cite">
+            VOLATILITY INDEX FOR THE BEATS
+            This plot views the R-R intervals like a typical comodity price in a stock market. The way volatlity is calculated
+            for a stock-price, we are here calcualting the volatility for an R-R interval to see if the variation is withtin the controlled
+            or not.
+            </i>, vol. 60, p. 102143, Aug. 2020. DOI:
+            <a href="https://doi.org" target="_blank"
+                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
+        </div>
+    </div>
+
+
     <script>
         /**
          * Pulls matching sample IDs from the Flask registry slice endpoint
@@ -560,7 +582,7 @@
                 .catch(err => console.error("Error compilation failing on registry slice:", err));
         }
 
-
+ 
         async function updatePeakDetectionDropdown() {
             const url = `/api/v1/splunk/peak_detection_algorithms`;
             console.log("inside updatePeakDetectionDropdown now")
@@ -841,12 +863,12 @@
 
   //******************************  CODE FOR MANAGING/DISPLYAING SIGNAL STATS END HERE  ******************************  //
 
-
+ 
     // The constant overlayLayout will hold the data to do the actual plotting. 
     // in plotly, if we need to draw something the we need a dictinary like the below with some pre-defined mandatory keys
     // such as what we have below 
             const overlayLayout = {
-                title: { text: `<b>Superimposed Cycles (${beatsToStack}x Beat Phase View)</b>`, font: { size: 16 } },
+                title: { text: `<b>Superimposed Beats : (${beatsToStack}xBeats on Beats View)</b>`, font: { size: 16, color: '#f2f4f8' } },
                 xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, maxRangeX], gridcolor: '#2e3440' },
                 yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
                 
@@ -865,7 +887,215 @@
         }
 
 
+        /*
+        This function plots the Volatility Index (VIX) in a separate view. Volatility indexes are used in finance to forecast how volatile or unstable a market
+         might be over a strict, fixed 30-day forward horizon. This volatility can swing in either direction, meaning an individual asset can either climb or deprecate in value. 
+         Assets with low volatility are generally favorable in the long run due to future price stability, while assets with high volatility are traded upon when
+         the acceptable risk level is considerably higher because they can provide potential returns in shorter timeframes. However, because investors purchase protective options during market downturns,
+         the VIX typically spikes during a crash, giving it a strong inverse correlation with market direction.
+         In our analysis, however, the VIX framework offers an unexpected diagnostic advantage. We do not care if the value of the R-R intervals speeds up or slows down, nor do we look for inverse market correlations; 
+         we are exclusively interested in detecting high successional variability, which is a core indicator of an AF rhythm. It does not matter 
+         if the baseline heart rate increases or decreases smoothly—a normal Sinus Rhythm should never sway beyond a certain tight variance threshold.
+        
+         So the function runVolatilityIndexPlot() borrows heavily from the above function - updateStackedChart() in terms of structure. the only difference is in the core Math
+         */
+        function runVolatilityIndexPlot(serverPayload,
+            beatsToStack = 2,
+            samplingRate = 300) {
 
+            // Run the math function to slice the data on the fly without needing to ask the server to do it for us
+            const stackedBeats = sliceStackedBeatsFrontend(
+                serverPayload.data,
+                serverPayload.features, // e.g. { P:[...], Q:[...], R:[...] }
+                beatsToStack,
+                samplingRate
+            );
+
+            const finalPlotTraces = [];
+
+            // Consolidated tracking buckets for all PQRST markers
+            const featureMap = {
+                P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
+                Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
+                R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
+                S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
+                T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
+            };
+
+            // Loop through the frontend-sliced chunks to push lines and collect dots
+            for (const chunk of stackedBeats) {
+
+                // Push the continuous ECG trace lines
+                finalPlotTraces.push({
+                    x: chunk.time_ms,
+                    y: chunk.amplitude_mv,
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.2 },
+                    showlegend: false,
+                    hoverinfo: 'skip'
+                });
+
+                // Loop through P, Q, R, S, T waves to harvest their shifted offsets
+                ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+                    chunk.features[wave].forEach(marker => {
+                        featureMap[wave].x.push(marker.x);
+                        featureMap[wave].y.push(marker.y);
+                    });
+                });
+            }
+
+            // Add the grouped markers to the chart array
+            for (const [key, cfg] of Object.entries(featureMap)) {
+                if (cfg.x.length > 0) {
+                    finalPlotTraces.push({
+                        x: cfg.x,
+                        y: cfg.y,
+                        type: 'scatter',
+                        mode: 'markers',
+                        name: cfg.name,
+                        marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
+                        hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                    });
+                }
+            }
+
+            // Set dynamic X-axis range width based on how many beats are stacked
+            // right now we are hardcoding the interval but in future we might need some logic to ge the longest or the most frequenct beat length or something like that 
+            // 1 beat  : 450ms wide
+            // 2 beats : 1100ms wide 
+            // 3 beats : 1800ms wide
+            const maxRangeX = beatsToStack === 1 ? 450 : beatsToStack === 2 ? 1100 : 1800;
+
+
+
+
+                // we will generate vertical indicator lines that literally show the  R-R interval lengths
+    const rrIntervalLines = [];
+    
+    // Looping into the feature map that we genearted above using the signal and the Pan-tompkins Markers
+    featureMap.R.x.forEach((r2OffsetMs, i) => {
+        if (r2OffsetMs > 0) {
+            // Get the corresponding voltage peak so the line reaches all the way up to the apex
+            const r2Voltage = featureMap.R.y[i];
+            
+            rrIntervalLines.push({
+                type: 'line',
+                x0: 0,           // Starts at the first R-peak 
+                y0: r2Voltage,   // Connects horizontally at the peak voltage level
+                x1: r2OffsetMs,  // Stretches to the second R-peak location
+                y1: r2Voltage,   // Keeps it flat
+                line: {
+                    color: 'rgba(235, 123, 43, 0.30)', // splunk style orange color, with 30% opacity. not too bright or else it will steal the spotlight from the main signal  
+                    width: 1 // not too thick  or else it will take off the spotlight from the main signal 
+                }
+            });
+        }
+    });
+
+
+  //************************ THE CODE BELOW MANAGES THE STATS FOR THE CURRENT SAMPLE ************************ //
+  
+      // Filter out the 0ms starting R-peaks to get pure RR interval durations
+    const pureRRIntervals = featureMap.R.x.filter(x => x > 0);
+    const totalValidBeats = pureRRIntervals.length;
+    
+    let statsAnnotation = [];
+ 
+  //******************************  CODE FOR MANAGING/DISPLYAING SIGNAL STATS END HERE  ******************************  //
+  //we would only need the above 3 vriables from the stats function that we'd written earlier
+
+  //************************ THE CODE BELOW MANAGES THE VOLATILITY INDEX(VIX) FOR THE CURRENT SAMPLE ************************ //
+  //
+        let cviAnnotation = [];
+        
+        if (totalValidBeats > 1) {
+            const logReturns = [];
+            
+            // Step 1: Calculate Log-Returns of successive intervals (just like stock prices)
+            for (let b = 0; b < pureRRIntervals.length - 1; b++) {
+                const currentInt = pureRRIntervals[b];
+                const nextInt = pureRRIntervals[b + 1];
+                
+                if (currentInt > 0 && nextInt > 0) {
+                    logReturns.push(Math.log(nextInt / currentInt));
+                }
+            }
+            
+            if (logReturns.length > 0) {
+                // Calculate Standard Deviation of the Log Returns
+                const meanLog = logReturns.reduce((s, v) => s + v, 0) / logReturns.length;
+                const varLog = logReturns.reduce((s, v) => s + Math.pow(v - meanLog, 2), 0) / logReturns.length;
+                const cviRaw = Math.sqrt(varLog);
+                
+                //  Scale to a clean %age index 
+                const cardiacVolatilityIndex = cviRaw * 100;
+                
+                // Determine health thresholds based on sequential variance
+                // we'll hardcode 10 % as the normal voltility so that more than that would be classified as AF rhythm 
+                const isVolatile = cardiacVolatilityIndex > 10.0;
+                const statusColor = isVolatile ? '#e74c3c' : '#5e81ac';
+
+                
+                statsAnnotation.push({
+                    x: 0.98, y: 0.62, // box positionings
+                    xref: 'paper', yref: 'paper',
+                    text: `<b>Heart Beat volatility Tracker</b><br>` +
+                          `━━━━━━━━━━━━━━━<br>` +
+                          `R-R Volatility Index: <span style="color:${statusColor}"><b>${cardiacVolatilityIndex.toFixed(2)}%</b></span><br>` +
+                          `Status: <b>${isVolatile ? 'VOLATILE BEAT' : 'STABLE BEAT'}</b>`,
+                    align: 'left',
+                    showarrow: false,
+                    bgcolor: 'rgba(36, 41, 51, 0.95)',
+                    bordercolor: statusColor,
+                    borderwidth: 1.5,
+                    borderpad: 8,
+                    font: { color: '#eceff4', size: 10, family: 'monospace' }
+                });
+
+                // Finance Bollinger-Band Equivalent that's used in Financial VIX charts
+                // Highlights the expected 2 x variance boundary  
+                const meanRR = pureRRIntervals.reduce((sum, val) => sum + val, 0) / totalValidBeats;
+                const lowerVolBound = meanRR * Math.exp(-cviRaw);
+                const upperVolBound = meanRR * Math.exp(cviRaw);
+
+                rrIntervalLines.push({
+                    type: 'rect',
+                    xref: 'x', yref: 'paper',
+                    x0: lowerVolBound, y0: 0,
+                    x1: upperVolBound, y1: 1,
+                    fillcolor: 'rgba(136, 192, 208, 0.05)',  
+                    line: { color: 'rgba(136, 192, 208, 0.3)', width: 1, dash: 'dash' }
+                });
+            }
+        }
+
+
+
+  //***************************  CODE FOR MANAGING/DISPLYAING VOLATILITY INDEX(VIX) END HERE  ******************************  //
+
+    // The constant overlayLayout will hold the data to do the actual plotting. 
+    // in plotly, if we need to draw something the we need a dictinary like the below with some pre-defined mandatory keys
+    // such as what we have below 
+            const overlayLayout = {
+                title: { text: `<b>Volatility Index of the R-R Intervals</b>`, font: { size: 16, color: '#aaaaaa' } },
+                xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, maxRangeX], gridcolor: '#2e3440' },
+                yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+                
+                shapes: rrIntervalLines,  // This member manages the shape for RR intervals 
+
+                annotations: statsAnnotation,  // This member manages the lines for stats 
+
+                plot_bgcolor: '#1c1e24',
+                paper_bgcolor: '#1c1e24',
+                showlegend: true,
+                legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+                hovermode: 'closest'
+            };
+
+            Plotly.newPlot('beats-voltility-index-overlay-container', finalPlotTraces, overlayLayout);
+
+        }
         /**
          * Fetches vector matrices from the active Flask stream API 
          * and renders the resulting charts via python's Plotly's via JS.
@@ -900,6 +1130,11 @@
             const showStacked_n_RR_Beats = document.getElementById('stacked-n-RR-beats').checked;
             console.log("showStacked_n_RR_Beats in the request", showStacked_n_RR_Beats)
 
+            // VIX controller
+            const showBeatsVIX = document.getElementById('beats-VIX').checked;
+            console.log("showBeatsVIX in the request", showBeatsVIX)
+
+
             // conditional statements with ternary operator for displaying the selected visuaization only when the corresponding control is activated 
             document.getElementById('poincare-panel').style.display = usePoincare ? 'block' : 'none';
             document.getElementById('fft-panel').style.display = useFft ? 'block' : 'none';
@@ -907,7 +1142,7 @@
             document.getElementById('stacked-overlay-panel').style.display = showStackedBeats ? 'block' : 'none';
             document.getElementById('stacked-beats-on-beats-overlay-panel').style.display = showStackedBeatsOnBeats ? 'block' : 'none';
             document.getElementById('stacked-n-RR-beats-overlay-panel').style.display = showStacked_n_RR_Beats ? 'block' : 'none';
-
+            document.getElementById('beats-voltility-index-overlay-panel').style.display = showBeatsVIX ? 'block' : 'none';
  
 
             // FIXED: Synchronized matching variable references and cleanly mapped all toggles to URL query keys
@@ -935,7 +1170,9 @@
       peak_detection_method: peakDetectionMethod,
                StackedBeats: showStackedBeats,
         StackedBeatsOnBeats: showStackedBeatsOnBeats,
-         Stacked_n_RR_Beats: showStacked_n_RR_Beats
+         Stacked_n_RR_Beats: showStacked_n_RR_Beats,
+                 VIX_Beats : showBeatsVIX
+
             };
             //***************** TILL THIS POINT WE HAVE JUST GENERATED THE REQEUST, NOTHING MORE  *****************
             // Pass the object to URLSearchParams to auto-format and encode it
@@ -1526,10 +1763,18 @@
                         console.log("Stacked overlay rendering assembly successfully finalized.");
                     }
 
+                    // STACKED N-BEATS
                     if(showStacked_n_RR_Beats && payload.features){
                         updateStackedChart(serverPayload=payload , beatsToStack=2, samplingRate=300)
+                        runVolatilityIndexPlot(serverPayload=payload , beatsToStack=2, samplingRate=300)
                     }
 
+                    // BEATS VIX INDICATOR
+                    if(showBeatsVIX && payload.features){
+                        runVolatilityIndexPlot(serverPayload=payload , beatsToStack=2, samplingRate=300)
+                    }
+
+                    
 
                 })
                 .catch(err => console.error("Error executing unified stream pipeline:", err));
