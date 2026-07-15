@@ -701,7 +701,7 @@
          server's payload for each R-R plot, but now the server just sends the Processed signal array and the feature array(Pan-Tompkins/Peak detection) 
          and rest of figured out by the browser in real time 
     */
-    function updateStackedChart(serverPayload,
+    function updateStackedChart_(serverPayload,
         beatsToStack = 2,
         samplingRate = 300) {
 
@@ -1166,39 +1166,163 @@ if (diffCount > 0) {
  4. RMS successive differences of the R-R interval 
  5. VIX or volatility index
  */
-function calculateCardiacMetrics(rawRRs) {
-    // Clean out any 0ms starting R-peaks immediately
-    const rrs = rawRRs.filter(x => x > 0);
 
-    // Run the complete functional calculus engine pass
-    const metrics = ((inputRRs) => {
-        const validPairs = inputRRs.slice(0, -1).map((curr, b) => ({ curr, next: inputRRs[b + 1] }))
-                                                .filter(p => p.curr >= 300 && p.curr <= 2000 && p.next >= 300 && p.next <= 2000 && Math.abs(p.next - p.curr) <= 500);
 
-        const n = validPairs.length;
-        const validBeats = inputRRs.filter(x => x >= 300 && x <= 2000);
-        const mean = validBeats.length > 0 ? validBeats.reduce((s, v) => s + v, 0) / validBeats.length : 0;
+/*
+    Created this function to calcualte the HRV metrics separately rather than having the view and the ufunction together.
+    VIX removed as that VIX has its own separate plot  
+*/
+function calculateCardiacAnalytics(rawRRs) {
+    const pureRRIntervals = rawRRs.filter(x => x > 0); // ignore the first R Point as its the starting point 
+    const totalBeats = pureRRIntervals.length;
 
-        return validPairs.reduce((acc, p) => ({
-            mean: mean,
-            sdnn: acc.sdnn + Math.pow(p.curr - mean, 2),
-            rmssd: acc.rmssd + Math.pow(p.next - p.curr, 2),
-            vix: acc.vix + Math.pow(Math.log(p.next / p.curr), 2),
-            count: n
-        }), { mean: mean, sdnn: 0, rmssd: 0, vix: 0, count: 0 });
-    })(rrs);
+    if (totalBeats === 0) return null;
 
-    // Return the calcaulted metrics
+    // Mean, variance,  standard-Deviation
+    const meanRR = pureRRIntervals.reduce((s, v) => s + v, 0) / totalBeats;
+    const variance = pureRRIntervals.reduce((s, v) => s + Math.pow(v - meanRR, 2), 0) / totalBeats;
+    const stdDevRR = Math.sqrt(variance);
+
+    //  Mode Binning (10ms steps)
+    const bins = {};
+    pureRRIntervals.forEach(v => { const b = Math.round(v / 10) * 10; bins[b] = (bins[b] || 0) + 1; });
+    const modeRR = Number(Object.keys(bins).reduce((a, b) => bins[a] > bins[b] ? a : b));
+
+    //  for (RMSSD)
+    let sumSquaredDiffs = 0;
+    let diffCount = 0;
+    
+    for (let beatID = 0; beatID < pureRRIntervals.length - 1; beatID++) {
+        const current = pureRRIntervals[beatID];
+        const next = pureRRIntervals[beatID + 1];
+
+        // checking if the 2 consequitive beats in the array are actually consequitive for a human being
+        if (current < 300 || current > 2000 || next < 300 || next > 2000) continue;
+        if (Math.abs(next - current) > 500) continue;
+
+        sumSquaredDiffs += Math.pow(next - current, 2);
+        diffCount++;
+    }
+
     return {
-        mean:  metrics.mean,
-        sdnn:  metrics.count > 0 ? Math.sqrt(metrics.sdnn / metrics.count) : 0,
-        rmssd: metrics.count > 0 ? Math.sqrt(metrics.rmssd / metrics.count) : 0,
-        vix:   metrics.count > 0 ? Math.sqrt(metrics.vix / metrics.count) * 100 : 0,
-        count: metrics.count
+        mean: meanRR,
+        mode: modeRR,
+        sdnn: stdDevRR,
+        rmssd: diffCount > 0 ? Math.sqrt(sumSquaredDiffs / diffCount) : 0,
+        total: totalBeats
     };
 }
 
+/*
+    * we've redone the function cause the original one was too long and unmanageable to incoperate additional 
+      HRV features like RMSSD
+*/
+function updateStackedChart(serverPayload, beatsToStack = 2, samplingRate = 300) {
+    
+    // calling sliceStackedBeatsFrontend() to manipulate the server's payload  
+    const stackedBeats = sliceStackedBeatsFrontend(
+        serverPayload.data,
+        serverPayload.features,
+        beatsToStack,
+        samplingRate
+    );
 
+    const finalPlotTraces = [];
+    // feature map is same as before 
+    const featureMap = {
+        P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
+        Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
+        R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
+        S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
+        T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
+    };
+
+    // getting marketrs from the signal also the same as before 
+    for (const chunk of stackedBeats) {
+        finalPlotTraces.push({
+            x: chunk.time_ms,
+            y: chunk.amplitude_mv,
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.2 },
+            showlegend: false,
+            hoverinfo: 'skip'
+        });
+
+        // this part is also the same as before, this is a quick and dirty way to work on 5 arrays without writing 5 loops
+        ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+            chunk.features[wave].forEach(marker => {
+                featureMap[wave].x.push(marker.x);
+                featureMap[wave].y.push(marker.y);
+            });
+        });
+    }
+
+    // plotting the Scatter Points to the view 
+    for (const [key, cfg] of Object.entries(featureMap)) {
+        if (cfg.x.length > 0) {
+            finalPlotTraces.push({
+                x: cfg.x, y: cfg.y, type: 'scatter', mode: 'markers', name: cfg.name,
+                marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
+                hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+            });
+        }
+    }
+
+    // R-R inteval horizontal lines 
+    const rrIntervalLines = [];
+    featureMap.R.x.forEach((r2OffsetMs, i) => {
+        if (r2OffsetMs > 0) {
+            rrIntervalLines.push({
+                type: 'line', x0: 0, y0: featureMap.R.y[i], x1: r2OffsetMs, y1: featureMap.R.y[i],
+                line: { color: 'rgba(235, 123, 43, 0.30)', width: 1 }
+            });
+        }
+    });
+
+    // The main inference based on the math function that we created above : calculateCardiacAnalytics(RR_raws)
+    const stats = calculateCardiacAnalytics(featureMap.R.x);
+    let statsAnnotation = [];
+
+    if (stats) {
+        const isAFib = stats.sdnn > 50 || stats.rmssd > 60;
+        const statusColor = isAFib ? '#e74c3c' : '#2ecc71';
+        const statusText = isAFib 
+            ? '☠️ CHAOTIC ERA Sir Francis Bacon</br>: High SD/RMSSD (Potentially AFib)' 
+            : '💖 STABLE ERA Dr. Copernicus</br>: Low Variance (Normal Sinus)';
+
+        statsAnnotation = [{
+            x: 0.98, y: 0.95, xref: 'paper', yref: 'paper',
+            text: `<b>R-R Analytics Summary</b><br>` +
+                  `━━━━━━━━━━━━━━━<br>` +
+                  `Mean RR: <b>${stats.mean.toFixed(1)} ms</b><br>` +
+                  `Mode RR: <b>${stats.mode.toFixed(0)} ms</b><br>` +
+                  `Std Dev (SDNN): <span style="color:${statusColor}"><b>${stats.sdnn.toFixed(1)} ms</b></span><br>` +
+                  `RMSSD (Local): <span style="color:${statusColor}"><b>${stats.rmssd.toFixed(1)} ms</b></span><br>` +
+                  `Total Beats: <b>${stats.total}</b><br>` +
+                  `<span style="color:${statusColor}"><b>${statusText}</b></span>`, 
+            align: 'left', showarrow: false,
+            bgcolor: 'rgba(46, 52, 64, 0.9)', bordercolor: statusColor,
+            borderwidth: 1.5, borderpad: 8,
+            font: { color: '#d8dee9', size: 11, family: 'monospace' }
+        }];
+    }
+
+    // finally creating the final object to pass into plotly
+    const maxRangeX = beatsToStack === 1 ? 450 : beatsToStack === 2 ? 1100 : 1800;
+    const overlayLayout = {
+        title: { text: `<b>Superimposed Cycles (${beatsToStack}x Beat Phase View)</b>`, font: { size: 16 } },
+        xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, maxRangeX], gridcolor: '#2e3440' },
+        yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+        shapes: rrIntervalLines,
+        annotations: statsAnnotation,
+        plot_bgcolor: '#1c1e24', paper_bgcolor: '#1c1e24',
+        showlegend: true, legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+        hovermode: 'closest'
+    };
+    // calling the plotly's API to finally do the printing
+    Plotly.newPlot('stacked-n-RR-beats-overlay-container', finalPlotTraces, overlayLayout);
+}
 
 
 
