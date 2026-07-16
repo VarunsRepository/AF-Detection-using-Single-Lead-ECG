@@ -1172,8 +1172,8 @@ if (diffCount > 0) {
     Created this function to calcualte the HRV metrics separately rather than having the view and the ufunction together.
     VIX removed as that VIX has its own separate plot  
 */
-function calculateCardiacAnalytics(rawRRs) {
-    const pureRRIntervals = rawRRs.filter(x => x > 0); // ignore the first R Point as its the starting point 
+function calculateCardiacAnalytics(RRIntervals) {
+    const pureRRIntervals = RRIntervals.filter(x => x > 0); // ignore the first R Point as its the starting point 
     const totalBeats = pureRRIntervals.length;
 
     if (totalBeats === 0) return null;
@@ -1191,6 +1191,7 @@ function calculateCardiacAnalytics(rawRRs) {
     //  for (RMSSD)
     let sumSquaredDiffs = 0;
     let diffCount = 0;
+    let nn50Count = 0; // for pNN50 (% of successive R-R differences > 50ms
     
     for (let beatID = 0; beatID < pureRRIntervals.length - 1; beatID++) {
         const current = pureRRIntervals[beatID];
@@ -1200,15 +1201,29 @@ function calculateCardiacAnalytics(rawRRs) {
         if (current < 300 || current > 2000 || next < 300 || next > 2000) continue;
         if (Math.abs(next - current) > 500) continue;
 
+
+        // Check if the absolute difference between this beat and the next is > 50ms
+        const stepJump = Math.abs(next - current);
+        if (stepJump > 50) {
+            nn50Count++;
+        }
+
+
+        // Squaring
         sumSquaredDiffs += Math.pow(next - current, 2);
         diffCount++;
     }
+
+
+    // finally Calculate final pNN50 percentage  
+    const pNN50 = diffCount > 0 ? (nn50Count / diffCount) * 100 : 0;
 
     return {
         mean: meanRR,
         mode: modeRR,
         sdnn: stdDevRR,
         rmssd: diffCount > 0 ? Math.sqrt(sumSquaredDiffs / diffCount) : 0,
+        pnn50: pNN50,
         total: totalBeats
     };
 }
@@ -1299,6 +1314,7 @@ function updateStackedChart(serverPayload, beatsToStack = 2, samplingRate = 300)
                   `Mode RR: <b>${stats.mode.toFixed(0)} ms</b><br>` +
                   `Std Dev (SDNN): <span style="color:${statusColor}"><b>${stats.sdnn.toFixed(1)} ms</b></span><br>` +
                   `RMSSD (Local): <span style="color:${statusColor}"><b>${stats.rmssd.toFixed(1)} ms</b></span><br>` +
+                  `pNN50 Index: <span style="color:${statusColor}"><b>${stats.pnn50.toFixed(1)}%</b></span><br>` +
                   `Total Beats: <b>${stats.total}</b><br>` +
                   `<span style="color:${statusColor}"><b>${statusText}</b></span>`, 
             align: 'left', showarrow: false,
