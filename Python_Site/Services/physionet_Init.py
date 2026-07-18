@@ -183,3 +183,33 @@ class PhysioNetRegistryManager:
         # 2. Divide by 1000.0 to rescale millivolt parameters
         signal_values = raw_units / 1000.0
         return signal_values
+
+    # The older appraoch read the recording using Sci-pi's matlab parser
+    # However it gave us considerable problems for file-IO so we swithced back to the Native WFDB parser
+    def get_individual_record_wfdb(self, record_id: str) -> np.ndarray:
+        """         
+        Natively reads local .MAT and .HEA file pairs from the manual upload cache.
+        Returns a perfectly calibrated 1D NumPy vector of signal voltages (mV).
+        """
+        mat_path = os.path.join(self.cache_dir, f"{record_id}.mat")
+        hea_path = os.path.join(self.cache_dir, f"{record_id}.hea")
+        
+        if not os.path.exists(mat_path) or not os.path.exists(hea_path):
+            raise FileNotFoundError(
+                f"[MANAGER] Missing asset pairs for record '{record_id}' in cache directory. "
+                f"Ensure both '{record_id}.mat' and '{record_id}.hea' are uploaded manually."
+            )
+
+        try:
+             
+            record_base_path = os.path.join(self.cache_dir, record_id)
+            
+         
+            signals, fields = wfdb.rdsamp(record_base_path)
+            
+            # to send the data in the right shape i.e. eacty in the form the previous function took
+            signal_values = signals[:, 0].astype(np.float64)
+            return signal_values
+            
+        except Exception as e:
+            raise IOError(f"[MANAGER] Native WFDB parsing error for record '{record_id}': {str(e)}")        
