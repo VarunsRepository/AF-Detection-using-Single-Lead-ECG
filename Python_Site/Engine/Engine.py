@@ -202,10 +202,11 @@ def run_ecg_pipeline(signal_values: np.ndarray,
     if config['VIX_Beats']:
         features = run_pan_tompkins_segmentation(processed_signal)  
 
-
+    print(f"record_id:{config['record_id']}")
 
 
     return ({
+        "record_id": config['record_id'],
         "orientation_status": inversion_status,     # this simple hold the message of the orientation status
         "is_inverted": is_inverted_payload,         # This is the flag that actually asks the UI to flip the signal
         "data": processed_signal.tolist(),
