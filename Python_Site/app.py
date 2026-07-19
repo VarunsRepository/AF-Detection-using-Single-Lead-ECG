@@ -7,6 +7,8 @@ import numpy as np    # for interim processing for the ECG Signal
 from flask import Flask, Blueprint, jsonify, request, send_from_directory, redirect  # blueprint is used to modularise the app, without BP, the app will hold all the functionality, with BP we van modularise the code into several sub-apps 
  
 
+# to get of pre-computed Statistical features 
+from Services.ECG_Feature_Manager import ECG_Signal_Feature_Manager 
 
 
 "Obtaining medical-grade diagnostic data remains a significant challenge, even in an era dominated by high-performance CPUs, expanded RAM,"
@@ -65,12 +67,17 @@ app = Flask(__name__)
  
 ###################### the code for managing Physionet IO starts here ######################
      
- 
+# PHYSIONET MANAGER TO MANAGE THE I/O FROM THE PHYSIONET WEBSITE  
 #  pass the configuration directories directly into the PhysioNetRegistryManager class constructor
 # we have created an object for easier state management
 physionet_mgr = PhysioNetRegistryManager(cache_dir="data_cache")
 
 physionet_mgr.initialize_registry()
+
+
+# ECG FEATURE MANAGER TO FETCH THE FEATURES LIKE HRV, VIX DIRECTLY FROM THE LOCAL FILE
+ECG_Features = ECG_Signal_Feature_Manager(cache_dir="data_cache")
+
 
 
 # this route is used to pupulate the dropdown in the view 
@@ -101,7 +108,7 @@ def get_registry_slice():
     # Extract the matching samples using the dedicated class accessor method
     samples_list = physionet_mgr.get_records_by_class(target_class)
     
-    print(f"[BACKEND] Success! Found {len(samples_list)} records for class '{target_class}'")
+    print(f"[BACKEND] Great Success! Found {len(samples_list)} records for class '{target_class}'")
     print(f"[BACKEND] First 5 samples being sent: {samples_list[:5]}")
     
     return jsonify({
@@ -130,6 +137,7 @@ def stream_ecg():
 
         # 1. Consolidate Toggle State Parameters
     config = {
+        'record_id'             : record_id,
         'enable_filter'         : request.args.get('filter', 'false').lower() == 'true',
         'enable_local_r'        : request.args.get('local_r', 'false').lower() == 'true',
         'enable_pan'            : request.args.get('pan_tompkins', 'false').lower() == 'true',
@@ -148,20 +156,50 @@ def stream_ecg():
     }
 
     try:
-        # 2. Extract clean signal from Manager Cache/Download Engine
-        signal_values = physionet_mgr.get_individual_record(record_id)
+        # Changing this to the new method get_individual_record_wfdb() which reads the ECG recording by the old legacy way 
+        signal_values = physionet_mgr.get_individual_record_wfdb(record_id)
         
-        # 3. Direct downstream vector payload execution to pipeline engine
+        # Direct downstream vector payload execution to pipeline engine
         result_payload = run_ecg_pipeline(signal_values, config)
         
-        # 4. Return serialized dictionary directly to UI graph modules
+        # Return serialized dictionary directly to UI graph modules
         return jsonify(result_payload), 200
 
     except Exception as e:
         print(f"[API ERROR] Pipeline processing crash for record {record_id}: {e}")
         return jsonify({"error": str(e)}), 500
-    
  
+
+@featureEngg_bp.route('get-stat', methods=['GET'])
+def get_statistic():
+    record_id = request.args.get('record_id')
+    stat_name = request.args.get('stat_name')
+    version = request.args.get('version')
+    
+    # qurty the Feature from the ECG_Feature_Manager object  
+    metric_data = ECG_Features.get_metric(record_id, stat_name, version)
+    
+    if metric_data:
+        return jsonify({"cached": True, "data": metric_data})
+    return jsonify({"cached": False, "message": "Computation required."})
+
+@featureEngg_bp.route('/save-stat', methods=['POST'])
+def save_statistic():
+    payload = request.json
+    
+    # saving the feaure into the object
+    ECG_Features.update_metric(
+        record_id=payload["record_id"],
+        stat_name=payload["statistic_name"],
+        value=payload["value"],
+        version=payload["version"],
+        timestamp=payload.get("last_calculated", "2026-07-19T00:00:00Z")
+    )
+    
+    return jsonify({"status": "Great Success", "message": "RAM state updated. Background persistence active."})
+
+
+
 app.register_blueprint(featureEngg_bp, url_prefix='/api/v1/splunk')
 
 # think of it as the main() function of this web-sites programs  
