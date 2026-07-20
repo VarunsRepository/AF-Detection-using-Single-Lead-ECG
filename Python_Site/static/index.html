@@ -1539,7 +1539,7 @@ async function getOrComputeMetric(recordId, statName, version, computeCallback) 
     * we've redone the function cause the original one was too long and unmanageable to incoperate additional 
       HRV features like RMSSD
 */
-async function updateStackedChart(serverPayload, beatsToStack = 2, samplingRate = 300) {
+async function updateStackedChart(serverPayload, beatsToStack = 2, samplingRate = 300, currentConfig) {
     
     // calling sliceStackedBeatsFrontend() to manipulate the server's payload  
     const stackedBeats = sliceStackedBeatsFrontend(
@@ -1607,7 +1607,7 @@ async function updateStackedChart(serverPayload, beatsToStack = 2, samplingRate 
     // The main inference based on the math function that we created above : calculateCardiacAnalytics(RR_raws)
     const stats = await getOrComputeMetric(
     serverPayload.record_id, 
-    "time_domain_analytics_object", 
+    `${currentConfig}-time_domain_analytics_object`, 
     "1.0.0",
     // Call back function call, this block will be executed only when required 
     // the below represention is like Rust's Match, i.e. if the params match the left hand side expression, execute the ride hand side expression.  
@@ -2225,7 +2225,7 @@ let statsAnnotation = [];
 
                 // STACKED N-BEATS
                 if (showStacked_n_RR_Beats && payload.features) {
-                    updateStackedChart(serverPayload = payload, beatsToStack = 2, samplingRate = 300)
+                    updateStackedChart(serverPayload = payload, beatsToStack = 2, samplingRate = 300, current_config)
                     //down below, rather  than creating a new custom data type object, we're passing the entire payload.
                     // The function will figure it out
                     // runVolatilityIndexPlot(serverPayload = payload, beatsToStack = 2, samplingRate = 300)
