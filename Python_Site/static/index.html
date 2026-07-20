@@ -942,6 +942,59 @@ if (diffCount > 0) {
     }
 
 
+
+/**
+ * Decoupled VIX function
+    * our earlier code had VIX logicintegratedinto the plotting function, here we'e separated the 2.
+    calculation of VIX to be done by  calculateVolatilityIndex()
+    and Plotting done by the original function
+ */
+function calculateVolatilityIndex(pureRRIntervals) {
+    if (!pureRRIntervals || pureRRIntervals.length <= 1) return null;
+
+    const logReturns = [];
+
+    // Calculate Log-Returns of successive intervals just as in Stock markets
+    for (let b = 0; b < pureRRIntervals.length - 1; b++) {
+        const currentInt = pureRRIntervals[b];
+        const nextInt = pureRRIntervals[b + 1];
+
+        if (currentInt > 0 && nextInt > 0) {
+            logReturns.push(Math.log(nextInt / currentInt));
+        }
+    }
+
+    if (logReturns.length === 0) return null;
+
+    // Calculate Standard Deviation of the Log Returns
+    const meanLog = logReturns.reduce((s, v) => s + v, 0) / logReturns.length;
+    const varLog = logReturns.reduce((s, v) => s + Math.pow(v - meanLog, 2), 0) / logReturns.length;
+    const cviRaw = Math.sqrt(varLog);
+
+    // Scale to a clean percentage index
+    const cardiacVolatilityIndex = cviRaw * 100;
+    const isVolatile = cardiacVolatilityIndex > 10.0;
+
+    // Compute Bollinger-Band boundary markers(for safe range of volatility )
+    const totalValidBeats = pureRRIntervals.length;
+    const meanRR = pureRRIntervals.reduce((sum, val) => sum + val, 0) / totalValidBeats;
+    const lowerVolBound = meanRR * Math.exp(-cviRaw);
+    const upperVolBound = meanRR * Math.exp(cviRaw);
+
+    // Return the Math object 
+    return {
+        cvi_raw: cviRaw,
+        volatility_percentage: parseFloat(cardiacVolatilityIndex.toFixed(2)),
+        is_volatile: isVolatile,
+        lower_bollinger_bound: lowerVolBound,
+        upper_bollinger_bound: upperVolBound,
+        total_beats: totalValidBeats
+    };
+}
+
+
+
+
     /*
     This function plots the Volatility Index (VIX) in a separate view. Volatility indexes are used in finance to forecast how volatile or unstable a market
      might be over a strict, fixed 30-day forward horizon. This volatility can swing in either direction, meaning an individual asset can either climb or deprecate in value. 
@@ -954,7 +1007,7 @@ if (diffCount > 0) {
     
      So the function runVolatilityIndexPlot() borrows heavily from the above function - updateStackedChart() in terms of structure. the only difference is in the core Math
      */
-    function runVolatilityIndexPlot(serverPayload,
+    function runVolatilityIndexPlot_(serverPayload,
         beatsToStack = 2,
         samplingRate = 300) {
 
@@ -1125,6 +1178,198 @@ if (diffCount > 0) {
             }
         }
 
+
+
+        //***************************  CODE FOR MANAGING/DISPLYAING VOLATILITY INDEX(VIX) END HERE  ******************************  //
+
+        // The constant overlayLayout will hold the data to do the actual plotting. 
+        // in plotly, if we need to draw something the we need a dictinary like the below with some pre-defined mandatory keys
+        // such as what we have below 
+        const overlayLayout = {
+            title: { text: `<b>Volatility Index of the R-R Intervals</b>`, font: { size: 16, color: '#aaaaaa' } },
+            xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, maxRangeX], gridcolor: '#2e3440' },
+            yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+
+            shapes: rrIntervalLines,  // This member manages the shape for RR intervals 
+
+            annotations: statsAnnotation,  // This member manages the lines for stats 
+
+            plot_bgcolor: '#1c1e24',
+            paper_bgcolor: '#1c1e24',
+            showlegend: true,
+            legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+            hovermode: 'closest'
+        };
+
+        Plotly.newPlot('beats-voltility-index-overlay-container', finalPlotTraces, overlayLayout);
+
+    }
+
+
+    async function runVolatilityIndexPlot(serverPayload,
+        beatsToStack = 2,
+        samplingRate = 300,
+        currentConfig
+        ) {
+
+            console.log("inside runVolatilityIndexPlot")
+        // Run the math function to slice the data on the fly without needing to ask the server to do it for us
+        const stackedBeats = sliceStackedBeatsFrontend(
+            serverPayload.data,
+            serverPayload.features, // e.g. { P:[...], Q:[...], R:[...] }
+            beatsToStack,
+            samplingRate
+        );
+
+        const finalPlotTraces = [];
+
+        // Consolidated tracking buckets for all PQRST markers
+        const featureMap = {
+            P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
+            Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
+            R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
+            S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
+            T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
+        };
+
+        // Loop through the frontend-sliced chunks to push lines and collect dots
+        for (const chunk of stackedBeats) {
+
+            // Push the continuous ECG trace lines
+            finalPlotTraces.push({
+                x: chunk.time_ms,
+                y: chunk.amplitude_mv,
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.2 },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+
+            // Loop through P, Q, R, S, T waves to harvest their shifted offsets
+            ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+                chunk.features[wave].forEach(marker => {
+                    featureMap[wave].x.push(marker.x);
+                    featureMap[wave].y.push(marker.y);
+                });
+            });
+        }
+
+        // Add the grouped markers to the chart array
+        for (const [key, cfg] of Object.entries(featureMap)) {
+            if (cfg.x.length > 0) {
+                finalPlotTraces.push({
+                    x: cfg.x,
+                    y: cfg.y,
+                    type: 'scatter',
+                    mode: 'markers',
+                    name: cfg.name,
+                    marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
+                    hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                });
+            }
+        }
+
+        // Set dynamic X-axis range width based on how many beats are stacked
+        // right now we are hardcoding the interval but in future we might need some logic to ge the longest or the most frequenct beat length or something like that 
+        // 1 beat  : 450ms wide
+        // 2 beats : 1100ms wide 
+        // 3 beats : 1800ms wide
+        const maxRangeX = beatsToStack === 1 ? 450 : beatsToStack === 2 ? 1100 : 1800;
+
+
+
+
+        // we will generate Horizontal indicator lines that literally show the  R-R interval lengths
+        const rrIntervalLines = [];
+
+        // Looping into the feature map that we genearted above using the signal and the Pan-tompkins Markers
+        featureMap.R.x.forEach((r2OffsetMs, i) => {
+            if (r2OffsetMs > 0) {
+                // Get the corresponding voltage peak so the line reaches all the way up to the apex
+                const r2Voltage = featureMap.R.y[i];
+
+                rrIntervalLines.push({
+                    type: 'line',
+                    x0: 0,           // Starts at the first R-peak 
+                    y0: r2Voltage,   // Connects horizontally at the peak voltage level
+                    x1: r2OffsetMs,  // Stretches to the second R-peak location
+                    y1: r2Voltage,   // Keeps it flat
+                    line: {
+                        color: 'rgba(235, 123, 43, 0.30)', // splunk style orange color, with 30% opacity. not too bright or else it will steal the spotlight from the main signal  
+                        width: 1 // not too thick  or else it will take off the spotlight from the main signal 
+                    }
+                });
+            }
+        });
+
+
+        //************************ THE CODE BELOW MANAGES THE STATS FOR THE CURRENT SAMPLE ************************ //
+
+        // Filter out the 0ms starting R-peaks to get pure RR interval durations
+        const pureRRIntervals = featureMap.R.x.filter(x => x > 0);
+        const totalValidBeats = pureRRIntervals.length;
+
+        let statsAnnotation = [];
+
+        //******************************  CODE FOR MANAGING/DISPLYAING SIGNAL STATS END HERE  ******************************  //
+        //we would only need the above 3 vriables from the stats function that we'd written earlier
+
+        //************************ THE CODE BELOW MANAGES THE VOLATILITY INDEX(VIX) FOR THE CURRENT SAMPLE ************************ //
+        //
+
+
+
+
+const engineVersion = "1.0.0";
+
+// Intercept or run the math through the universal first-class object cache wrapper
+const vixResults = await getOrComputeMetric(
+    serverPayload.record_id,
+    `${currentConfig}-vix_analytics`,  
+    engineVersion,
+    () => {
+        // This math function block ONLY runs if the server RAM is completely empty!
+        const pureRRIntervals = featureMap.R.x.filter(x => x > 0);
+        return calculateVolatilityIndex(pureRRIntervals);
+    }
+);
+
+console.log(`getOrComputeMetric: ${vixResults}`)
+
+    // 🎛️ INJECT PRE-COMPUTED VIX ANNOTATIONS DIRECTLY
+    if (vixResults) {
+        const statusColor = vixResults.is_volatile ? '#e74c3c' : '#5e81ac';
+
+        // Push your telemetry box text using variables passed directly from cache payload
+        statsAnnotation.push({
+            x: 0.98, y: 0.62,
+            xref: 'paper', yref: 'paper',
+            text: `<b>Heart Beat volatility Tracker</b><br>` +
+                `━━━━━━━━━━━━━━━<br>` +
+                `R-R Volatility Index: <span style="color:${statusColor}"><b>${vixResults.volatility_percentage}%</b></span><br>` +
+                `Status: <b>${vixResults.is_volatile ? 'VOLATILE BEAT' : 'STABLE BEAT'}</b>`,
+            align: 'left',
+            showarrow: false,
+            bgcolor: 'rgba(36, 41, 51, 0.95)',
+            bordercolor: statusColor,
+            borderwidth: 1.5,
+            borderpad: 8,
+            font: { color: '#eceff4', size: 10, family: 'monospace' }
+        });
+
+        // Push Bollinger-Band highlight rectangles using cached float boundaries
+        rrIntervalLines.push({
+            type: 'rect',
+            xref: 'x', yref: 'paper',
+            x0: vixResults.lower_bollinger_bound, y0: 0,
+            x1: vixResults.upper_bollinger_bound, y1: 1,
+            fillcolor: 'rgba(136, 192, 208, 0.05)',
+            line: { color: 'rgba(136, 192, 208, 0.3)', width: 1, dash: 'dash' }
+        });
+    }
+
+ 
 
 
         //***************************  CODE FOR MANAGING/DISPLYAING VOLATILITY INDEX(VIX) END HERE  ******************************  //
@@ -1358,7 +1603,7 @@ async function updateStackedChart(serverPayload, beatsToStack = 2, samplingRate 
     });
 
 
-    console.log("server payload:", serverPayload)
+    //console.log("server payload:", serverPayload)
     // The main inference based on the math function that we created above : calculateCardiacAnalytics(RR_raws)
     const stats = await getOrComputeMetric(
     serverPayload.record_id, 
@@ -1372,12 +1617,10 @@ async function updateStackedChart(serverPayload, beatsToStack = 2, samplingRate 
         return calculateCardiacAnalytics(featureMap.R.x);
     }
 );
-
+    console.log("getOrComputeStatistic :", stats)
 //  We have now used getOrComputeMetric to get or compute the metric 
 //    const stats = calculateCardiacAnalytics(featureMap.R.x);
-
-
-
+ 
 let statsAnnotation = [];
 
     if (stats) {
@@ -1515,6 +1758,8 @@ let statsAnnotation = [];
                 if (payload.error) return;
 
                 console.log("payload received:", payload)
+                
+                let current_config = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${payload.orientation_status}`
 
                 //***************** TILL THIS POINT WE HAVE SENT THE REQEUST, RECEIVED THE RESPONSE AND CONVERTED THE PAYLOAD INTO JSON *****************
                 //***************** BELOW THIS POINT, EVERYTHING HAPPENS IN THE BROWSER ON THE CLIENT SIDE  *****************
@@ -1988,11 +2233,10 @@ let statsAnnotation = [];
 
                 // BEATS VIX INDICATOR
                 if (showBeatsVIX && payload.features) {
-                    runVolatilityIndexPlot(serverPayload = payload, beatsToStack = 2, samplingRate = 300)
+                    runVolatilityIndexPlot(serverPayload = payload, beatsToStack = 2, samplingRate = 300, current_config)
                 }
 
-        console.log(`current Signal config for ${recordId}: currentScale:${currentScale}, useFilter:${useFilter}, CancelQRS:${useCancel},  Orientation:${payload.orientation_status} ` )
-
+        console.log(current_config)
             })
             .catch(err => console.error("Error executing unified stream pipeline:", err));
     }
