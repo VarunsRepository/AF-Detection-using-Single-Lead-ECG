@@ -408,6 +408,40 @@
         </div>
     </div>
 
+
+
+    <div class="panel control-group">
+        <!-- SIGNAL VERIFICATIONS CONTROLS -->
+        <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">SIGNAL VERIFICATIONS CONTROLS</label>
+
+        <!-- Unified Signal rubber stamp Status Badge -->
+        <div id="orientation-status-badge"
+            style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block;">
+            Checking  Rubber Stamp Status...
+        </div>
+
+        <!-- Stamp button to verify the status of the signal here 
+        <div style="display: inline-flex; align-items: center;">
+            <input type="checkbox" id="toggle-manual-flip" onchange="loadEcgPipeline()" style="margin-right: 6px;">
+            <label for="toggle-manual-flip" style="color: #f2994a; font-weight: bold;">| Verify This Configuration</label>
+        </div>
+        -->
+            <button id="rubber-stamp-btn" 
+            onclick="lockThisIsItConfiguration()" 
+            style="background-color: #5cc24a; color: #111111; border: 1px solid #44a635; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px;"
+            onmouseover="this.style.backgroundColor='#4cb03b'; this.style.boxShadow='0 0 4px rgba(92,194,74,0.4)';"
+            onmouseout="this.style.backgroundColor='#5cc24a'; this.style.boxShadow='none';">
+        🔒 This Is It! Lock Configuration
+    </button>
+
+            <!-- 💰 THE TULD MARGIN CALL CAPTION -->
+        <span id="tuld-caption" 
+              style="font-size: 9px; font-family: monospace; color: #747d8c; margin-top: 4px; padding-left: 2px; text-transform: uppercase; letter-spacing: 0.3px; opacity: 0.4; transition: opacity 0.15s ease-in-out;">
+            Protocol: Be first. Be smarter. Lock the gate.
+        </span>
+
+    </div>
+
     <div class="panel">
         <!-- 
         Added citation directly on beneath the plot - Makes design simpler-->
@@ -805,17 +839,17 @@
         let statsAnnotation = [];
 
         let rmssd = 0;
-let sumSquaredDiffs = 0;
-let diffCount = 0;
+        let sumSquaredDiffs = 0;
+        let diffCount = 0;
 
-const logReturns = [];
+        const logReturns = [];
 
         const MAX_HUMAN_RR_MS = 2000; // >2000ms implies a heart rate under 30 BPM (Likely a missing peak)
         const MIN_HUMAN_RR_MS = 300;  // <300ms implies a heart rate over 200 BPM
 
 
         // THis block actually calculates the RR interval statistics
-        if (totalValidBeats > 0) {  
+        if (totalValidBeats > 0) {
             // A. Calculate Mean (Average)
             const meanRR = pureRRIntervals.reduce((sum, val) => sum + val, 0) / totalValidBeats;
 
@@ -834,38 +868,38 @@ const logReturns = [];
 
 
             for (let b = 0; b < pureRRIntervals.length - 1; b++) {
-    const currentInt = pureRRIntervals[b];
-    const nextInt = pureRRIntervals[b + 1];
+                const currentInt = pureRRIntervals[b];
+                const nextInt = pureRRIntervals[b + 1];
 
-    // CONTINUITY GATE CHECK 1: Ensure both individual numbers are physically real
-    if (currentInt < MIN_HUMAN_RR_MS || currentInt > MAX_HUMAN_RR_MS || 
-        nextInt < MIN_HUMAN_RR_MS || nextInt > MAX_HUMAN_RR_MS) {
-        console.warn(`Artifact Detected: Dropping physiological boundary anomaly at beat index ${b}`);
-        continue; 
-    }
+                // CONTINUITY GATE CHECK 1: Ensure both individual numbers are physically real
+                if (currentInt < MIN_HUMAN_RR_MS || currentInt > MAX_HUMAN_RR_MS ||
+                    nextInt < MIN_HUMAN_RR_MS || nextInt > MAX_HUMAN_RR_MS) {
+                    console.warn(`Artifact Detected: Dropping physiological boundary anomaly at beat index ${b}`);
+                    continue;
+                }
 
-    // CONTINUITY GATE CHECK 2: Track abrupt, impossible artifact jumps (e.g., cat jumping on electrode)
-    // A step change larger than 500ms between two adjacent heart beats is mechanically impossible
-    const stepJump = Math.abs(nextInt - currentInt);
-    if (stepJump > 500) {
-        console.warn(`Motion Artifact Detected: Dropping impossible step-jump of ${stepJump}ms at beat index ${b}`);
-        continue; // Bypasses the math for this broken transition pair entirely
-    }
+                // CONTINUITY GATE CHECK 2: Track abrupt, impossible artifact jumps (e.g., cat jumping on electrode)
+                // A step change larger than 500ms between two adjacent heart beats is mechanically impossible
+                const stepJump = Math.abs(nextInt - currentInt);
+                if (stepJump > 500) {
+                    console.warn(`Motion Artifact Detected: Dropping impossible step-jump of ${stepJump}ms at beat index ${b}`);
+                    continue; // Bypasses the math for this broken transition pair entirely
+                }
 
-    // --- CONTINUITY CONFIRMED: Safe to process metrics ---
-    
-    // 1. Calculate RMSSD Input (Time-Domain)
-    sumSquaredDiffs += Math.pow(nextInt - currentInt, 2);
-    diffCount++;
+                // --- CONTINUITY CONFIRMED: Safe to process metrics ---
 
-    // 2. Calculate Volatility Index Input (Log-Return)
-    logReturns.push(Math.log(nextInt / currentInt));
-}
+                // 1. Calculate RMSSD Input (Time-Domain)
+                sumSquaredDiffs += Math.pow(nextInt - currentInt, 2);
+                diffCount++;
 
-// Final safe evaluations using only guarded counts
-if (diffCount > 0) {
-    rmssd = Math.sqrt(sumSquaredDiffs / diffCount);
-}
+                // 2. Calculate Volatility Index Input (Log-Return)
+                logReturns.push(Math.log(nextInt / currentInt));
+            }
+
+            // Final safe evaluations using only guarded counts
+            if (diffCount > 0) {
+                rmssd = Math.sqrt(sumSquaredDiffs / diffCount);
+            }
 
 
 
@@ -878,7 +912,7 @@ if (diffCount > 0) {
                     `Mean RR: <b>${meanRR.toFixed(1)} ms</b><br>` +
                     `Mode RR: <b>${Number(modeRR).toFixed(0)} ms</b><br>` +
                     `Std Dev (SDNN): <span style="color:${stdDevRR > 50 ? '#e74c3c' : '#2ecc71'}"><b>${stdDevRR.toFixed(1)} ms</b></span><br>` +
-                     `RMSSD (Local): <span style="color:${rmssd > 60 ? '#e74c3c' : '#2ecc71'}"><b>${rmssd.toFixed(1)} ms</b></span><br>` +
+                    `RMSSD (Local): <span style="color:${rmssd > 60 ? '#e74c3c' : '#2ecc71'}"><b>${rmssd.toFixed(1)} ms</b></span><br>` +
                     `Total Beats: <b>${totalValidBeats}</b><br>` +
                     `${stdDevRR > 50 ? 'CHAOTIC ERA Sir Bacon Francis : High SD (Potentially AF)' : 'STABLE ERA Dr Coppernicus : Low SD (Normal Rhythm) '}`,
                 align: 'left',
@@ -943,54 +977,54 @@ if (diffCount > 0) {
 
 
 
-/**
- * Decoupled VIX function
-    * our earlier code had VIX logicintegratedinto the plotting function, here we'e separated the 2.
-    calculation of VIX to be done by  calculateVolatilityIndex()
-    and Plotting done by the original function
- */
-function calculateVolatilityIndex(pureRRIntervals) {
-    if (!pureRRIntervals || pureRRIntervals.length <= 1) return null;
+    /**
+     * Decoupled VIX function
+        * our earlier code had VIX logicintegratedinto the plotting function, here we'e separated the 2.
+        calculation of VIX to be done by  calculateVolatilityIndex()
+        and Plotting done by the original function
+     */
+    function calculateVolatilityIndex(pureRRIntervals) {
+        if (!pureRRIntervals || pureRRIntervals.length <= 1) return null;
 
-    const logReturns = [];
+        const logReturns = [];
 
-    // Calculate Log-Returns of successive intervals just as in Stock markets
-    for (let b = 0; b < pureRRIntervals.length - 1; b++) {
-        const currentInt = pureRRIntervals[b];
-        const nextInt = pureRRIntervals[b + 1];
+        // Calculate Log-Returns of successive intervals just as in Stock markets
+        for (let b = 0; b < pureRRIntervals.length - 1; b++) {
+            const currentInt = pureRRIntervals[b];
+            const nextInt = pureRRIntervals[b + 1];
 
-        if (currentInt > 0 && nextInt > 0) {
-            logReturns.push(Math.log(nextInt / currentInt));
+            if (currentInt > 0 && nextInt > 0) {
+                logReturns.push(Math.log(nextInt / currentInt));
+            }
         }
+
+        if (logReturns.length === 0) return null;
+
+        // Calculate Standard Deviation of the Log Returns
+        const meanLog = logReturns.reduce((s, v) => s + v, 0) / logReturns.length;
+        const varLog = logReturns.reduce((s, v) => s + Math.pow(v - meanLog, 2), 0) / logReturns.length;
+        const cviRaw = Math.sqrt(varLog);
+
+        // Scale to a clean percentage index
+        const cardiacVolatilityIndex = cviRaw * 100;
+        const isVolatile = cardiacVolatilityIndex > 10.0;
+
+        // Compute Bollinger-Band boundary markers(for safe range of volatility )
+        const totalValidBeats = pureRRIntervals.length;
+        const meanRR = pureRRIntervals.reduce((sum, val) => sum + val, 0) / totalValidBeats;
+        const lowerVolBound = meanRR * Math.exp(-cviRaw);
+        const upperVolBound = meanRR * Math.exp(cviRaw);
+
+        // Return the Math object 
+        return {
+            cvi_raw: cviRaw,
+            volatility_percentage: parseFloat(cardiacVolatilityIndex.toFixed(2)),
+            is_volatile: isVolatile,
+            lower_bollinger_bound: lowerVolBound,
+            upper_bollinger_bound: upperVolBound,
+            total_beats: totalValidBeats
+        };
     }
-
-    if (logReturns.length === 0) return null;
-
-    // Calculate Standard Deviation of the Log Returns
-    const meanLog = logReturns.reduce((s, v) => s + v, 0) / logReturns.length;
-    const varLog = logReturns.reduce((s, v) => s + Math.pow(v - meanLog, 2), 0) / logReturns.length;
-    const cviRaw = Math.sqrt(varLog);
-
-    // Scale to a clean percentage index
-    const cardiacVolatilityIndex = cviRaw * 100;
-    const isVolatile = cardiacVolatilityIndex > 10.0;
-
-    // Compute Bollinger-Band boundary markers(for safe range of volatility )
-    const totalValidBeats = pureRRIntervals.length;
-    const meanRR = pureRRIntervals.reduce((sum, val) => sum + val, 0) / totalValidBeats;
-    const lowerVolBound = meanRR * Math.exp(-cviRaw);
-    const upperVolBound = meanRR * Math.exp(cviRaw);
-
-    // Return the Math object 
-    return {
-        cvi_raw: cviRaw,
-        volatility_percentage: parseFloat(cardiacVolatilityIndex.toFixed(2)),
-        is_volatile: isVolatile,
-        lower_bollinger_bound: lowerVolBound,
-        upper_bollinger_bound: upperVolBound,
-        total_beats: totalValidBeats
-    };
-}
 
 
 
@@ -1210,9 +1244,9 @@ function calculateVolatilityIndex(pureRRIntervals) {
         beatsToStack = 2,
         samplingRate = 300,
         currentConfig
-        ) {
+    ) {
 
-            console.log("inside runVolatilityIndexPlot")
+        console.log("inside runVolatilityIndexPlot")
         // Run the math function to slice the data on the fly without needing to ask the server to do it for us
         const stackedBeats = sliceStackedBeatsFrontend(
             serverPayload.data,
@@ -1321,55 +1355,55 @@ function calculateVolatilityIndex(pureRRIntervals) {
 
 
 
-const engineVersion = "1.0.0";
+        const engineVersion = "1.0.0";
 
-// Intercept or run the math through the universal first-class object cache wrapper
-const vixResults = await getOrComputeMetric(
-    serverPayload.record_id,
-    `${currentConfig}-vix_analytics`,  
-    engineVersion,
-    () => {
-        // This math function block ONLY runs if the server RAM is completely empty!
-        const pureRRIntervals = featureMap.R.x.filter(x => x > 0);
-        return calculateVolatilityIndex(pureRRIntervals);
-    }
-);
+        // Intercept or run the math through the universal first-class object cache wrapper
+        const vixResults = await getOrComputeMetric(
+            serverPayload.record_id,
+            `${currentConfig}-vix_analytics`,
+            engineVersion,
+            () => {
+                // This math function block ONLY runs if the server RAM is completely empty!
+                const pureRRIntervals = featureMap.R.x.filter(x => x > 0);
+                return calculateVolatilityIndex(pureRRIntervals);
+            }
+        );
 
-console.log(`getOrComputeMetric: ${vixResults}`)
+        console.log(`getOrComputeMetric: ${vixResults}`)
 
-    // 🎛️ INJECT PRE-COMPUTED VIX ANNOTATIONS DIRECTLY
-    if (vixResults) {
-        const statusColor = vixResults.is_volatile ? '#e74c3c' : '#5e81ac';
+        // 🎛️ INJECT PRE-COMPUTED VIX ANNOTATIONS DIRECTLY
+        if (vixResults) {
+            const statusColor = vixResults.is_volatile ? '#e74c3c' : '#5e81ac';
 
-        // Push your telemetry box text using variables passed directly from cache payload
-        statsAnnotation.push({
-            x: 0.98, y: 0.62,
-            xref: 'paper', yref: 'paper',
-            text: `<b>Heart Beat volatility Tracker</b><br>` +
-                `━━━━━━━━━━━━━━━<br>` +
-                `R-R Volatility Index: <span style="color:${statusColor}"><b>${vixResults.volatility_percentage}%</b></span><br>` +
-                `Status: <b>${vixResults.is_volatile ? 'VOLATILE BEAT' : 'STABLE BEAT'}</b>`,
-            align: 'left',
-            showarrow: false,
-            bgcolor: 'rgba(36, 41, 51, 0.95)',
-            bordercolor: statusColor,
-            borderwidth: 1.5,
-            borderpad: 8,
-            font: { color: '#eceff4', size: 10, family: 'monospace' }
-        });
+            // Push your telemetry box text using variables passed directly from cache payload
+            statsAnnotation.push({
+                x: 0.98, y: 0.62,
+                xref: 'paper', yref: 'paper',
+                text: `<b>Heart Beat volatility Tracker</b><br>` +
+                    `━━━━━━━━━━━━━━━<br>` +
+                    `R-R Volatility Index: <span style="color:${statusColor}"><b>${vixResults.volatility_percentage}%</b></span><br>` +
+                    `Status: <b>${vixResults.is_volatile ? 'VOLATILE BEAT' : 'STABLE BEAT'}</b>`,
+                align: 'left',
+                showarrow: false,
+                bgcolor: 'rgba(36, 41, 51, 0.95)',
+                bordercolor: statusColor,
+                borderwidth: 1.5,
+                borderpad: 8,
+                font: { color: '#eceff4', size: 10, family: 'monospace' }
+            });
 
-        // Push Bollinger-Band highlight rectangles using cached float boundaries
-        rrIntervalLines.push({
-            type: 'rect',
-            xref: 'x', yref: 'paper',
-            x0: vixResults.lower_bollinger_bound, y0: 0,
-            x1: vixResults.upper_bollinger_bound, y1: 1,
-            fillcolor: 'rgba(136, 192, 208, 0.05)',
-            line: { color: 'rgba(136, 192, 208, 0.3)', width: 1, dash: 'dash' }
-        });
-    }
+            // Push Bollinger-Band highlight rectangles using cached float boundaries
+            rrIntervalLines.push({
+                type: 'rect',
+                xref: 'x', yref: 'paper',
+                x0: vixResults.lower_bollinger_bound, y0: 0,
+                x1: vixResults.upper_bollinger_bound, y1: 1,
+                fillcolor: 'rgba(136, 192, 208, 0.05)',
+                line: { color: 'rgba(136, 192, 208, 0.3)', width: 1, dash: 'dash' }
+            });
+        }
 
- 
+
 
 
         //***************************  CODE FOR MANAGING/DISPLYAING VOLATILITY INDEX(VIX) END HERE  ******************************  //
@@ -1400,269 +1434,269 @@ console.log(`getOrComputeMetric: ${vixResults}`)
 
 
 
-/**
- * calcualtes the metrics or features for the given ECG signal. 
- * Note that some of the metrics are calcualted in separte functions, we'll use this function for a cleaner approch
- * We will also add other metrics later to this function
- * This function takes the raw R-R points in time and does the math for namely :
- 1. Mean R-R Interval
- 2. Median R-R Interval
- 3. standard Deviation 
- 4. RMS successive differences of the R-R interval 
- 5. VIX or volatility index
- */
+    /**
+     * calcualtes the metrics or features for the given ECG signal. 
+     * Note that some of the metrics are calcualted in separte functions, we'll use this function for a cleaner approch
+     * We will also add other metrics later to this function
+     * This function takes the raw R-R points in time and does the math for namely :
+     1. Mean R-R Interval
+     2. Median R-R Interval
+     3. standard Deviation 
+     4. RMS successive differences of the R-R interval 
+     5. VIX or volatility index
+     */
 
 
-/*
-    Created this function to calcualte the HRV metrics separately rather than having the view and the ufunction together.
-    VIX removed as that VIX has its own separate plot  
-*/
-function calculateCardiacAnalytics(RRIntervals) {
-    const pureRRIntervals = RRIntervals.filter(x => x > 0); // ignore the first R Point as its the starting point 
-    const totalBeats = pureRRIntervals.length;
+    /*
+        Created this function to calcualte the HRV metrics separately rather than having the view and the ufunction together.
+        VIX removed as that VIX has its own separate plot  
+    */
+    function calculateCardiacAnalytics(RRIntervals) {
+        const pureRRIntervals = RRIntervals.filter(x => x > 0); // ignore the first R Point as its the starting point 
+        const totalBeats = pureRRIntervals.length;
 
-    if (totalBeats === 0) return null;
+        if (totalBeats === 0) return null;
 
-    // Mean, variance,  standard-Deviation
-    const meanRR = pureRRIntervals.reduce((s, v) => s + v, 0) / totalBeats;
-    const variance = pureRRIntervals.reduce((s, v) => s + Math.pow(v - meanRR, 2), 0) / totalBeats;
-    const stdDevRR = Math.sqrt(variance);
+        // Mean, variance,  standard-Deviation
+        const meanRR = pureRRIntervals.reduce((s, v) => s + v, 0) / totalBeats;
+        const variance = pureRRIntervals.reduce((s, v) => s + Math.pow(v - meanRR, 2), 0) / totalBeats;
+        const stdDevRR = Math.sqrt(variance);
 
-    //  Mode Binning (10ms steps)
-    const bins = {};
-    pureRRIntervals.forEach(v => { const b = Math.round(v / 10) * 10; bins[b] = (bins[b] || 0) + 1; });
-    const modeRR = Number(Object.keys(bins).reduce((a, b) => bins[a] > bins[b] ? a : b));
+        //  Mode Binning (10ms steps)
+        const bins = {};
+        pureRRIntervals.forEach(v => { const b = Math.round(v / 10) * 10; bins[b] = (bins[b] || 0) + 1; });
+        const modeRR = Number(Object.keys(bins).reduce((a, b) => bins[a] > bins[b] ? a : b));
 
-    //  for (RMSSD)
-    let sumSquaredDiffs = 0;
-    let diffCount = 0;
-    let nn50Count = 0; // for pNN50 (% of successive R-R differences > 50ms
-    
-    for (let beatID = 0; beatID < pureRRIntervals.length - 1; beatID++) {
-        const current = pureRRIntervals[beatID];
-        const next = pureRRIntervals[beatID + 1];
+        //  for (RMSSD)
+        let sumSquaredDiffs = 0;
+        let diffCount = 0;
+        let nn50Count = 0; // for pNN50 (% of successive R-R differences > 50ms
 
-        // checking if the 2 consequitive beats in the array are actually consequitive for a human being
-        if (current < 300 || current > 2000 || next < 300 || next > 2000) continue;
-        if (Math.abs(next - current) > 500) continue;
+        for (let beatID = 0; beatID < pureRRIntervals.length - 1; beatID++) {
+            const current = pureRRIntervals[beatID];
+            const next = pureRRIntervals[beatID + 1];
+
+            // checking if the 2 consequitive beats in the array are actually consequitive for a human being
+            if (current < 300 || current > 2000 || next < 300 || next > 2000) continue;
+            if (Math.abs(next - current) > 500) continue;
 
 
-        // Check if the absolute difference between this beat and the next is > 50ms
-        const stepJump = Math.abs(next - current);
-        if (stepJump > 50) {
-            nn50Count++;
+            // Check if the absolute difference between this beat and the next is > 50ms
+            const stepJump = Math.abs(next - current);
+            if (stepJump > 50) {
+                nn50Count++;
+            }
+
+
+            // Squaring
+            sumSquaredDiffs += Math.pow(next - current, 2);
+            diffCount++;
         }
 
 
-        // Squaring
-        sumSquaredDiffs += Math.pow(next - current, 2);
-        diffCount++;
+        // finally Calculate final pNN50 percentage  
+        const pNN50 = diffCount > 0 ? (nn50Count / diffCount) * 100 : 0;
+
+        return {
+            mean: meanRR,
+            mode: modeRR,
+            sdnn: stdDevRR,
+            rmssd: diffCount > 0 ? Math.sqrt(sumSquaredDiffs / diffCount) : 0,
+            pnn50: pNN50,
+            total: totalBeats
+        };
     }
 
 
-    // finally Calculate final pNN50 percentage  
-    const pNN50 = diffCount > 0 ? (nn50Count / diffCount) * 100 : 0;
-
-    return {
-        mean: meanRR,
-        mode: modeRR,
-        sdnn: stdDevRR,
-        rmssd: diffCount > 0 ? Math.sqrt(sumSquaredDiffs / diffCount) : 0,
-        pnn50: pNN50,
-        total: totalBeats
-    };
-}
 
 
 
-
-
-/*
-    This function off-loads some work the client side, too.
-    calcualtes the value of the HRV metrics when the sample is accessed for the first time.
-    get the value of he HRV metrics if the sample has already been traversed. 
-*/
-async function getOrComputeMetric(recordId, statName, version, computeCallback) {
-    try {
-        // So the first preference would be to read the stats from the JSON Stats object(ECG_Features). To do this we need to call the read_API route as depicted below 
-        const response = await fetch(`/api/v1/splunk/get-stat?record_id=${recordId}&stat_name=${statName}&version=${version}`);
-        const result = await response.json();
-
-        // successfuly gathered the cached copy of the HRV stats
-        if (result.cached) {
-            console.log(`[CACHE HIT] Loaded consolidated object "${statName}" (v${version}) from RAM.`);
-            console.log(result)
-            // returning the Metric back to the calling function 
-            // note that the object structure and type must be exactly similar to the object that our computation function returns.
-            // i.e. { mean, mode, sdnn, rmssd, pnn50, total }
-            // otherwise there would be a mismatch and the plot will not render properly
-            return result.data.value; 
-        }
-
-        // This is the OR-Scenario, if the metrics are not found in the ECG_Features object, we need to run computation on the spot
-        console.log(`[CACHE MISS] Running live cardiac analytical matrices for ${statName}...`);
-        const freshlyCalculatedObject = computeCallback();
-
-        if (!freshlyCalculatedObject) return null;
-
-        // when we're calculating the metric in real time, we also need to save the metric into the ECG_Features object. 
-        // this would be done using the write_API route as depicted below 
-        fetch('/api/v1/splunk/save-stat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                record_id: recordId,
-                statistic_name: statName,
-                value: freshlyCalculatedObject,
-                version: version,
-                last_calculated: new Date().toISOString()
-            })
-        }).catch(err => console.warn("Background sync delayed:", err));
-
-        return freshlyCalculatedObject;
-
-    } catch (networkError) {
-        console.error(`🚨 SERVER OFFLINE OR SYSTEM ERROR:`, networkError);
-        
-        // Test if the callback can safely run or if data is missing entirely
+    /*
+        This function off-loads some work the client side, too.
+        calcualtes the value of the HRV metrics when the sample is accessed for the first time.
+        get the value of he HRV metrics if the sample has already been traversed. 
+    */
+    async function getOrComputeMetric(recordId, statName, version, computeCallback) {
         try {
-            return computeCallback();
-        } catch (fallbackError) {
-            console.error("❌ Critical: Emergency live processing failed due to missing signal arrays.", fallbackError);
-            return null; // Return null so downstream chart render scripts don't break on undefined values
+            // So the first preference would be to read the stats from the JSON Stats object(ECG_Features). To do this we need to call the read_API route as depicted below 
+            const response = await fetch(`/api/v1/splunk/get-stat?record_id=${recordId}&stat_name=${statName}&version=${version}`);
+            const result = await response.json();
+
+            // successfuly gathered the cached copy of the HRV stats
+            if (result.cached) {
+                console.log(`[CACHE HIT] Loaded consolidated object "${statName}" (v${version}) from RAM.`);
+                console.log(result)
+                // returning the Metric back to the calling function 
+                // note that the object structure and type must be exactly similar to the object that our computation function returns.
+                // i.e. { mean, mode, sdnn, rmssd, pnn50, total }
+                // otherwise there would be a mismatch and the plot will not render properly
+                return result.data.value;
+            }
+
+            // This is the OR-Scenario, if the metrics are not found in the ECG_Features object, we need to run computation on the spot
+            console.log(`[CACHE MISS] Running live cardiac analytical matrices for ${statName}...`);
+            const freshlyCalculatedObject = computeCallback();
+
+            if (!freshlyCalculatedObject) return null;
+
+            // when we're calculating the metric in real time, we also need to save the metric into the ECG_Features object. 
+            // this would be done using the write_API route as depicted below 
+            fetch('/api/v1/splunk/save-stat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    record_id: recordId,
+                    statistic_name: statName,
+                    value: freshlyCalculatedObject,
+                    version: version,
+                    last_calculated: new Date().toISOString()
+                })
+            }).catch(err => console.warn("Background sync delayed:", err));
+
+            return freshlyCalculatedObject;
+
+        } catch (networkError) {
+            console.error(`🚨 SERVER OFFLINE OR SYSTEM ERROR:`, networkError);
+
+            // Test if the callback can safely run or if data is missing entirely
+            try {
+                return computeCallback();
+            } catch (fallbackError) {
+                console.error("❌ Critical: Emergency live processing failed due to missing signal arrays.", fallbackError);
+                return null; // Return null so downstream chart render scripts don't break on undefined values
+            }
         }
     }
-}
 
 
-/*
-    * we've redone the function cause the original one was too long and unmanageable to incoperate additional 
-      HRV features like RMSSD
-*/
-async function updateStackedChart(serverPayload, beatsToStack = 2, samplingRate = 300, currentConfig) {
-    
-    // calling sliceStackedBeatsFrontend() to manipulate the server's payload  
-    const stackedBeats = sliceStackedBeatsFrontend(
-        serverPayload.data,
-        serverPayload.features,
-        beatsToStack,
-        samplingRate
-    );
+    /*
+        * we've redone the function cause the original one was too long and unmanageable to incoperate additional 
+          HRV features like RMSSD
+    */
+    async function updateStackedChart(serverPayload, beatsToStack = 2, samplingRate = 300, currentConfig) {
 
-    const finalPlotTraces = [];
-    // feature map is same as before 
-    const featureMap = {
-        P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
-        Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
-        R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
-        S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
-        T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
-    };
+        // calling sliceStackedBeatsFrontend() to manipulate the server's payload  
+        const stackedBeats = sliceStackedBeatsFrontend(
+            serverPayload.data,
+            serverPayload.features,
+            beatsToStack,
+            samplingRate
+        );
 
-    // getting marketrs from the signal also the same as before 
-    for (const chunk of stackedBeats) {
-        finalPlotTraces.push({
-            x: chunk.time_ms,
-            y: chunk.amplitude_mv,
-            type: 'scatter',
-            mode: 'lines',
-            line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.2 },
-            showlegend: false,
-            hoverinfo: 'skip'
-        });
+        const finalPlotTraces = [];
+        // feature map is same as before 
+        const featureMap = {
+            P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
+            Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
+            R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
+            S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
+            T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
+        };
 
-        // this part is also the same as before, this is a quick and dirty way to work on 5 arrays without writing 5 loops
-        ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
-            chunk.features[wave].forEach(marker => {
-                featureMap[wave].x.push(marker.x);
-                featureMap[wave].y.push(marker.y);
-            });
-        });
-    }
-
-    // plotting the Scatter Points to the view 
-    for (const [key, cfg] of Object.entries(featureMap)) {
-        if (cfg.x.length > 0) {
+        // getting marketrs from the signal also the same as before 
+        for (const chunk of stackedBeats) {
             finalPlotTraces.push({
-                x: cfg.x, y: cfg.y, type: 'scatter', mode: 'markers', name: cfg.name,
-                marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
-                hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                x: chunk.time_ms,
+                y: chunk.amplitude_mv,
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.2 },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+
+            // this part is also the same as before, this is a quick and dirty way to work on 5 arrays without writing 5 loops
+            ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+                chunk.features[wave].forEach(marker => {
+                    featureMap[wave].x.push(marker.x);
+                    featureMap[wave].y.push(marker.y);
+                });
             });
         }
-    }
 
-    // R-R inteval horizontal lines 
-    const rrIntervalLines = [];
-    featureMap.R.x.forEach((r2OffsetMs, i) => {
-        if (r2OffsetMs > 0) {
-            rrIntervalLines.push({
-                type: 'line', x0: 0, y0: featureMap.R.y[i], x1: r2OffsetMs, y1: featureMap.R.y[i],
-                line: { color: 'rgba(235, 123, 43, 0.30)', width: 1 }
-            });
+        // plotting the Scatter Points to the view 
+        for (const [key, cfg] of Object.entries(featureMap)) {
+            if (cfg.x.length > 0) {
+                finalPlotTraces.push({
+                    x: cfg.x, y: cfg.y, type: 'scatter', mode: 'markers', name: cfg.name,
+                    marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
+                    hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                });
+            }
         }
-    });
+
+        // R-R inteval horizontal lines 
+        const rrIntervalLines = [];
+        featureMap.R.x.forEach((r2OffsetMs, i) => {
+            if (r2OffsetMs > 0) {
+                rrIntervalLines.push({
+                    type: 'line', x0: 0, y0: featureMap.R.y[i], x1: r2OffsetMs, y1: featureMap.R.y[i],
+                    line: { color: 'rgba(235, 123, 43, 0.30)', width: 1 }
+                });
+            }
+        });
 
 
-    //console.log("server payload:", serverPayload)
-    // The main inference based on the math function that we created above : calculateCardiacAnalytics(RR_raws)
-    const stats = await getOrComputeMetric(
-    serverPayload.record_id, 
-    `${currentConfig}-time_domain_analytics_object`, 
-    "1.0.0",
-    // Call back function call, this block will be executed only when required 
-    // the below represention is like Rust's Match, i.e. if the params match the left hand side expression, execute the ride hand side expression.  
-    // () => {}  
-    () => {
-        // It only fires if the wrapper discovers the cache is empty.
-        return calculateCardiacAnalytics(featureMap.R.x);
+        //console.log("server payload:", serverPayload)
+        // The main inference based on the math function that we created above : calculateCardiacAnalytics(RR_raws)
+        const stats = await getOrComputeMetric(
+            serverPayload.record_id,
+            `${currentConfig}-time_domain_analytics_object`,
+            "1.0.0",
+            // Call back function call, this block will be executed only when required 
+            // the below represention is like Rust's Match, i.e. if the params match the left hand side expression, execute the ride hand side expression.  
+            // () => {}  
+            () => {
+                // It only fires if the wrapper discovers the cache is empty.
+                return calculateCardiacAnalytics(featureMap.R.x);
+            }
+        );
+        console.log("getOrComputeStatistic :", stats)
+        //  We have now used getOrComputeMetric to get or compute the metric 
+        //    const stats = calculateCardiacAnalytics(featureMap.R.x);
+
+        let statsAnnotation = [];
+
+        if (stats) {
+            const isAFib = stats.sdnn > 50 || stats.rmssd > 60;
+            const statusColor = isAFib ? '#e74c3c' : '#2ecc71';
+            const statusText = isAFib
+                ? '☠️ CHAOTIC ERA Sir Francis Bacon</br>: High SD/RMSSD (Potentially AFib)'
+                : '💖  STABLE ERA Dr. Copernicus</br>: Low Variance (Normal Sinus)';
+
+            statsAnnotation = [{
+                x: 0.98, y: 0.95, xref: 'paper', yref: 'paper',
+                text: `<b>R-R Analytics Summary</b><br>` +
+                    `━━━━━━━━━━━━━━━<br>` +
+                    `Mean RR: <b>${stats.mean.toFixed(1)} ms</b><br>` +
+                    `Mode RR: <b>${stats.mode.toFixed(0)} ms</b><br>` +
+                    `Std Dev (SDNN): <span style="color:${statusColor}"><b>${stats.sdnn.toFixed(1)} ms</b></span><br>` +
+                    `RMSSD (Local): <span style="color:${statusColor}"><b>${stats.rmssd.toFixed(1)} ms</b></span><br>` +
+                    `pNN50 Index: <span style="color:${statusColor}"><b>${stats.pnn50.toFixed(1)}%</b></span><br>` +
+                    `Total Beats: <b>${stats.total}</b><br>` +
+                    `<span style="color:${statusColor}"><b>${statusText}</b></span>`,
+                align: 'left', showarrow: false,
+                bgcolor: 'rgba(46, 52, 64, 0.9)', bordercolor: statusColor,
+                borderwidth: 1.5, borderpad: 8,
+                font: { color: '#d8dee9', size: 11, family: 'monospace' }
+            }];
+        }
+
+        // finally creating the final object to pass into plotly
+        const maxRangeX = beatsToStack === 1 ? 450 : beatsToStack === 2 ? 1100 : 1800;
+        const overlayLayout = {
+            title: { text: `<b>Superimposed Cycles (${beatsToStack}x Beat Phase View)</b>`, font: { size: 16 } },
+            xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, maxRangeX], gridcolor: '#2e3440' },
+            yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+            shapes: rrIntervalLines,
+            annotations: statsAnnotation,
+            plot_bgcolor: '#1c1e24', paper_bgcolor: '#1c1e24',
+            showlegend: true, legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+            hovermode: 'closest'
+        };
+        // calling the plotly's API to finally do the printing
+        Plotly.newPlot('stacked-n-RR-beats-overlay-container', finalPlotTraces, overlayLayout);
     }
-);
-    console.log("getOrComputeStatistic :", stats)
-//  We have now used getOrComputeMetric to get or compute the metric 
-//    const stats = calculateCardiacAnalytics(featureMap.R.x);
- 
-let statsAnnotation = [];
-
-    if (stats) {
-        const isAFib = stats.sdnn > 50 || stats.rmssd > 60;
-        const statusColor = isAFib ? '#e74c3c' : '#2ecc71';
-        const statusText = isAFib 
-            ? '☠️ CHAOTIC ERA Sir Francis Bacon</br>: High SD/RMSSD (Potentially AFib)' 
-            : '💖  STABLE ERA Dr. Copernicus</br>: Low Variance (Normal Sinus)';
-
-        statsAnnotation = [{
-            x: 0.98, y: 0.95, xref: 'paper', yref: 'paper',
-            text: `<b>R-R Analytics Summary</b><br>` +
-                  `━━━━━━━━━━━━━━━<br>` +
-                  `Mean RR: <b>${stats.mean.toFixed(1)} ms</b><br>` +
-                  `Mode RR: <b>${stats.mode.toFixed(0)} ms</b><br>` +
-                  `Std Dev (SDNN): <span style="color:${statusColor}"><b>${stats.sdnn.toFixed(1)} ms</b></span><br>` +
-                  `RMSSD (Local): <span style="color:${statusColor}"><b>${stats.rmssd.toFixed(1)} ms</b></span><br>` +
-                  `pNN50 Index: <span style="color:${statusColor}"><b>${stats.pnn50.toFixed(1)}%</b></span><br>` +
-                  `Total Beats: <b>${stats.total}</b><br>` +
-                  `<span style="color:${statusColor}"><b>${statusText}</b></span>`, 
-            align: 'left', showarrow: false,
-            bgcolor: 'rgba(46, 52, 64, 0.9)', bordercolor: statusColor,
-            borderwidth: 1.5, borderpad: 8,
-            font: { color: '#d8dee9', size: 11, family: 'monospace' }
-        }];
-    }
-
-    // finally creating the final object to pass into plotly
-    const maxRangeX = beatsToStack === 1 ? 450 : beatsToStack === 2 ? 1100 : 1800;
-    const overlayLayout = {
-        title: { text: `<b>Superimposed Cycles (${beatsToStack}x Beat Phase View)</b>`, font: { size: 16 } },
-        xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, maxRangeX], gridcolor: '#2e3440' },
-        yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
-        shapes: rrIntervalLines,
-        annotations: statsAnnotation,
-        plot_bgcolor: '#1c1e24', paper_bgcolor: '#1c1e24',
-        showlegend: true, legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
-        hovermode: 'closest'
-    };
-    // calling the plotly's API to finally do the printing
-    Plotly.newPlot('stacked-n-RR-beats-overlay-container', finalPlotTraces, overlayLayout);
-}
 
 
 
@@ -1714,7 +1748,7 @@ let statsAnnotation = [];
         document.getElementById('stacked-n-RR-beats-overlay-panel').style.display = showStacked_n_RR_Beats ? 'block' : 'none';
         document.getElementById('beats-voltility-index-overlay-panel').style.display = showBeatsVIX ? 'block' : 'none';
 
- 
+
         // FIXED: Synchronized matching variable references and cleanly mapped all toggles to URL query keys
         //const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}`;
 
@@ -1758,7 +1792,7 @@ let statsAnnotation = [];
                 if (payload.error) return;
 
                 console.log("payload received:", payload)
-                
+
                 let current_config = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${payload.orientation_status}`
 
                 //***************** TILL THIS POINT WE HAVE SENT THE REQEUST, RECEIVED THE RESPONSE AND CONVERTED THE PAYLOAD INTO JSON *****************
@@ -1805,7 +1839,7 @@ let statsAnnotation = [];
                     });
                 }
 
- 
+
 
 
                 // Trace 4: Full Pan-Tompkins Segment Mapping using NeuroKit2
@@ -1830,7 +1864,7 @@ let statsAnnotation = [];
                     });
                 }
 
- 
+
                 // Render Graph 1
                 const mainLayout = {
                     paper_bgcolor: '#1c1e24',
@@ -2236,7 +2270,7 @@ let statsAnnotation = [];
                     runVolatilityIndexPlot(serverPayload = payload, beatsToStack = 2, samplingRate = 300, current_config)
                 }
 
-        console.log(current_config)
+                console.log(current_config)
             })
             .catch(err => console.error("Error executing unified stream pipeline:", err));
     }
