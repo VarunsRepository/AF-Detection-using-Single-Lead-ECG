@@ -1751,7 +1751,7 @@
 //    }
 //}
 
-function updateVerificationUiState(isVerified, savedSignature = "", stampedAt = "") {
+function updateVerificationUiState(isVerified, savedSignature = "", stampedAt = "", isInitialLoad = false) {
     const badge = document.getElementById("rubber-stamp-status-badge");
     const btn = document.getElementById("rubber-stamp-btn");
     const caption = document.getElementById("tuld-caption");
@@ -1794,9 +1794,18 @@ function updateVerificationUiState(isVerified, savedSignature = "", stampedAt = 
         caption.style.color = "#a5d6a7";
         caption.style.opacity = "1";
 
-        console.log(`updateVerificationUiState::savedSignature: ${savedSignature}`)
-        // Force  dashboard switches to align with the saved config 
-        applySavedConfigToUiSwitches(savedSignature);
+
+        
+                //  DECOUPLING LOGIC: Only force the UI switches to move if this is a fresh record load pass
+        if (isInitialLoad) {
+            console.log("⚙️ Fresh record load detected. Aligning UI switches to historical ground truth.");
+            applySavedConfigToUiSwitches(savedSignature);
+        } else {
+            console.log("⚡ Manual update cycle or active session. Preserving operator switch states.");
+        }
+
+
+
 
     } else {
         // Reset the interface parameters back to cold unverified warning amber tracking mode
@@ -1862,9 +1871,8 @@ function applySavedConfigToUiSwitches(signature) {
 //}
 
  
-async function checkRecordStampStatus(recordId) {
+async function checkRecordStampStatus(recordId, isInitialLoad = false) { // Pass it down from the event
     try {
-        // GET requests send parameters in the URL string, not the body
         const response = await fetch(`/api/v1/splunk/get-record-meta?record_id=${encodeURIComponent(recordId)}`, {
             method: 'GET'
         });
@@ -1872,19 +1880,21 @@ async function checkRecordStampStatus(recordId) {
         
         if (result.status === "Success") {
             if (result.is_verified) {
-                // Config exists! Update UI to show the green verified badge
-                updateVerificationUiState(true, result.verified_signature, result.stamped_at);
+                // Pass true/false downwards into the UI updater
+                //updateVerificationUiState(true, result.verified_signature, result.stamped_at, false);
+    
+                updateVerificationUiState(true, result.verified_signature, result.stamped_at, isInitialLoad);
+
+
             } else {
-                // Record is not verified yet. Keep UI in default state
-                updateVerificationUiState(false, null, null);
+                updateVerificationUiState(false, null, null, isInitialLoad);
             }
         }
-
-        console.log(`Record Rubber Stamp status : ${result.verified_signature} ${result.stamped_at}`)
     } catch (err) {
         console.error("🚨 Failed to fetch record metadata:", err);
     }
 }
+
 
 async function executeTuldRubberStamp(recordId, completedConfigString) {
     try {
@@ -2020,7 +2030,7 @@ async function executeTuldRubberStamp(recordId, completedConfigString) {
                 //***************** WE'RE CHECKING THE RUBBER STAMPING STATUS FOR THE CURRENT CONFIGURATION FOR THE CURRENT SIGNAL    *****************
 
 
-                checkRecordStampStatus(payload.record_id);
+                checkRecordStampStatus(payload.record_id, true);
 //                window.removeEventListener('tuldLockRequested', handleTuldEventTrigger);   // first clearing any stale handlers if present
 
 
@@ -2051,7 +2061,7 @@ async function executeTuldRubberStamp(recordId, completedConfigString) {
                 //***************** BELOW THIS POINT, EVERYTHING HAPPENS IN THE BROWSER ON THE CLIENT SIDE  *****************
                 const badge = document.getElementById('orientation-status-badge');
                 if (badge && payload.orientation_status) {
-                    badge.textContent = `| hardware_status="${payload.orientation_status}"`;
+                    badge.textContent = `${payload.orientation_status}`;
 
                     if (payload.is_inverted) {
                         // Alert layout styling (Orange Warning Alert to flag an upside-down recording)
