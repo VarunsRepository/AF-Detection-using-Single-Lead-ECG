@@ -169,7 +169,8 @@ def stream_ecg():
         print(f"[API ERROR] Pipeline processing crash for record {record_id}: {e}")
         return jsonify({"error": str(e)}), 500
  
-
+# this route is used to check if the current config for the signal already exists in the ECG signal manager store. 
+# if it exists, we'll simply simply fetch the current config and update the UI as it is instead of running the whole pNN50 or VIX math all over again 
 @featureEngg_bp.route('get-stat', methods=['GET'])
 def get_statistic():
     record_id = request.args.get('record_id')
@@ -183,6 +184,9 @@ def get_statistic():
         return jsonify({"cached": True, "data": metric_data})
     return jsonify({"cached": False, "message": "Computation required."})
 
+# This route is used to save the current config for the given sample inside the ECG Signal Manager store 
+# for whichever current config that you have selected(may it could be small-signal-Sample or full-signal-Sample, it could be oritentation-corrected-Sample  or Origianl-oritentation-restored-Sample ) 
+# when you read a record with for the first time and check for any of the metrics like VIX or pNN50 witht that config, the metric has to be calcualted for the first time run 
 @featureEngg_bp.route('/save-stat', methods=['POST'])
 def save_statistic():
     payload = request.json
@@ -197,6 +201,43 @@ def save_statistic():
     )
     
     return jsonify({"status": "Great Success", "message": "RAM state updated. Background persistence active."})
+
+
+# This route is used to rubber stamp the sample when you click the rubber stamp button
+# THE READER ROUTE (GET)
+@featureEngg_bp.route('/get-record-meta', methods=['GET'])
+def get_record_meta():
+    # Readers pass parameters via URL/Query string: ?record_id=123
+    record_id = request.args.get('record_id')
+    
+    if not record_id:
+        return jsonify({"status": "Failed", "error": "Missing record_id"}), 400
+        
+    stamp_info = ECG_Features.get_rubber_stamp_config(record_id)
+    
+    if stamp_info:
+        return jsonify({"status": "Success", **stamp_info})
+        
+    return jsonify({"status": "Success", 
+                    "record_id": record_id, 
+                    "is_verified": False})
+
+
+# THE WRITER ROUTE (POST)
+@featureEngg_bp.route('/rubber-stamp-record', methods=['POST'])
+def rubber_stamp_record():
+    # Writers pass parameters via JSON Body
+    data = request.get_json() or {}
+    record_id = data.get('record_id')
+    verified_signature = data.get('verified_signature')
+    
+    if not record_id or not verified_signature:
+        return jsonify({"status": "Failed", "error": "Missing parameters"}), 400
+        
+    # Execute the write and disk save
+    ECG_Features.rubber_stamp_record_config(record_id, verified_signature)
+    
+    return jsonify({"status": "Success", "message": f"Config locked for {record_id}"})
 
 
 
