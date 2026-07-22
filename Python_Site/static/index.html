@@ -415,7 +415,7 @@
         <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">SIGNAL VERIFICATIONS CONTROLS</label>
 
         <!-- Unified Signal rubber stamp Status Badge -->
-        <div id="orientation-status-badge"
+        <div id="rubber-stamp-status-badge"
             style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block;">
             Checking  Rubber Stamp Status...
         </div>
@@ -427,7 +427,8 @@
         </div>
         -->
             <button id="rubber-stamp-btn" 
-            onclick="lockThisIsItConfiguration()" 
+            older_code_onclick="lockThisIsItConfiguration()" 
+            old_onclick="window.dispatchEvent(new CustomEvent('tuldLockRequested'))" 
             style="background-color: #5cc24a; color: #111111; border: 1px solid #44a635; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px;"
             onmouseover="this.style.backgroundColor='#4cb03b'; this.style.boxShadow='0 0 4px rgba(92,194,74,0.4)';"
             onmouseout="this.style.backgroundColor='#5cc24a'; this.style.boxShadow='none';">
@@ -1506,10 +1507,7 @@
             total: totalBeats
         };
     }
-
-
-
-
+ 
 
     /*
         This function off-loads some work the client side, too.
@@ -1700,6 +1698,226 @@
 
 
 
+//async function lockThisIsItConfiguration() {
+//    const recordId = currentRecordId; 
+//    if (!recordId) {
+//        console.warn("⚠️ [SYSTEM] No active patient record loaded to lock.");
+//        return;
+//    }
+//    
+//    // 🧬 1. Re-compile your exact hyphenated config mapping from your logging parameters
+//    const configKey = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${payload.orientation_status}`;
+//
+//    console.log(`✍️ [THIS IS IT] Submitting ground truth signature for ${recordId}: ${configKey}`);
+//
+//    // 📡 2. Fire the configuration string up to your Flask blueprint route
+//    try {
+//        const response = await fetch('/api/verify-orientation', {
+//            method: 'POST',
+//            headers: { 'Content-Type': 'application/json' },
+//            body: JSON.stringify({
+//                record_id: recordId,
+//                verified_signature: configKey // The server handles creating the timestamp!
+//            })
+//        });
+//        const result = await response.json();
+//        
+//        if (result.status === "Success") {
+//            // Instantly turn the UI green and display your settings
+//            // We pass the current time so the UI flashes the timestamp immediately
+//            updateVerificationUiState(true, configKey, new Date().toISOString());
+//            console.log(`🔒 [SYSTEM] Ground truth secured for ${recordId}.`);
+//        }
+//    } catch (err) {
+//        console.error("🚨 Network error during signature verification:", err);
+//    }
+//}
+
+//async function checkRecordVerificationStatus(recordId) {
+//    try {
+//        // Fetch the metadata signpost status from updated server RAM cache
+//        const response = await fetch(`/api/v1/splunk/get-record-meta?record_id=${recordId}`);
+//        const meta = await response.json();
+//
+//        // Pass both the signature string AND the timestamp 
+//        if (meta.is_verified) {
+//            updateVerificationUiState(true, meta.verified_signature, meta.stamped_at);
+//        } else {
+//            updateVerificationUiState(false);
+//        }
+//    } catch (err) {
+//        console.error("🚨 Failed fetching record metadata footprint:", err);
+//        updateVerificationUiState(false); 
+//    }
+//}
+
+function updateVerificationUiState(isVerified, savedSignature = "", stampedAt = "") {
+    const badge = document.getElementById("rubber-stamp-status-badge");
+    const btn = document.getElementById("rubber-stamp-btn");
+    const caption = document.getElementById("tuld-caption");
+
+    if (isVerified) {
+        // Splunk Rubber-Stamp badge is highlighted like the orientation-badge  
+        badge.innerText = "✓ GROUND TRUTH LOCKED";
+        badge.style.backgroundColor = "#1b5e20"; // Dark Emerald Background
+        badge.style.color = "#a5d6a7";           // Light crisp green text
+        badge.style.borderColor = "#2e7d32";
+
+        // Disable the main action button to show the work is finished
+        btn.innerText = "✓ Position Closed";
+        btn.style.backgroundColor = "#2f3542";     
+        btn.style.color = "#747d8c";
+        btn.style.borderColor = "#475266";
+        btn.style.cursor = "default";
+        btn.disabled = true; 
+
+        //Format the audit timestamp text cleanly for display
+        let formattedDate = "Unknown Time";
+
+        console.log(`stampedAt: ${stampedAt}`);
+
+        if (stampedAt) {
+            const dateObj = new Date(stampedAt);
+            
+            // CRITICAL GUARD: Only convert to ISO string if the date object is structurally valid
+            if (!isNaN(dateObj.getTime())) {
+                console.log("Its too complicated to explain tis here so we're just putting the if-clause above that returned 1, plus its JS so it won't hep even if we understand, its like Quantum Mechanics.")
+                formattedDate = dateObj.toISOString().replace('T', ' ').substring(0, 19);
+            } else {
+                console.warn("⚠️ Received unrecognizable timestamp format:", stampedAt);
+                formattedDate = "Malformed Timestamp";
+            }
+        }
+
+        // 4. Update the boardroom caption text to show the audit logs
+        caption.innerHTML = `STAMPED: <span style="color: #f1c40f;">${formattedDate} UTC</span> | CONFIG: ${savedSignature}`;
+        caption.style.color = "#a5d6a7";
+        caption.style.opacity = "1";
+
+        console.log(`updateVerificationUiState::savedSignature: ${savedSignature}`)
+        // Force  dashboard switches to align with the saved config 
+        applySavedConfigToUiSwitches(savedSignature);
+
+    } else {
+        // Reset the interface parameters back to cold unverified warning amber tracking mode
+        badge.innerText = "UNVERIFIED RAW SIGNAL";
+        badge.style.backgroundColor = "#2f3542";
+        badge.style.color = "#f2994a"; // Splunk Warning Amber
+        badge.style.borderColor = "#475266";
+
+        btn.innerText = "🔒 This Is It! Lock Configuration";
+        btn.style.backgroundColor = "#5cc24a";
+        btn.style.color = "#111111";
+        btn.style.borderColor = "#44a635";
+        btn.style.cursor = "pointer";
+        btn.disabled = false;
+
+        caption.innerText = 'Tuld: "This is it. Close it out. Sell it all today."';
+        caption.style.color = "#747d8c";
+        caption.style.opacity = "0.4";
+    }
+}
+
+//Update the controls on the webpage to update the changes in the switches
+function applySavedConfigToUiSwitches(signature) {
+    // Splits "currentScale:full-useFilter:false-CancelQRS:false-Orientation:Inversion Correction Applied"
+    const parts = signature.split("-");
+    if (parts.length < 4) return;
+    
+    // Extract the values behind the colons safely
+    const scaleValue = parts[0].split(":")[1];       // "full" or "small"
+    const filterValue = parts[1].split(":")[1];      // "true" or "false"
+    const qrsValue = parts[2].split(":")[1];         // "true" or "false"
+    const orientationValue = parts[3].split(":")[1]; // "Inversion Correction Applied", etc.
+
+    // Force your UI components to visually adapt dynamically
+    document.getElementById("scale-selector").value = scaleValue; 
+    document.getElementById("toggle-filter").checked = (filterValue === "true");
+    document.getElementById("toggle-cancel").checked = (qrsValue === "true");
+    
+    // Set your custom orientation status tracking value variables here as well...
+    console.log(`🤖 Dashboard auto-aligned to verified state matrix: Scale=${scaleValue}, Filter=${filterValue}`);
+}
+
+//async function executeTuldRubberStamp(recordId, completedConfigString) {
+//    try {
+//        const response = await fetch('/api/v1/splunk/get-record-meta', {
+//            method: 'POST',
+//            headers: { 'Content-Type': 'application/json' },
+//            body: JSON.stringify({
+//                record_id: recordId,
+//                verified_signature: completedConfigString
+//            })
+//        });
+//        const result = await response.json();
+//        
+//        if (result.status === "Success") {
+//            // Turn your Splunk dashboard badge green instantly
+//            updateVerificationUiState(true, completedConfigString, new Date().toISOString());
+//            console.log(`🔒 [SYSTEM] Ground truth secured for ${recordId}. Position closed.`);
+//        }
+//    } catch (err) {
+//        console.error("🚨 Critical database write lock exception:", err);
+//    }
+//}
+
+ 
+async function checkRecordStampStatus(recordId) {
+    try {
+        // GET requests send parameters in the URL string, not the body
+        const response = await fetch(`/api/v1/splunk/get-record-meta?record_id=${encodeURIComponent(recordId)}`, {
+            method: 'GET'
+        });
+        const result = await response.json();
+        
+        if (result.status === "Success") {
+            if (result.is_verified) {
+                // Config exists! Update UI to show the green verified badge
+                updateVerificationUiState(true, result.verified_signature, result.stamped_at);
+            } else {
+                // Record is not verified yet. Keep UI in default state
+                updateVerificationUiState(false, null, null);
+            }
+        }
+
+        console.log(`Record Rubber Stamp status : ${result.verified_signature} ${result.stamped_at}`)
+    } catch (err) {
+        console.error("🚨 Failed to fetch record metadata:", err);
+    }
+}
+
+async function executeTuldRubberStamp(recordId, completedConfigString) {
+    try {
+        // Changed URL to target the dedicated writer endpoint
+        const response = await fetch('/api/v1/splunk/rubber-stamp-record', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                record_id: recordId,
+                verified_signature: completedConfigString
+            })
+        });
+        const result = await response.json();
+        
+        if (result.status === "Success") {
+            // Turn your Splunk dashboard badge green instantly
+            updateVerificationUiState(true, completedConfigString, new Date().toISOString());
+            console.log(`🔒 [SYSTEM] Ground truth secured for ${recordId}. Position closed.`);
+        } else {
+            console.error("❌ Server rejected stamp operation:", result.error);
+        }
+    } catch (err) {
+        console.error("🚨 Critical database write lock exception:", err);
+    }
+}
+
+
+
+
+
+
+
+
     /**
      * Fetches vector matrices from the active Flask stream API 
      * and renders the resulting charts via python's Plotly's via JS.
@@ -1794,8 +2012,42 @@
                 console.log("payload received:", payload)
 
                 let current_config = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${payload.orientation_status}`
-
+ 
                 //***************** TILL THIS POINT WE HAVE SENT THE REQEUST, RECEIVED THE RESPONSE AND CONVERTED THE PAYLOAD INTO JSON *****************
+
+
+
+                //***************** WE'RE CHECKING THE RUBBER STAMPING STATUS FOR THE CURRENT CONFIGURATION FOR THE CURRENT SIGNAL    *****************
+
+
+                checkRecordStampStatus(payload.record_id);
+//                window.removeEventListener('tuldLockRequested', handleTuldEventTrigger);   // first clearing any stale handlers if present
+
+
+//                async function handleTuldEventTrigger(e) {
+//                    // Gather your active checkbox and slider configuration states on the spot
+//                    const currentScale    = document.getElementById("scale-selector").value;
+//                    const useFilter       = document.getElementById('toggle-filter').checked;
+//                    const useCancel       = document.getElementById('toggle-cancel').checked;
+//                    const orientation     = document.getElementById('orientation-status-badge');
+//                    const activeRecordId  = document.getElementById('record-selector')
+//                                
+//                    // Compile your unique hyphenated signature string
+//                    const configKey = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${orientation}`;
+//                                
+//                    console.log(`📡 [EVENT CAPTURED] Lock request verified for ${activeRecordId}. Launching save...`);
+//                                
+//                    // Pass the parameters straight down to the execution script!
+//                    await executeTuldRubberStamp(activeRecordId, configKey);
+//                }
+            
+//                // Bind the listener to watch the browser window for the button's event dispatch
+//                window.addEventListener('tuldLockRequested', handleTuldEventTrigger);
+
+
+
+
+                
                 //***************** BELOW THIS POINT, EVERYTHING HAPPENS IN THE BROWSER ON THE CLIENT SIDE  *****************
                 const badge = document.getElementById('orientation-status-badge');
                 if (badge && payload.orientation_status) {
@@ -2343,5 +2595,48 @@
     document.addEventListener("DOMContentLoaded", () => {
         updateSampleDropdown();
         updatePeakDetectionDropdown();
+    
+ 
+
+// Placing the button's event listener setup inside DOMContentLoaded ensures execution safety.
+// It guarantees the browser completes its HTML parsing pass and builds the elements in memory before JavaScript looks for them. 
+// If we ran this setup code raw in the script file without waiting, it would execute instantly, grab a handful of null values, and crash before the page even finishes rendering.
+// This architectural checkpoint ensures all UI nodes are fully registered in RAM, preventing a critical runtime exception—and saving Tuld from another margin call.
+
+      const stampButton = document.getElementById("rubber-stamp-btn");
+    if (stampButton) {
+        stampButton.addEventListener("click", async () => {
+            // Get the current record ID 
+            const currentRecordId = document.getElementById('record-selector').value;
+            
+            // getting the signature of the current confguraton
+            const currentScale    = document.getElementById("scale-selector").value;
+            const useFilter       = document.getElementById('toggle-filter').checked;
+            const useCancel       = document.getElementById('toggle-cancel').checked;
+            const orientation     = document.getElementById('orientation-status-badge');
+            const orientationValue = orientation ? orientation.textContent.trim() : "Unknown";
+           
+            const current_config = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${orientationValue}`
+
+ 
+            if (!currentRecordId) {
+                alert("❌ Please select a valid record first, mate");
+                return;
+            }
+
+            // Disable button briefly to prevent double-submitting during disk IO
+            stampButton.disabled = true;
+
+            // Trigger the POST request to Flask
+            await executeTuldRubberStamp(currentRecordId, current_config);
+
+            // Re-enable the button
+            stampButton.disabled = false;
+        });
+
+    }
+
+    
+    
     });
 </script>
