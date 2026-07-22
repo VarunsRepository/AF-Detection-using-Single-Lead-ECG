@@ -28,6 +28,7 @@ class ECG_Signal_Feature_Manager:
         # Automatically seed the RAM cache on instantiation
         self._load_database_into_ram()
 
+# standardCRUD OPERATIONS below 
     def _load_database_into_ram(self) -> None:
         """Private startup method: Maps the disk dataset into active server memory."""
         if os.path.exists(self.json_path):
@@ -77,3 +78,41 @@ class ECG_Signal_Feature_Manager:
         with self._disk_lock:
             with open(self.json_path, "w", encoding="utf-8") as f:
                 json.dump(self._ram_store, f, indent=4)
+
+
+    # this function will rubber stamp a config for a record, when the user hits the rubber stamp button
+    def rubber_stamp_record_config(self, record_id: str, verified_signature: str) -> None:
+        """
+        Locks down a specific configuration signature alongside an audit timestamp and bypasses raw telemetry variations to protect Stage 2 CNN pipelines.
+        """
+        from datetime import datetime, timezone
+        
+        if record_id not in self._ram_store:
+            self._ram_store[record_id] = {}
+            
+        # Get current UTC timestamp with explicit timezone markers
+        current_utc_time = datetime.now(timezone.utc).isoformat() 
+            
+        #upgrade successfully -  Storethis as  a nested tracking metadata object rather than a flat string
+        self._ram_store[record_id]["verified_orientation_config"] = {
+            "signature": verified_signature,
+            "stamped_at": current_utc_time
+        }
+        
+        # Flush the updated tracking matrix back to the master JSON file on disk
+        threading.Thread(target=self._persist_to_disk).start()
+        print(f"[TULD ENGINE] Ground Truth locked for {record_id} -> {verified_signature} at {current_utc_time}")
+
+    # this fnction will read the current record's rubber stamp
+    def get_rubber_stamp_config(self, record_id: str) -> dict | None:
+        """Public Reader: Safely fetches the stamp metadata from RAM."""
+        record_data = self._ram_store.get(record_id, {})
+        stamp_data = record_data.get("verified_orientation_config", None)
+
+        if isinstance(stamp_data, dict):
+            return {
+                "record_id": record_id,
+                "is_verified": True,
+                "verified_signature": stamp_data["signature"],
+                "stamped_at": stamp_data.get("stamped_at")
+            }
