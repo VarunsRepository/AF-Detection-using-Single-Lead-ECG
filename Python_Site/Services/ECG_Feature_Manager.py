@@ -12,6 +12,26 @@ import threading
 # This would ensure seamless integration without and change the access API.
 
 
+#1 . Core ObjectiveTo establish a resilient, high-performance telemetry configuration locking mechanism (the "Rubber Stamp" pipeline) for ECG signal processing. 
+# This subsystem protects downstream Stage 2 CNN pipelines by locking down verified ground truth parameters and preventing raw configuration drift during active operator sessions.
+
+# 2. Backend Design & Concurrency ModelIn-Memory RAM Cache: A dedicated service layer class (ECG_Signal_Feature_Manager) maps the master JSON dataset straight into active server memory during startup, 
+# enabling microsecond read operations (GET).
+# Decoupled Asynchronous Persistence: To prevent disk I/O bottlenecks from freezing the Flask web application worker loops, state-changing write operations (POST) utilize a non-blocking architecture. 
+# Updates are committed instantly to live RAM, while an isolated background thread (threading.Thread) asynchronously flushes the memory structure back to physical storage (all_features_JSON_database.json).
+# Data Integrity: Access to physical storage is mediated via a dedicated synchronization primitive thread lock (threading.Lock) to prevent race conditions during heavy concurrent read/write phases.
+
+# 3. Frontend State Management & LifecycleExecution Safety Checkpoint: Front-end event listener initialization is securely wrapped inside a DOMContentLoaded event cycle. 
+# This ensures the browser engine fully parses the HTML structure and registers all UI element nodes into RAM before JavaScript hunts for DOM targets, eliminating runtime pointer exceptions.
+# Network Pipeline Guard: The frontend UI synchronization logic implements a strict data-cleansing guard. It handles date-parsing inconsistencies (such as trailing time-zone marker anomalies from legacy datasets) by catching exceptions gracefully. 
+# If JavaScript's native date engine encounters malformed historical strings, the runtime falls back seamlessly to robust raw string-slicing protocols to prevent dashboard rendering failure.
+
+# 4. Intentional Immutability Constraint (Design Justification)The system intentionally implements an Immutable Ground Truth Lock lifecycle. 
+# Once an operator commits a verified configuration via the backend POST routine, the interface locks out further changes for that telemetry record. 
+# The action button is programmatically deactivated, and manual adjustment switches are synchronized exclusively to the stored database snapshot upon initial record load.
+# While dynamic overwriting was considered, this strict write-once barrier was chosen as a deliberate design constraint to enforce strict audit trail integrity, prevent accidental session regression, 
+# and ensure that once a record is verified, its data signature remains static and reliable for subsequent deep-learning model passes.
+
 class ECG_Signal_Feature_Manager:
 
     #default constructor to Manage initilization
