@@ -1356,7 +1356,7 @@
 
 
 
-        const engineVersion = "1.0.0";
+        const engineVersion = "2.0.1";
 
         // Intercept or run the math through the universal first-class object cache wrapper
         const vixResults = await getOrComputeMetric(
@@ -1452,7 +1452,7 @@
         Created this function to calcualte the HRV metrics separately rather than having the view and the ufunction together.
         VIX removed as that VIX has its own separate plot  
     */
-    function calculateCardiacAnalytics(RRIntervals) {
+    function calculateCardiacAnalytics_(RRIntervals) {
         const pureRRIntervals = RRIntervals.filter(x => x > 0); // ignore the first R Point as its the starting point 
         const totalBeats = pureRRIntervals.length;
 
@@ -1508,6 +1508,200 @@
         };
     }
  
+
+
+/**
+ *  
+ * Compute standard, un-interpolated time-domain metrics.
+ */
+function calculateCardiacAnalytics(RRIntervals) {
+    const rawRR = RRIntervals.filter(x => x >= 300 && x <= 2000);
+    const totalBeats = rawRR.length;
+    if (totalBeats === 0) return null;
+
+    // Mean
+    const meanRR = rawRR.reduce((s, v) => s + v, 0) / totalBeats;
+
+    // Mode binning
+    const bins = {};
+    rawRR.forEach(v => { const b = Math.round(v / 10) * 10; bins[b] = (bins[b] || 0) + 1; });
+    const modeRR = Number(Object.keys(bins).reduce((a, b) => bins[a] > bins[b] ? a : b));
+
+    // RMSSD & pNN50
+    let sumSquaredDiffs = 0;
+    let diffCount = 0;
+    let nn50Count = 0;
+
+    for (let i = 0; i < rawRR.length - 1; i++) {
+        const stepJump = Math.abs(rawRR[i + 1] - rawRR[i]);
+        if (stepJump > 50) nn50Count++;
+        sumSquaredDiffs += Math.pow(rawRR[i + 1] - rawRR[i], 2);
+        diffCount++;
+    }
+
+    const pNN50 = diffCount > 0 ? (nn50Count / diffCount) * 100 : 0;
+
+    return {
+        mean: meanRR,
+        mode: modeRR,
+        rmssd: diffCount > 0 ? Math.sqrt(sumSquaredDiffs / diffCount) : 0,
+        pnn50: pNN50,
+        total: totalBeats
+    };
+
+    
+}
+
+/**
+ * Advanced Poincaré & Variability Analytics
+ * calculate geometric Poincaré scatter metrics (SD1, SD2, Area) 
+ * alongside the 3-tier filtering pipeline outputs.
+ */
+function calculatePoincareAnalytics(RRIntervals) {
+    // 1. Run sub-algorithms to get the different filtered pipelines
+    const straightPipeline = runSDRR_Straight(RRIntervals);
+    const approxPipeline = runSDNN_Approx(RRIntervals);
+    const interpolatedPipeline = runSDNN_Interpolated(RRIntervals);
+
+    if (!straightPipeline || !approxPipeline || !interpolatedPipeline) return null;
+
+    // 2. Fetch baseline analytics for RMSSD
+    const baseAnalytics = calculateCardiacAnalytics(RRIntervals);
+    if (!baseAnalytics) return null;
+
+    // 3. Compute Poincaré SD1 and SD2
+    const sdrr = straightPipeline.sdrr;
+    const sd1 = baseAnalytics.rmssd / Math.sqrt(2);
+    
+    // Standard Poincaré ellipse math to extract long-term SD2 from overall SDRR
+    const sd2 = Math.sqrt(Math.max(0, (2 * Math.pow(sdrr, 2)) - Math.pow(sd1, 2)));
+    
+    // Bonus geometric feature: Total Ellipse Area (highly predictive for ML)
+    const poincareArea = Math.PI * sd1 * sd2;
+
+    // 4. Assemble and return everything in a structured layout
+    return {
+        // Geometric Poincaré Descriptors
+        poincare: {
+            sd1: sd1,
+            sd2: sd2,
+            sd1_sd2_ratio: sd2 > 0 ? sd1 / sd2 : 0,
+            ellipse_area: poincareArea
+        },
+        // The 3 variations of Standard Deviation we built
+        variability: {
+            sdrr_straight: sdrr,
+            sdnn_approx: approxPipeline.sdnn_approx,
+            sdnn_interpolated: interpolatedPipeline.sdnn_interpolated
+        },
+        // Quality Assurance & Signal Integrity Data (Crucial for PhysioNet)
+        qaReport: {
+            rawLength: RRIntervals.length,
+            beatsProcessedInInterpolation: interpolatedPipeline.totalBeatsProcessed,
+            noiseCount: interpolatedPipeline.noiseCount,
+            ectopicCount: interpolatedPipeline.ectopicCount,
+            ectopicIndices: interpolatedPipeline.ectopicIndices,
+            missedBeatCount: interpolatedPipeline.missedBeatCount,
+            missedBeatIndices: interpolatedPipeline.missedBeatIndices,
+            hasEctopics: interpolatedPipeline.ectopicCount > 0,
+            hasMissedBeats: interpolatedPipeline.missedBeatCount > 0
+        }
+    };
+}
+
+//  the following 3 functions are meant for corrected and interpolated HRV metrics
+
+function runSDRR_Straight(RRIntervals) {
+    const humanRR = RRIntervals.filter(x => x >= 300 && x <= 2000);
+    if (humanRR.length === 0) return null;
+    const mean = humanRR.reduce((s, v) => s + v, 0) / humanRR.length;
+    const variance = humanRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / humanRR.length;
+    return { sdrr: Math.sqrt(variance) };
+}
+
+function runSDNN_Approx(RRIntervals) {
+    const rawRR = RRIntervals.filter(x => x > 0);
+    const cleanRR = [];
+    const recentWindow = [];
+    for (let i = 0; i < rawRR.length; i++) {
+        const current = rawRR[i];
+        let isHuman = current >= 300 && current <= 2000;
+        if (isHuman && cleanRR.length > 0) {
+            if (Math.abs(current - cleanRR[cleanRR.length - 1]) / cleanRR[cleanRR.length - 1] > 0.20) isHuman = false;
+        }
+        if (isHuman && recentWindow.length > 0) {
+            const avg = recentWindow.reduce((s, v) => s + v, 0) / recentWindow.length;
+            if (Math.abs(current - avg) / avg > 0.20) isHuman = false;
+        }
+        if (isHuman) {
+            cleanRR.push(current);
+            recentWindow.push(current);
+            if (recentWindow.length > 5) recentWindow.shift();
+        }
+    }
+    if (cleanRR.length === 0) return null;
+    const mean = cleanRR.reduce((s, v) => s + v, 0) / cleanRR.length;
+    const variance = cleanRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / cleanRR.length;
+    return { sdnn_approx: Math.sqrt(variance) };
+}
+
+function runSDNN_Interpolated(RRIntervals) {
+    const rawRR = RRIntervals.filter(x => x >= 300 && x <= 2000);
+    if (rawRR.length < 3) return null;
+
+    const trueSinusRR = [];
+    let ectopicCount = 0; const ectopicIndices = [];
+    let missedBeatCount = 0; const missedBeatIndices = [];
+    let noiseCount = 0;
+
+    let i = 0;
+    while (i < rawRR.length) {
+        const current = rawRR[i];
+        const lookback = trueSinusRR.slice(-3);
+        const localAvg = lookback.length > 0 ? lookback.reduce((a,b)=>a+b, 0)/lookback.length : current;
+
+        if (current > localAvg * 1.8 && current < localAvg * 2.2) {
+            missedBeatCount++; missedBeatIndices.push(i);
+            const slicedInterval = current / 2;
+            trueSinusRR.push(slicedInterval); trueSinusRR.push(slicedInterval);
+            i++; continue;
+        }
+
+        if (i < rawRR.length - 1) {
+            const next = rawRR[i + 1];
+            const isShort = current < localAvg * 0.85;
+            const isLongNext = next > localAvg * 1.15;
+            const combinedSumNormal = Math.abs((current + next) - (localAvg * 2)) / (localAvg * 2) < 0.15;
+
+            if (isShort && isLongNext && combinedSumNormal) {
+                ectopicCount++; ectopicIndices.push(i);
+                trueSinusRR.push(localAvg); trueSinusRR.push(localAvg);
+                i += 2; continue;
+            }
+        }
+
+        if (Math.abs(current - localAvg) / localAvg > 0.25) {
+            noiseCount++;
+        } else {
+            trueSinusRR.push(current);
+        }
+        i++;
+    }
+
+    if (trueSinusRR.length === 0) return null;
+    const mean = trueSinusRR.reduce((s, v) => s + v, 0) / trueSinusRR.length;
+    const variance = trueSinusRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / trueSinusRR.length;
+
+    return {
+        sdnn_interpolated: Math.sqrt(variance),
+        totalBeatsProcessed: trueSinusRR.length,
+        ectopicCount, ectopicIndices,
+        missedBeatCount, missedBeatIndices,
+        noiseCount: noiseCount + (RRIntervals.length - rawRR.length)
+    };
+}
+
+
 
     /*
         This function off-loads some work the client side, too.
@@ -1668,7 +1862,7 @@
                     `━━━━━━━━━━━━━━━<br>` +
                     `Mean RR: <b>${stats.mean.toFixed(1)} ms</b><br>` +
                     `Mode RR: <b>${stats.mode.toFixed(0)} ms</b><br>` +
-                    `Std Dev (SDNN): <span style="color:${statusColor}"><b>${stats.sdnn.toFixed(1)} ms</b></span><br>` +
+                   // `Std Dev (SDNN): <span style="color:${statusColor}"><b>${stats.sdnn.toFixed(1)} ms</b></span><br>` +
                     `RMSSD (Local): <span style="color:${statusColor}"><b>${stats.rmssd.toFixed(1)} ms</b></span><br>` +
                     `pNN50 Index: <span style="color:${statusColor}"><b>${stats.pnn50.toFixed(1)}%</b></span><br>` +
                     `Total Beats: <b>${stats.total}</b><br>` +
