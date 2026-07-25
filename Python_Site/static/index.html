@@ -983,7 +983,16 @@
         * our earlier code had VIX logicintegratedinto the plotting function, here we'e separated the 2.
         calculation of VIX to be done by  calculateVolatilityIndex()
         and Plotting done by the original function
-     */
+     
+        returns: {
+            cvi_raw ,
+            volatility_percentage ,
+            is_volatile ,
+            lower_bollinger_bound ,
+            upper_bollinger_bound ,
+            total_beats  
+            }
+        */
     function calculateVolatilityIndex(pureRRIntervals) {
         if (!pureRRIntervals || pureRRIntervals.length <= 1) return null;
 
@@ -1513,6 +1522,13 @@
 /**
  *  
  * Compute standard, un-interpolated time-domain metrics.
+    returns: {
+        mean ,
+        mode ,
+        rmssd ,
+        pnn50 ,
+        total 
+        }
  */
 function calculateCardiacAnalytics(RRIntervals) {
     const rawRR = RRIntervals.filter(x => x >= 300 && x <= 2000);
@@ -1556,6 +1572,29 @@ function calculateCardiacAnalytics(RRIntervals) {
  * Advanced Poincaré & Variability Analytics
  * calculate geometric Poincaré scatter metrics (SD1, SD2, Area) 
  * alongside the 3-tier filtering pipeline outputs.
+ * Returns : 
+         poincare: {
+            sd1 ,
+            sd2 ,
+            sd1_sd2_ratio ,
+            ellipse_area
+        },
+        variability: {
+            sdrr_straight ,
+            sdnn_approx ,
+            sdnn_interpolated 
+        },
+        qaReport: {
+            rawLength ,
+            beatsProcessedInInterpolation ,
+            noiseCount ,
+            ectopicCount ,
+            ectopicIndices ,
+            missedBeatCount ,
+            missedBeatIndices ,
+            hasEctopics ,
+            hasMissedBeats
+        }
  */
 function calculatePoincareAnalytics(RRIntervals) {
     // 1. Run sub-algorithms to get the different filtered pipelines
@@ -1703,6 +1742,200 @@ function runSDNN_Interpolated(RRIntervals) {
 
 
 
+function renderPoincareGraph_(payload, usePoincare) {
+    // 1. Guard clause: Ensure features are enabled and data exists
+    if (!usePoincare || !payload?.poincare?.x?.length) {
+        return; 
+    }
+
+    const { x, y } = payload.poincare;
+
+    // 2. Compute dynamic boundaries with structural buffers
+    const maxVal = Math.max(...x, ...y, 1100);
+    const minVal = Math.min(...x, ...y, 400);
+    const axisRange = [minVal - 30, maxVal + 30];
+
+    // 3. Define Plot Traces
+    const scatterTrace = {
+        x: x, 
+        y: y,
+        type: 'scatter', 
+        mode: 'markers', 
+        name: 'Interval Matrix',
+        marker: { color: '#eb7b2b', size: 8, opacity: 0.7 }
+    };
+
+    const identityLine = { 
+        x: [minVal, maxVal], 
+        y: [minVal, maxVal],
+        type: 'scatter', 
+        mode: 'lines', 
+        name: 'Identity (y=x)',
+        line: { color: '#4c566a', width: 1, dash: 'dash' }, 
+        hoverinfo: 'none'
+    };
+
+    // 4. Define Visual Layout Configurations
+    const poincareLayout = {
+        paper_bgcolor: '#1c1e24', 
+        plot_bgcolor: '#1c1e24',
+        font: { color: '#f2f4f8', family: 'monospace' },
+        title: `| stats Poincaré  map calculated=true`,
+        xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: axisRange },
+        yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: axisRange },
+        legend: {
+            orientation: 'h',
+            y: -0.20,       
+            x: 0.0,
+            xanchor: 'left',
+            yanchor: 'top'
+        }
+    };
+
+    // 5. Execute DOM injection
+    Plotly.newPlot('poincare-container', [scatterTrace, identityLine], poincareLayout);
+}
+
+
+async function renderPoincareGraph(serverPayload, usePoincare, currentConfig) {
+    // the switch to enable/disable the poincare plot.
+    // this condition was there in the loadEcgPipeline()'s main loop, we've shifted it in here  
+    if (!usePoincare || !serverPayload?.poincare?.x?.length) {
+        return; 
+    }
+
+    const { x, y } = serverPayload.poincare;
+
+    // just a pre-condition to calcualte the extreme bounds of the canvas for plottinh
+    const maxVal = Math.max(...x, ...y, 1100);
+    const minVal = Math.min(...x, ...y, 400);
+    const axisRange = [minVal - 30, maxVal + 30];
+
+    //  this is the trace detail that we're going to use in the final obect : finalPlotTraces
+    const scatterTrace = {
+        x: x, 
+        y: y,
+        type: 'scatter', 
+        mode: 'markers', 
+        name: 'Interval Matrix',
+        marker: { color: '#eb7b2b', size: 8, opacity: 0.7 }
+    };
+
+    // just a y=x line for the final plot
+    const identityLine = { 
+        x: [minVal, maxVal], 
+        y: [minVal, maxVal],
+        type: 'scatter', 
+        mode: 'lines', 
+        name: 'Identity (y=x)',
+        line: { color: '#4c566a', width: 1, dash: 'dash' }, 
+        hoverinfo: 'none'
+    };
+
+    // LAZY EVALUATION / CACHE EXTRACTION FROM THE ECG_Features JSON FILE
+    // Executes the full math only if the ECG_Features is empty
+    const advancedStats = await getOrComputeMetric(
+        serverPayload.record_id,
+        `${currentConfig}-advanced_poincare_analytics_object`,
+        "1.0.0",  // version of the math functions
+        () => {
+            // Lazy-evaluation match arm. Runs on cache miss.
+            // Pass the raw coordinate timeline vector directly into the analytics engine
+            return calculatePoincareAnalytics(x);  
+        }
+    );
+
+    // advancedStats contains :
+    //    poincare: {
+    //        sd1 ,
+    //        sd2 ,
+    //        sd1_sd2_ratio ,
+    //        ellipse_area
+    //    },
+    //    variability: {
+    //        sdrr_straight ,
+    //        sdnn_approx ,
+    //        sdnn_interpolated 
+    //    },
+    //    qaReport: {
+    //        rawLength ,
+    //        beatsProcessedInInterpolation ,
+    //        noiseCount ,
+    //        ectopicCount ,
+    //        ectopicIndices ,
+    //        missedBeatCount ,
+    //        missedBeatIndices ,
+    //        hasEctopics ,
+    //        hasMissedBeats
+    //    } 
+
+    console.log("running <i>get Or Compute Metric </i> logic for Poincaré :", advancedStats);
+
+    const finalPlotTraces = [scatterTrace, identityLine]; // collating the identity line as well as the points for the traces
+    let poincareAnnotations = [];
+
+    // if everything has  been parsed safely generate the rotated trace
+     if (advancedStats) {
+        const { sd1, sd2, sd1_sd2_ratio, ellipse_area } = advancedStats.poincare;
+        const { sdrr_straight, sdnn_approx, sdnn_interpolated } = advancedStats.variability;
+        const { rawLength, beatsProcessedInInterpolation, noiseCount, ectopicCount, hasEctopics, hasMissedBeats } = advancedStats.qaReport;
+
+                // Visual Indicator 2: Signal Quality / Ignored Beats Warning Banner
+        const requiresAttention = hasEctopics || hasMissedBeats || noiseCount > 0;
+        const bannerColor = requiresAttention ? '#bf616a' : '#a3be8c'; // Red-orange warning vs green safety
+
+        const noiseColor = noiseCount > 0 ? '#d08770' : '#a3be8c';
+        const ectopicColor = ectopicCount > 0 ? '#d08770' : '#a3be8c';
+
+        
+        // Visual Indicator 1: Quantitative HRV Metrics Text Box
+poincareAnnotations.push({
+    text: `<b>Data Summary:</b><br>` +
+          `• Raw Data Length: <b>${rawLength}</b> beats<br>` + 
+          `<span style="color: ${noiseColor};">• Noise Artifacts Ignored: <b>${noiseCount}</b></span><br>` +
+          `<span style="color: ${noiseColor};">• Valid / Interpolated: <b>${beatsProcessedInInterpolation}</b> beats</span><br>` + 
+          `<span style="color: ${ectopicColor};">• Ectopic Beats Dropped: <b>${ectopicCount}</b></span><br><br>` +
+          `<b>HRV Descriptors (Non-linear):</b><br>` +
+          `• SD1 (Short-term): ${sd1?.toFixed(1) || 'N/A'} ms<br>` +
+          `• SD2 (Long-term): ${sd2?.toFixed(1) || 'N/A'} ms<br>` +
+          `• SD1/SD2 Ratio: ${sd1_sd2_ratio?.toFixed(2) || 'N/A'}<br>` +
+          `• Ellipse Area: ${ellipse_area?.toFixed(0) || 'N/A'} ms²<br><br>` +
+          `<b>Variability Matrix:</b><br>` +
+          `• SDRR: ${sdrr_straight?.toFixed(1) || 'N/A'} ms<br>` +
+          `• SDNN Approx: ${sdnn_approx?.toFixed(1) || 'N/A'} ms<br>` +
+          `• SDNN Interp: ${sdnn_interpolated?.toFixed(1) || 'N/A'} ms`,
+    xref: 'paper', yref: 'paper',
+    x: 1.05, y: 0.95, // Positioned outside right margin
+    xanchor: 'left', yanchor: 'top',
+    showarrow: false,
+    align: 'left',
+    font: { family: 'monospace', size: 11, color: '#f2f4f8' },
+    bordercolor: '#2e3440', borderwidth: 1, borderpad: 8, bgcolor: '#1c1e24'
+});
+
+ 
+    }
+
+    // the lyout objet that dictates how the plot is gonna look like i.e. bgcolor, foregroundcolor, annotations, legends etc.
+    const poincareLayout = {
+        paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
+        font: { color: '#f2f4f8', family: 'monospace' },
+        title: `| stats Poincaré map calculated=true`,
+        xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: axisRange },
+        yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: axisRange },
+        margin: { l: 60, r: 240, t: 60, b: 60 }, // Expanded margins dynamically allocate space for metrics & warning boxes
+        annotations: poincareAnnotations,
+        legend: {
+            orientation: 'h',
+            y: -0.15, x: 0.0,
+            xanchor: 'left', yanchor: 'top'
+        }
+    };
+    // finally render directly the poincare plot
+    Plotly.newPlot('poincare-container', finalPlotTraces, poincareLayout);
+    //Plotly.newPlot('poincare-container', finalPlotTraces );
+}
+
     /*
         This function off-loads some work the client side, too.
         calcualtes the value of the HRV metrics when the sample is accessed for the first time.
@@ -1765,7 +1998,7 @@ function runSDNN_Interpolated(RRIntervals) {
         * we've redone the function cause the original one was too long and unmanageable to incoperate additional 
           HRV features like RMSSD
     */
-    async function updateStackedChart(serverPayload, beatsToStack = 2, samplingRate = 300, currentConfig) {
+    async function updateStackedChart_(serverPayload, beatsToStack = 2, samplingRate = 300, currentConfig) {
 
         // calling sliceStackedBeatsFrontend() to manipulate the server's payload  
         const stackedBeats = sliceStackedBeatsFrontend(
@@ -1889,61 +2122,151 @@ function runSDNN_Interpolated(RRIntervals) {
         // calling the plotly's API to finally do the printing
         Plotly.newPlot('stacked-n-RR-beats-overlay-container', finalPlotTraces, overlayLayout);
     }
+ 
+
+    async function updateStackedChart(serverPayload, beatsToStack = 2, samplingRate = 300, currentConfig) {
+
+    // calling sliceStackedBeatsFrontend() to manipulate the server's payload  
+    const stackedBeats = sliceStackedBeatsFrontend(
+        serverPayload.data,
+        serverPayload.features,
+        beatsToStack,
+        samplingRate
+    );
+
+    const finalPlotTraces = [];
+    // feature map is same as before 
+    const featureMap = {
+        P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
+        Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
+        R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
+        S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
+        T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
+    };
+
+    // getting markers from the signal also the same as before 
+    for (const chunk of stackedBeats) {
+        finalPlotTraces.push({
+            x: chunk.time_ms,
+            y: chunk.amplitude_mv,
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.2 },
+            showlegend: false,
+            hoverinfo: 'skip'
+        });
+
+        // this part is also the same as before, this is a quick and dirty way to work on 5 arrays without writing 5 loops
+        ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+            chunk.features[wave].forEach(marker => {
+                featureMap[wave].x.push(marker.x);
+                featureMap[wave].y.push(marker.y);
+            });
+        });
+    }
+
+    // plotting the Scatter Points to the view 
+    for (const [key, cfg] of Object.entries(featureMap)) {
+        if (cfg.x.length > 0) {
+            finalPlotTraces.push({
+                x: cfg.x, y: cfg.y, type: 'scatter', mode: 'markers', name: cfg.name,
+                marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
+                hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+            });
+        }
+    }
+
+    // R-R interval horizontal lines 
+    const rrIntervalLines = [];
+    featureMap.R.x.forEach((r2OffsetMs, i) => {
+        if (r2OffsetMs > 0) {
+            rrIntervalLines.push({
+                type: 'line', x0: 0, y0: featureMap.R.y[i], x1: r2OffsetMs, y1: featureMap.R.y[i],
+                line: { color: 'rgba(235, 123, 43, 0.30)', width: 1 }
+            });
+        }
+    });
+
+    // 1. Fetch Time Domain Stats
+    const stats = await getOrComputeMetric(
+        serverPayload.record_id,
+        `${currentConfig}-time_domain_analytics_object`,
+        "1.0.0",
+        () => calculateCardiacAnalytics(featureMap.R.x)
+    );
+
+    // 2. Fetch Poincaré and QA Report Stats using the exact same strategy
+    const poincareStats = await getOrComputeMetric(
+        serverPayload.record_id,
+        `${currentConfig}-poincare_analytics_object`,
+        "1.0.0",
+        () => calculatePoincareAnalytics(featureMap.R.x) // Assumes this uses your R peak data
+    );
+
+    console.log("getOrComputeStatistic TimeDomain:", stats);
+    console.log("getOrComputeStatistic Poincare:", poincareStats);
+
+    let statsAnnotation = [];
+
+    if (stats) {
+        const isAFib = stats.sdnn > 50 || stats.rmssd > 60;
+        const statusColor = isAFib ? '#e74c3c' : '#2ecc71';
+        const statusText = isAFib
+            ? '☠️ CHAOTIC ERA Sir Francis Bacon<br>: High SD/RMSSD (Potentially AFib)'
+            : '💖 STABLE ERA Dr. Copernicus<br>: Low Variance (Normal Sinus)';
+
+        // Primary base text block 
+        let annotationText = `<b>R-R Analytics Summary</b><br>` +
+            `━━━━━━━━━━━━━━━<br>` +
+            `Mean RR: <b>${stats.mean.toFixed(1)} ms</b><br>` +
+            `Mode RR: <b>${stats.mode.toFixed(0)} ms</b><br>` +
+            `RMSSD (Local): <span style="color:${statusColor}"><b>${stats.rmssd.toFixed(1)} ms</b></span><br>` +
+            `pNN50 Index: <span style="color:${statusColor}"><b>${stats.pnn50.toFixed(1)}%</b></span><br>` +
+            `Total Beats: <b>${stats.total}</b><br>`;
+
+        // Append the QA/Poincaré information safely if it successfully resolves
+        if (poincareStats && poincareStats.qaReport) {
+            const qa = poincareStats.qaReport;
+            const noiseColor = qa.noiseCount > 0 ? '#d08770' : '#2ecc71';
+            const ectopicColor = qa.ectopicCount > 0 ? '#d08770' : '#2ecc71';
+
+            annotationText += `━━━━━━━━━━━━━━━<br>` +
+                `<b>Signal QA Report:</b><br>` +
+                `• Raw Beats Recieved: <b>${qa.rawLength}</b><br>` +
+                `<span style="color: ${noiseColor};">• Noise Ignored: <b>${qa.noiseCount}</b></span><br>` +
+                `<span style="color: ${ectopicColor};">• Ectopics Dropped: <b>${qa.ectopicCount}</b></span><br>`;
+        }
+
+        // Complete the block with your diagnostic indicator
+        annotationText += `━━━━━━━━━━━━━━━<br><span style="color:${statusColor}"><b>${statusText}</b></span>`;
+
+        statsAnnotation = [{
+            x: 0.98, y: 0.95, xref: 'paper', yref: 'paper',
+            text: annotationText,
+            align: 'left', showarrow: false,
+            bgcolor: 'rgba(46, 52, 64, 0.9)', bordercolor: statusColor,
+            borderwidth: 1.5, borderpad: 8,
+            font: { color: '#d8dee9', size: 11, family: 'monospace' }
+        }];
+    }
+
+    // finally creating the final object to pass into plotly
+    const maxRangeX = beatsToStack === 1 ? 450 : beatsToStack === 2 ? 1100 : 1800;
+    const overlayLayout = {
+        title: { text: `<b>Superimposed Cycles (${beatsToStack}x Beat Phase View)</b>`, font: { size: 16 } },
+        xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, maxRangeX], gridcolor: '#2e3440' },
+        yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+        shapes: rrIntervalLines,
+        annotations: statsAnnotation,
+        plot_bgcolor: '#1c1e24', paper_bgcolor: '#1c1e24',
+        showlegend: true, legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+        hovermode: 'closest'
+    };
+    // calling the plotly's API to finally do the printing
+    Plotly.newPlot('stacked-n-RR-beats-overlay-container', finalPlotTraces, overlayLayout);
+}
 
 
-
-//async function lockThisIsItConfiguration() {
-//    const recordId = currentRecordId; 
-//    if (!recordId) {
-//        console.warn("⚠️ [SYSTEM] No active patient record loaded to lock.");
-//        return;
-//    }
-//    
-//    // 🧬 1. Re-compile your exact hyphenated config mapping from your logging parameters
-//    const configKey = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${payload.orientation_status}`;
-//
-//    console.log(`✍️ [THIS IS IT] Submitting ground truth signature for ${recordId}: ${configKey}`);
-//
-//    // 📡 2. Fire the configuration string up to your Flask blueprint route
-//    try {
-//        const response = await fetch('/api/verify-orientation', {
-//            method: 'POST',
-//            headers: { 'Content-Type': 'application/json' },
-//            body: JSON.stringify({
-//                record_id: recordId,
-//                verified_signature: configKey // The server handles creating the timestamp!
-//            })
-//        });
-//        const result = await response.json();
-//        
-//        if (result.status === "Success") {
-//            // Instantly turn the UI green and display your settings
-//            // We pass the current time so the UI flashes the timestamp immediately
-//            updateVerificationUiState(true, configKey, new Date().toISOString());
-//            console.log(`🔒 [SYSTEM] Ground truth secured for ${recordId}.`);
-//        }
-//    } catch (err) {
-//        console.error("🚨 Network error during signature verification:", err);
-//    }
-//}
-
-//async function checkRecordVerificationStatus(recordId) {
-//    try {
-//        // Fetch the metadata signpost status from updated server RAM cache
-//        const response = await fetch(`/api/v1/splunk/get-record-meta?record_id=${recordId}`);
-//        const meta = await response.json();
-//
-//        // Pass both the signature string AND the timestamp 
-//        if (meta.is_verified) {
-//            updateVerificationUiState(true, meta.verified_signature, meta.stamped_at);
-//        } else {
-//            updateVerificationUiState(false);
-//        }
-//    } catch (err) {
-//        console.error("🚨 Failed fetching record metadata footprint:", err);
-//        updateVerificationUiState(false); 
-//    }
-//}
 
 function updateVerificationUiState(isVerified, savedSignature = "", stampedAt = "", isInitialLoad = false) {
     const badge = document.getElementById("rubber-stamp-status-badge");
@@ -2041,28 +2364,6 @@ function applySavedConfigToUiSwitches(signature) {
     // Set your custom orientation status tracking value variables here as well...
     console.log(`🤖 Dashboard auto-aligned to verified state matrix: Scale=${scaleValue}, Filter=${filterValue}`);
 }
-
-//async function executeTuldRubberStamp(recordId, completedConfigString) {
-//    try {
-//        const response = await fetch('/api/v1/splunk/get-record-meta', {
-//            method: 'POST',
-//            headers: { 'Content-Type': 'application/json' },
-//            body: JSON.stringify({
-//                record_id: recordId,
-//                verified_signature: completedConfigString
-//            })
-//        });
-//        const result = await response.json();
-//        
-//        if (result.status === "Success") {
-//            // Turn your Splunk dashboard badge green instantly
-//            updateVerificationUiState(true, completedConfigString, new Date().toISOString());
-//            console.log(`🔒 [SYSTEM] Ground truth secured for ${recordId}. Position closed.`);
-//        }
-//    } catch (err) {
-//        console.error("🚨 Critical database write lock exception:", err);
-//    }
-//}
 
  
 async function checkRecordStampStatus(recordId, isInitialLoad = false) { // Pass it down from the event
@@ -2296,7 +2597,8 @@ async function executeTuldRubberStamp(recordId, completedConfigString) {
                 }
 
 
-
+                // we removed trace 3 entirely cause now we have a single control that either uses Pan-Tomp(inhouse) or Pan-Tomp(neurokit2)
+                // so no point of showing it separately
 
                 // Trace 4: Full Pan-Tompkins Segment Mapping using NeuroKit2
                 if (peakDetectionMethod != 'false' && !useCancel && payload.features) {
@@ -2321,7 +2623,12 @@ async function executeTuldRubberStamp(recordId, completedConfigString) {
                 }
 
 
-                // Render Graph 1
+                // Render Graph 1 - the main raw signal
+                // Orientation inversion/correction 
+                // Pan-tompkins: inhouse implementaion or NK2 implementation(All P,Q,R,S and T points)
+                // R-R Peaks Only
+                // Noise Filtering using custom filter
+                // QRS Complex calcellation
                 const mainLayout = {
                     paper_bgcolor: '#1c1e24',
                     plot_bgcolor: '#1c1e24',
@@ -2388,55 +2695,62 @@ async function executeTuldRubberStamp(recordId, completedConfigString) {
                     Plotly.newPlot('fft-container', [fftTrace], fftLayout);
                 }
 
+
                 // Render Graph 3 (Poincaré Scatter Mapping)
-                if (usePoincare && payload.poincare && payload.poincare.x.length > 0) {
-                    const scatterTrace = {
-                        x: payload.poincare.x, y: payload.poincare.y,
-                        type: 'scatter', mode: 'markers', name: 'Interval Matrix',
-                        marker: { color: '#eb7b2b', size: 8, opacity: 0.7 }
-                    };
-                    const maxVal = Math.max(...payload.poincare.x, ...payload.poincare.y, 1100);
-                    const minVal = Math.min(...payload.poincare.x, ...payload.poincare.y, 400);
-                    const identityLine = {
-                        x: [minVal, maxVal], y: [minVal, maxVal],
-                        type: 'scatter', mode: 'lines', name: 'Identity (y=x)',
-                        line: { color: '#4c566a', width: 1, dash: 'dash' }, hoverinfo: 'none'
-                    };
-                    const poincareLayout = {
-                        paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
-                        font: { color: '#f2f4f8', family: 'monospace' },
-                        title: `| stats Poincaré  map calculated=true`,
-                        xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
-                        yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
+                // we converted the logic into a separate function. The main loop is growing too large, hence we had to reduce that
+                 
 
-                        legend: {
-                            orientation: 'h',
-                            y: -0.20, // by trial and error, best legend position y has been -0.2 or 20 %         
-                            x: 0.0,
-                            xanchor: 'left',
-                            yanchor: 'top'
-                        },
-                        //                   annotations: [{
-                        //                       text: '',
-                        //                       xref: 'paper',
-                        //                       yref: 'paper',
-                        //                       x: 0.0,
-                        //                       y: -0.30,  // by trial and erro, best annotation box positon x has been -0.4 or 40%
-                        //                       xanchor: 'left',
-                        //                       yanchor: 'top',
-                        //                       showarrow: false,
-                        //                       font: { family: 'monospace', size: 11, color: '#4c566a' }
-                        //                   }],
+                renderPoincareGraph(payload, usePoincare, current_config);
 
-                        //                   //  FORCE THE SAME BUFFER ZONE SO IT NEVER CLIPS OUT
-                        //                   margin: {
-                        //                       l: 50, r: 30,
-                        //                       t: 100,
-                        //                       b: 100
-                        //                   }
-                    };
-                    Plotly.newPlot('poincare-container', [scatterTrace, identityLine], poincareLayout);
-                }
+                
+               //if (usePoincare && payload.poincare && payload.poincare.x.length > 0) {
+               //    const scatterTrace = {
+               //        x: payload.poincare.x, y: payload.poincare.y,
+               //        type: 'scatter', mode: 'markers', name: 'Interval Matrix',
+               //        marker: { color: '#eb7b2b', size: 8, opacity: 0.7 }
+               //    };
+               //    const maxVal = Math.max(...payload.poincare.x, ...payload.poincare.y, 1100);
+               //    const minVal = Math.min(...payload.poincare.x, ...payload.poincare.y, 400);
+               //    const identityLine = { // this represents the y=x line in the poincare plot
+               //        x: [minVal, maxVal], y: [minVal, maxVal],
+               //        type: 'scatter', mode: 'lines', name: 'Identity (y=x)',
+               //        line: { color: '#4c566a', width: 1, dash: 'dash' }, hoverinfo: 'none'
+               //    };
+               //    const poincareLayout = {
+               //        paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
+               //        font: { color: '#f2f4f8', family: 'monospace' },
+               //        title: `| stats Poincaré  map calculated=true`,
+               //        xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
+               //        yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
+
+               //        legend: {
+               //            orientation: 'h',
+               //            y: -0.20, // by trial and error, best legend position y has been -0.2 or 20 %         
+               //            x: 0.0,
+               //            xanchor: 'left',
+               //            yanchor: 'top'
+               //        },
+               //        //                   annotations: [{
+               //        //                       text: '',
+               //        //                       xref: 'paper',
+               //        //                       yref: 'paper',
+               //        //                       x: 0.0,
+               //        //                       y: -0.30,  // by trial and erro, best annotation box positon x has been -0.4 or 40%
+               //        //                       xanchor: 'left',
+               //        //                       yanchor: 'top',
+               //        //                       showarrow: false,
+               //        //                       font: { family: 'monospace', size: 11, color: '#4c566a' }
+               //        //                   }],
+
+               //        //                   //  FORCE THE SAME BUFFER ZONE SO IT NEVER CLIPS OUT
+               //        //                   margin: {
+               //        //                       l: 50, r: 30,
+               //        //                       t: 100,
+               //        //                       b: 100
+               //        //                   }
+               //    };
+               //    Plotly.newPlot('poincare-container', [scatterTrace, identityLine], poincareLayout);
+               //}
 
                 // Render Graph 4 (Wavelet decomposition plot)
                 if (useWavelet && payload.wavelets && Object.keys(payload.wavelets).length > 0) {
