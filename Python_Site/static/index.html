@@ -417,7 +417,7 @@
         <!-- Unified Signal rubber stamp Status Badge -->
         <div id="rubber-stamp-status-badge"
             style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block;">
-            Checking  Rubber Stamp Status...
+            Checking Rubber Stamp Status...
         </div>
 
         <!-- Stamp button to verify the status of the signal here 
@@ -426,18 +426,17 @@
             <label for="toggle-manual-flip" style="color: #f2994a; font-weight: bold;">| Verify This Configuration</label>
         </div>
         -->
-            <button id="rubber-stamp-btn" 
-            older_code_onclick="lockThisIsItConfiguration()" 
-            old_onclick="window.dispatchEvent(new CustomEvent('tuldLockRequested'))" 
+        <button id="rubber-stamp-btn" older_code_onclick="lockThisIsItConfiguration()"
+            old_onclick="window.dispatchEvent(new CustomEvent('tuldLockRequested'))"
             style="background-color: #5cc24a; color: #111111; border: 1px solid #44a635; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px;"
             onmouseover="this.style.backgroundColor='#4cb03b'; this.style.boxShadow='0 0 4px rgba(92,194,74,0.4)';"
             onmouseout="this.style.backgroundColor='#5cc24a'; this.style.boxShadow='none';">
-        🔒 This Is It! Lock Configuration
-    </button>
+            🔒 This Is It! Lock Configuration
+        </button>
 
-            <!-- 💰 THE TULD MARGIN CALL CAPTION -->
-        <span id="tuld-caption" 
-              style="font-size: 9px; font-family: monospace; color: #747d8c; margin-top: 4px; padding-left: 2px; text-transform: uppercase; letter-spacing: 0.3px; opacity: 0.4; transition: opacity 0.15s ease-in-out;">
+        <!-- 💰 THE TULD MARGIN CALL CAPTION -->
+        <span id="tuld-caption"
+            style="font-size: 9px; font-family: monospace; color: #747d8c; margin-top: 4px; padding-left: 2px; text-transform: uppercase; letter-spacing: 0.3px; opacity: 0.4; transition: opacity 0.15s ease-in-out;">
             Protocol: Be first. Be smarter. Lock the gate.
         </span>
 
@@ -1516,425 +1515,448 @@
             total: totalBeats
         };
     }
- 
 
 
-/**
- *  
- * Compute standard, un-interpolated time-domain metrics.
-    returns: {
-        mean ,
-        mode ,
-        rmssd ,
-        pnn50 ,
-        total 
+
+    /**
+     *  
+     * Compute standard, un-interpolated time-domain metrics.
+        returns: {
+            mean ,
+            mode ,
+            rmssd ,
+            pnn50 ,
+            total 
+            }
+     */
+    function calculateCardiacAnalytics(RRIntervals) {
+        const rawRR = RRIntervals.filter(x => x >= 300 && x <= 2000);
+        const totalBeats = rawRR.length;
+        if (totalBeats === 0) return null;
+
+        // Mean
+        const meanRR = rawRR.reduce((s, v) => s + v, 0) / totalBeats;
+
+        // Mode binning
+        const bins = {};
+        rawRR.forEach(v => { const b = Math.round(v / 10) * 10; bins[b] = (bins[b] || 0) + 1; });
+        const modeRR = Number(Object.keys(bins).reduce((a, b) => bins[a] > bins[b] ? a : b));
+
+        // RMSSD & pNN50
+        let sumSquaredDiffs = 0;
+        let diffCount = 0;
+        let nn50Count = 0;
+
+        for (let i = 0; i < rawRR.length - 1; i++) {
+            const stepJump = Math.abs(rawRR[i + 1] - rawRR[i]);
+            if (stepJump > 50) nn50Count++;
+            sumSquaredDiffs += Math.pow(rawRR[i + 1] - rawRR[i], 2);
+            diffCount++;
         }
- */
-function calculateCardiacAnalytics(RRIntervals) {
-    const rawRR = RRIntervals.filter(x => x >= 300 && x <= 2000);
-    const totalBeats = rawRR.length;
-    if (totalBeats === 0) return null;
 
-    // Mean
-    const meanRR = rawRR.reduce((s, v) => s + v, 0) / totalBeats;
+        const pNN50 = diffCount > 0 ? (nn50Count / diffCount) * 100 : 0;
 
-    // Mode binning
-    const bins = {};
-    rawRR.forEach(v => { const b = Math.round(v / 10) * 10; bins[b] = (bins[b] || 0) + 1; });
-    const modeRR = Number(Object.keys(bins).reduce((a, b) => bins[a] > bins[b] ? a : b));
+        return {
+            mean: meanRR,
+            mode: modeRR,
+            rmssd: diffCount > 0 ? Math.sqrt(sumSquaredDiffs / diffCount) : 0,
+            pnn50: pNN50,
+            total: totalBeats
+        };
 
-    // RMSSD & pNN50
-    let sumSquaredDiffs = 0;
-    let diffCount = 0;
-    let nn50Count = 0;
 
-    for (let i = 0; i < rawRR.length - 1; i++) {
-        const stepJump = Math.abs(rawRR[i + 1] - rawRR[i]);
-        if (stepJump > 50) nn50Count++;
-        sumSquaredDiffs += Math.pow(rawRR[i + 1] - rawRR[i], 2);
-        diffCount++;
     }
 
-    const pNN50 = diffCount > 0 ? (nn50Count / diffCount) * 100 : 0;
+    /**
+     * Advanced Poincaré & Variability Analytics
+     * calculate geometric Poincaré scatter metrics (SD1, SD2, Area) 
+     * alongside the 3-tier filtering pipeline outputs.
+     * Returns : 
+             poincare: {
+                sd1 ,
+                sd2 ,
+                sd1_sd2_ratio ,
+                ellipse_area
+            },
+            variability: {
+                sdrr_straight ,
+                sdnn_approx ,
+                sdnn_interpolated 
+            },
+            qaReport: {
+                rawLength ,
+                beatsProcessedInInterpolation ,
+                noiseCount ,
+                ectopicCount ,
+                ectopicIndices ,
+                missedBeatCount ,
+                missedBeatIndices ,
+                hasEctopics ,
+                hasMissedBeats
+            }
+     */
+    function calculatePoincareAnalytics(RRIntervals) {
 
-    return {
-        mean: meanRR,
-        mode: modeRR,
-        rmssd: diffCount > 0 ? Math.sqrt(sumSquaredDiffs / diffCount) : 0,
-        pnn50: pNN50,
-        total: totalBeats
-    };
+        console.log(`qaReport : ${RRIntervals}`)
+        // 1. Run sub-algorithms to get the different filtered pipelines
+        const straightPipeline = runSDRR_Straight(RRIntervals);
+        const approxPipeline = runSDNN_Approx(RRIntervals);
+        const interpolatedPipeline = runSDNN_Interpolated(RRIntervals);
 
-    
-}
+        if (!straightPipeline || !approxPipeline || !interpolatedPipeline) return null;
 
-/**
- * Advanced Poincaré & Variability Analytics
- * calculate geometric Poincaré scatter metrics (SD1, SD2, Area) 
- * alongside the 3-tier filtering pipeline outputs.
- * Returns : 
-         poincare: {
-            sd1 ,
-            sd2 ,
-            sd1_sd2_ratio ,
-            ellipse_area
-        },
-        variability: {
-            sdrr_straight ,
-            sdnn_approx ,
-            sdnn_interpolated 
-        },
-        qaReport: {
-            rawLength ,
-            beatsProcessedInInterpolation ,
-            noiseCount ,
-            ectopicCount ,
-            ectopicIndices ,
-            missedBeatCount ,
-            missedBeatIndices ,
-            hasEctopics ,
-            hasMissedBeats
-        }
- */
-function calculatePoincareAnalytics(RRIntervals) {
-    // 1. Run sub-algorithms to get the different filtered pipelines
-    const straightPipeline = runSDRR_Straight(RRIntervals);
-    const approxPipeline = runSDNN_Approx(RRIntervals);
-    const interpolatedPipeline = runSDNN_Interpolated(RRIntervals);
+        // 2. Fetch baseline analytics for RMSSD
+        const baseAnalytics = calculateCardiacAnalytics(RRIntervals);
+        if (!baseAnalytics) return null;
 
-    if (!straightPipeline || !approxPipeline || !interpolatedPipeline) return null;
+        // 3. Compute Poincaré SD1 and SD2
+        const sdrr = straightPipeline.sdrr;
+        const sd1 = baseAnalytics.rmssd / Math.sqrt(2);
 
-    // 2. Fetch baseline analytics for RMSSD
-    const baseAnalytics = calculateCardiacAnalytics(RRIntervals);
-    if (!baseAnalytics) return null;
+        // Standard Poincaré ellipse math to extract long-term SD2 from overall SDRR
+        const sd2 = Math.sqrt(Math.max(0, (2 * Math.pow(sdrr, 2)) - Math.pow(sd1, 2)));
 
-    // 3. Compute Poincaré SD1 and SD2
-    const sdrr = straightPipeline.sdrr;
-    const sd1 = baseAnalytics.rmssd / Math.sqrt(2);
-    
-    // Standard Poincaré ellipse math to extract long-term SD2 from overall SDRR
-    const sd2 = Math.sqrt(Math.max(0, (2 * Math.pow(sdrr, 2)) - Math.pow(sd1, 2)));
-    
-    // Bonus geometric feature: Total Ellipse Area (highly predictive for ML)
-    const poincareArea = Math.PI * sd1 * sd2;
+        // Bonus geometric feature: Total Ellipse Area (highly predictive for ML)
+        const poincareArea = Math.PI * sd1 * sd2;
 
-    // 4. Assemble and return everything in a structured layout
-    return {
-        // Geometric Poincaré Descriptors
-        poincare: {
-            sd1: sd1,
-            sd2: sd2,
-            sd1_sd2_ratio: sd2 > 0 ? sd1 / sd2 : 0,
-            ellipse_area: poincareArea
-        },
-        // The 3 variations of Standard Deviation we built
-        variability: {
-            sdrr_straight: sdrr,
-            sdnn_approx: approxPipeline.sdnn_approx,
-            sdnn_interpolated: interpolatedPipeline.sdnn_interpolated
-        },
-        // Quality Assurance & Signal Integrity Data (Crucial for PhysioNet)
-        qaReport: {
-            rawLength: RRIntervals.length,
-            beatsProcessedInInterpolation: interpolatedPipeline.totalBeatsProcessed,
-            noiseCount: interpolatedPipeline.noiseCount,
-            ectopicCount: interpolatedPipeline.ectopicCount,
-            ectopicIndices: interpolatedPipeline.ectopicIndices,
-            missedBeatCount: interpolatedPipeline.missedBeatCount,
-            missedBeatIndices: interpolatedPipeline.missedBeatIndices,
-            hasEctopics: interpolatedPipeline.ectopicCount > 0,
-            hasMissedBeats: interpolatedPipeline.missedBeatCount > 0
-        }
-    };
-}
+        // 4. Assemble and return everything in a structured layout
+        return {
+            // Geometric Poincaré Descriptors
+            poincare: {
+                sd1: sd1,
+                sd2: sd2,
+                sd1_sd2_ratio: sd2 > 0 ? sd1 / sd2 : 0,
+                ellipse_area: poincareArea
+            },
+            // The 3 variations of Standard Deviation we built
+            variability: {
+                sdrr_straight: sdrr,
+                sdnn_approx: approxPipeline.sdnn_approx,
+                sdnn_interpolated: interpolatedPipeline.sdnn_interpolated
+            },
+            // Quality Assurance & Signal Integrity Data (Crucial for PhysioNet)
+            qaReport: {
+                rawLength: RRIntervals.length,
+                beatsProcessedInInterpolation: interpolatedPipeline.totalBeatsProcessed,
+                noiseCount: interpolatedPipeline.noiseCount,
+                ectopicCount: interpolatedPipeline.ectopicCount,
+                ectopicIndices: interpolatedPipeline.ectopicIndices,
+                missedBeatCount: interpolatedPipeline.missedBeatCount,
+                missedBeatIndices: interpolatedPipeline.missedBeatIndices,
+                hasEctopics: interpolatedPipeline.ectopicCount > 0,
+                hasMissedBeats: interpolatedPipeline.missedBeatCount > 0
+            }
+        };
+    }
 
-//  the following 3 functions are meant for corrected and interpolated HRV metrics
+    //  the following 3 functions are meant for corrected and interpolated HRV metrics
 
-function runSDRR_Straight(RRIntervals) {
-    const humanRR = RRIntervals.filter(x => x >= 300 && x <= 2000);
-    if (humanRR.length === 0) return null;
-    const mean = humanRR.reduce((s, v) => s + v, 0) / humanRR.length;
-    const variance = humanRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / humanRR.length;
-    return { sdrr: Math.sqrt(variance) };
-}
+    function runSDRR_Straight(RRIntervals) {
+        const humanRR = RRIntervals.filter(x => x >= 300 && x <= 2000);
+        if (humanRR.length === 0) return null;
+        const mean = humanRR.reduce((s, v) => s + v, 0) / humanRR.length;
+        const variance = humanRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / humanRR.length;
+        return { sdrr: Math.sqrt(variance) };
+    }
 
+   // 
+   
+  
 function runSDNN_Approx(RRIntervals) {
-    const rawRR = RRIntervals.filter(x => x > 0);
-    const cleanRR = [];
-    const recentWindow = [];
-    for (let i = 0; i < rawRR.length; i++) {
-        const current = rawRR[i];
-        let isHuman = current >= 300 && current <= 2000;
-        if (isHuman && cleanRR.length > 0) {
-            if (Math.abs(current - cleanRR[cleanRR.length - 1]) / cleanRR[cleanRR.length - 1] > 0.20) isHuman = false;
-        }
-        if (isHuman && recentWindow.length > 0) {
-            const avg = recentWindow.reduce((s, v) => s + v, 0) / recentWindow.length;
-            if (Math.abs(current - avg) / avg > 0.20) isHuman = false;
-        }
-        if (isHuman) {
-            cleanRR.push(current);
-            recentWindow.push(current);
-            if (recentWindow.length > 5) recentWindow.shift();
-        }
-    }
-    if (cleanRR.length === 0) return null;
-    const mean = cleanRR.reduce((s, v) => s + v, 0) / cleanRR.length;
-    const variance = cleanRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / cleanRR.length;
-    return { sdnn_approx: Math.sqrt(variance) };
-}
-
-function runSDNN_Interpolated(RRIntervals) {
-    const rawRR = RRIntervals.filter(x => x >= 300 && x <= 2000);
-    if (rawRR.length < 3) return null;
-
-    const trueSinusRR = [];
-    let ectopicCount = 0; const ectopicIndices = [];
-    let missedBeatCount = 0; const missedBeatIndices = [];
-    let noiseCount = 0;
-
-    let i = 0;
-    while (i < rawRR.length) {
-        const current = rawRR[i];
-        const lookback = trueSinusRR.slice(-3);
-        const localAvg = lookback.length > 0 ? lookback.reduce((a,b)=>a+b, 0)/lookback.length : current;
-
-        if (current > localAvg * 1.8 && current < localAvg * 2.2) {
-            missedBeatCount++; missedBeatIndices.push(i);
-            const slicedInterval = current / 2;
-            trueSinusRR.push(slicedInterval); trueSinusRR.push(slicedInterval);
-            i++; continue;
-        }
-
-        if (i < rawRR.length - 1) {
-            const next = rawRR[i + 1];
-            const isShort = current < localAvg * 0.85;
-            const isLongNext = next > localAvg * 1.15;
-            const combinedSumNormal = Math.abs((current + next) - (localAvg * 2)) / (localAvg * 2) < 0.15;
-
-            if (isShort && isLongNext && combinedSumNormal) {
-                ectopicCount++; ectopicIndices.push(i);
-                trueSinusRR.push(localAvg); trueSinusRR.push(localAvg);
-                i += 2; continue;
+        const rawRR = RRIntervals.filter(x => x > 0);
+        const cleanRR = [];
+        const recentWindow = [];
+        for (let i = 0; i < rawRR.length; i++) {
+            const current = rawRR[i];
+            let isHuman = current >= 300 && current <= 2000;
+            if (isHuman && cleanRR.length > 0) {
+                if (Math.abs(current - cleanRR[cleanRR.length - 1]) / cleanRR[cleanRR.length - 1] > 0.20) isHuman = false;
+            }
+            if (isHuman && recentWindow.length > 0) {
+                const avg = recentWindow.reduce((s, v) => s + v, 0) / recentWindow.length;
+                if (Math.abs(current - avg) / avg > 0.20) isHuman = false;
+            }
+            if (isHuman) {
+                cleanRR.push(current);
+                recentWindow.push(current);
+                if (recentWindow.length > 5) recentWindow.shift();
             }
         }
-
-        if (Math.abs(current - localAvg) / localAvg > 0.25) {
-            noiseCount++;
-        } else {
-            trueSinusRR.push(current);
-        }
-        i++;
+        if (cleanRR.length === 0) return null;
+        const mean = cleanRR.reduce((s, v) => s + v, 0) / cleanRR.length;
+        const variance = cleanRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / cleanRR.length;
+        return { sdnn_approx: Math.sqrt(variance) };
     }
 
-    if (trueSinusRR.length === 0) return null;
-    const mean = trueSinusRR.reduce((s, v) => s + v, 0) / trueSinusRR.length;
-    const variance = trueSinusRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / trueSinusRR.length;
+    function runSDNN_Interpolated(RRIntervals) {
+        const rawRR = RRIntervals.filter(x => x >= 300 && x <= 2000);
+        if (rawRR.length < 3) return null;
 
-    return {
-        sdnn_interpolated: Math.sqrt(variance),
-        totalBeatsProcessed: trueSinusRR.length,
-        ectopicCount, ectopicIndices,
-        missedBeatCount, missedBeatIndices,
-        noiseCount: noiseCount + (RRIntervals.length - rawRR.length)
-    };
-}
+        const trueSinusRR = [];
+        let ectopicCount = 0; const ectopicIndices = [];
+        let missedBeatCount = 0; const missedBeatIndices = [];
+        let noiseCount = 0;
 
+        let i = 0;
+        while (i < rawRR.length) {
+            const current = rawRR[i];
+            const lookback = trueSinusRR.slice(-3);
+            const localAvg = lookback.length > 0 ? lookback.reduce((a, b) => a + b, 0) / lookback.length : current;
 
+            if (current > localAvg * 1.8 && current < localAvg * 2.2) {
+                missedBeatCount++; missedBeatIndices.push(i);
+                const slicedInterval = current / 2;
+                trueSinusRR.push(slicedInterval); trueSinusRR.push(slicedInterval);
+                i++; continue;
+            }
 
-function renderPoincareGraph_(payload, usePoincare) {
-    // 1. Guard clause: Ensure features are enabled and data exists
-    if (!usePoincare || !payload?.poincare?.x?.length) {
-        return; 
+            if (i < rawRR.length - 1) {
+                const next = rawRR[i + 1];
+                const isShort = current < localAvg * 0.85;
+                const isLongNext = next > localAvg * 1.15;
+                const combinedSumNormal = Math.abs((current + next) - (localAvg * 2)) / (localAvg * 2) < 0.15;
+
+                if (isShort && isLongNext && combinedSumNormal) {
+                    ectopicCount++; ectopicIndices.push(i);
+                    trueSinusRR.push(localAvg); trueSinusRR.push(localAvg);
+                    i += 2; continue;
+                }
+            }
+
+            if (Math.abs(current - localAvg) / localAvg > 0.25) {
+                noiseCount++;
+            } else {
+                trueSinusRR.push(current);
+            }
+            i++;
+        }
+
+        if (trueSinusRR.length === 0) return null;
+        const mean = trueSinusRR.reduce((s, v) => s + v, 0) / trueSinusRR.length;
+        const variance = trueSinusRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / trueSinusRR.length;
+
+        return {
+            sdnn_interpolated: Math.sqrt(variance),
+            totalBeatsProcessed: trueSinusRR.length,
+            ectopicCount, ectopicIndices,
+            missedBeatCount, missedBeatIndices,
+            noiseCount: noiseCount + (RRIntervals.length - rawRR.length)
+        };
     }
 
-    const { x, y } = payload.poincare;
 
-    // 2. Compute dynamic boundaries with structural buffers
-    const maxVal = Math.max(...x, ...y, 1100);
-    const minVal = Math.min(...x, ...y, 400);
-    const axisRange = [minVal - 30, maxVal + 30];
 
-    // 3. Define Plot Traces
-    const scatterTrace = {
-        x: x, 
-        y: y,
-        type: 'scatter', 
-        mode: 'markers', 
-        name: 'Interval Matrix',
-        marker: { color: '#eb7b2b', size: 8, opacity: 0.7 }
-    };
-
-    const identityLine = { 
-        x: [minVal, maxVal], 
-        y: [minVal, maxVal],
-        type: 'scatter', 
-        mode: 'lines', 
-        name: 'Identity (y=x)',
-        line: { color: '#4c566a', width: 1, dash: 'dash' }, 
-        hoverinfo: 'none'
-    };
-
-    // 4. Define Visual Layout Configurations
-    const poincareLayout = {
-        paper_bgcolor: '#1c1e24', 
-        plot_bgcolor: '#1c1e24',
-        font: { color: '#f2f4f8', family: 'monospace' },
-        title: `| stats Poincaré  map calculated=true`,
-        xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: axisRange },
-        yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: axisRange },
-        legend: {
-            orientation: 'h',
-            y: -0.20,       
-            x: 0.0,
-            xanchor: 'left',
-            yanchor: 'top'
+    function renderPoincareGraph_(payload, usePoincare) {
+        // 1. Guard clause: Ensure features are enabled and data exists
+        if (!usePoincare || !payload?.poincare?.x?.length) {
+            return;
         }
-    };
 
-    // 5. Execute DOM injection
-    Plotly.newPlot('poincare-container', [scatterTrace, identityLine], poincareLayout);
-}
+        const { x, y } = payload.poincare;
 
+        // 2. Compute dynamic boundaries with structural buffers
+        const maxVal = Math.max(...x, ...y, 1100);
+        const minVal = Math.min(...x, ...y, 400);
+        const axisRange = [minVal - 30, maxVal + 30];
 
-async function renderPoincareGraph(serverPayload, usePoincare, currentConfig) {
-    // the switch to enable/disable the poincare plot.
-    // this condition was there in the loadEcgPipeline()'s main loop, we've shifted it in here  
-    if (!usePoincare || !serverPayload?.poincare?.x?.length) {
-        return; 
+        // 3. Define Plot Traces
+        const scatterTrace = {
+            x: x,
+            y: y,
+            type: 'scatter',
+            mode: 'markers',
+            name: 'Interval Matrix',
+            marker: { color: '#eb7b2b', size: 8, opacity: 0.7 }
+        };
+
+        const identityLine = {
+            x: [minVal, maxVal],
+            y: [minVal, maxVal],
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Identity (y=x)',
+            line: { color: '#4c566a', width: 1, dash: 'dash' },
+            hoverinfo: 'none'
+        };
+
+        // 4. Define Visual Layout Configurations
+        const poincareLayout = {
+            paper_bgcolor: '#1c1e24',
+            plot_bgcolor: '#1c1e24',
+            font: { color: '#f2f4f8', family: 'monospace' },
+            title: `| stats Poincaré  map calculated=true`,
+            xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: axisRange },
+            yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: axisRange },
+            legend: {
+                orientation: 'h',
+                y: -0.20,
+                x: 0.0,
+                xanchor: 'left',
+                yanchor: 'top'
+            }
+        };
+
+        // 5. Execute DOM injection
+        Plotly.newPlot('poincare-container', [scatterTrace, identityLine], poincareLayout);
     }
 
-    const { x, y } = serverPayload.poincare;
 
-    // just a pre-condition to calcualte the extreme bounds of the canvas for plottinh
-    const maxVal = Math.max(...x, ...y, 1100);
-    const minVal = Math.min(...x, ...y, 400);
-    const axisRange = [minVal - 30, maxVal + 30];
+    async function renderPoincareGraph(serverPayload, usePoincare, currentConfig) {
+        // the switch to enable/disable the poincare plot.
+        // this condition was there in the loadEcgPipeline()'s main loop, we've shifted it in here  
+        //   if (!usePoincare || !serverPayload?.poincare?.x?.length) {
+        //       return; 
+        //   }
 
-    //  this is the trace detail that we're going to use in the final obect : finalPlotTraces
-    const scatterTrace = {
-        x: x, 
-        y: y,
-        type: 'scatter', 
-        mode: 'markers', 
-        name: 'Interval Matrix',
-        marker: { color: '#eb7b2b', size: 8, opacity: 0.7 }
-    };
+        const rPeakIndices = serverPayload?.features?.R;
 
-    // just a y=x line for the final plot
-    const identityLine = { 
-        x: [minVal, maxVal], 
-        y: [minVal, maxVal],
-        type: 'scatter', 
-        mode: 'lines', 
-        name: 'Identity (y=x)',
-        line: { color: '#4c566a', width: 1, dash: 'dash' }, 
-        hoverinfo: 'none'
-    };
-
-    // LAZY EVALUATION / CACHE EXTRACTION FROM THE ECG_Features JSON FILE
-    // Executes the full math only if the ECG_Features is empty
-    const advancedStats = await getOrComputeMetric(
-        serverPayload.record_id,
-        `${currentConfig}-advanced_poincare_analytics_object`,
-        "1.0.0",  // version of the math functions
-        () => {
-            // Lazy-evaluation match arm. Runs on cache miss.
-            // Pass the raw coordinate timeline vector directly into the analytics engine
-            return calculatePoincareAnalytics(x);  
+        // updated the guard clause to now check features.R instead of poincare.x
+        if (!usePoincare || !rPeakIndices?.length || rPeakIndices.length < 2) {
+            return;
         }
-    );
 
-    // advancedStats contains :
-    //    poincare: {
-    //        sd1 ,
-    //        sd2 ,
-    //        sd1_sd2_ratio ,
-    //        ellipse_area
-    //    },
-    //    variability: {
-    //        sdrr_straight ,
-    //        sdnn_approx ,
-    //        sdnn_interpolated 
-    //    },
-    //    qaReport: {
-    //        rawLength ,
-    //        beatsProcessedInInterpolation ,
-    //        noiseCount ,
-    //        ectopicCount ,
-    //        ectopicIndices ,
-    //        missedBeatCount ,
-    //        missedBeatIndices ,
-    //        hasEctopics ,
-    //        hasMissedBeats
-    //    } 
+        const samplingRate = 300;  //we need a sinsible way later to fetch it systematically
 
-    console.log("running <i>get Or Compute Metric </i> logic for Poincaré :", advancedStats);
 
-    const finalPlotTraces = [scatterTrace, identityLine]; // collating the identity line as well as the points for the traces
-    let poincareAnnotations = [];
 
-    // if everything has  been parsed safely generate the rotated trace
-     if (advancedStats) {
-        const { sd1, sd2, sd1_sd2_ratio, ellipse_area } = advancedStats.poincare;
-        const { sdrr_straight, sdnn_approx, sdnn_interpolated } = advancedStats.variability;
-        const { rawLength, beatsProcessedInInterpolation, noiseCount, ectopicCount, hasEctopics, hasMissedBeats } = advancedStats.qaReport;
 
-                // Visual Indicator 2: Signal Quality / Ignored Beats Warning Banner
-        const requiresAttention = hasEctopics || hasMissedBeats || noiseCount > 0;
-        const bannerColor = requiresAttention ? '#bf616a' : '#a3be8c'; // Red-orange warning vs green safety
+        const rrIntervals = [];
+        for (let i = 0; i < rPeakIndices.length - 1; i++) {
+            const intervalSamples = rPeakIndices[i + 1] - rPeakIndices[i];
+            const intervalMs = (intervalSamples / samplingRate) * 1000;
+            rrIntervals.push(intervalMs);
+        }
 
-        const noiseColor = noiseCount > 0 ? '#d08770' : '#a3be8c';
-        const ectopicColor = ectopicCount > 0 ? '#d08770' : '#a3be8c';
+        if (rrIntervals.length < 2) return; // not enough for a Poincaré pair
 
-        
-        // Visual Indicator 1: Quantitative HRV Metrics Text Box
-poincareAnnotations.push({
-    text: `<b>Data Summary:</b><br>` +
-          `• Raw Data Length: <b>${rawLength}</b> beats<br>` + 
-          `<span style="color: ${noiseColor};">• Noise Artifacts Ignored: <b>${noiseCount}</b></span><br>` +
-          `<span style="color: ${noiseColor};">• Valid / Interpolated: <b>${beatsProcessedInInterpolation}</b> beats</span><br>` + 
-          `<span style="color: ${ectopicColor};">• Ectopic Beats Dropped: <b>${ectopicCount}</b></span><br><br>` +
-          `<b>HRV Descriptors (Non-linear):</b><br>` +
-          `• SD1 (Short-term): ${sd1?.toFixed(1) || 'N/A'} ms<br>` +
-          `• SD2 (Long-term): ${sd2?.toFixed(1) || 'N/A'} ms<br>` +
-          `• SD1/SD2 Ratio: ${sd1_sd2_ratio?.toFixed(2) || 'N/A'}<br>` +
-          `• Ellipse Area: ${ellipse_area?.toFixed(0) || 'N/A'} ms²<br><br>` +
-          `<b>Variability Matrix:</b><br>` +
-          `• SDRR: ${sdrr_straight?.toFixed(1) || 'N/A'} ms<br>` +
-          `• SDNN Approx: ${sdnn_approx?.toFixed(1) || 'N/A'} ms<br>` +
-          `• SDNN Interp: ${sdnn_interpolated?.toFixed(1) || 'N/A'} ms`,
-    xref: 'paper', yref: 'paper',
-    x: 1.05, y: 0.95, // Positioned outside right margin
-    xanchor: 'left', yanchor: 'top',
-    showarrow: false,
-    align: 'left',
-    font: { family: 'monospace', size: 11, color: '#f2f4f8' },
-    bordercolor: '#2e3440', borderwidth: 1, borderpad: 8, bgcolor: '#1c1e24'
-});
+        // Build the x, y pairs the scatter plot needs (x = RR_n, y = RR_n+1)
+        const x = rrIntervals.slice(0, -1);
+        const y = rrIntervals.slice(1);
 
- 
+        // just a pre-condition to calculate the extreme bounds of the canvas for plotting
+        const maxVal = Math.max(...x, ...y, 1100);
+        const minVal = Math.min(...x, ...y, 400);
+        const axisRange = [minVal - 30, maxVal + 30];
+
+        const scatterTrace = {
+            x: x,
+            y: y,
+            type: 'scatter',
+            mode: 'markers',
+            name: 'Interval Matrix',
+            marker: { color: '#eb7b2b', size: 8, opacity: 0.7 }
+        };
+
+        const identityLine = {
+            x: [minVal, maxVal],
+            y: [minVal, maxVal],
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Identity (y=x)',
+            line: { color: '#4c566a', width: 1, dash: 'dash' },
+            hoverinfo: 'none'
+        };
+
+        const advancedStats = await getOrComputeMetric(
+            serverPayload.record_id,
+            `${currentConfig}-advanced_poincare_analytics_object`,
+            "1.0.0",
+            () => {
+                // Now fed the RR-interval series derived from features.R, not the old poincare.x
+                return calculatePoincareAnalytics(rrIntervals);
+            }
+        );
+
+        // advancedStats contains :
+        //    poincare: {
+        //        sd1 ,
+        //        sd2 ,
+        //        sd1_sd2_ratio ,
+        //        ellipse_area
+        //    },
+        //    variability: {
+        //        sdrr_straight ,
+        //        sdnn_approx ,
+        //        sdnn_interpolated 
+        //    },
+        //    qaReport: {
+        //        rawLength ,
+        //        beatsProcessedInInterpolation ,
+        //        noiseCount ,
+        //        ectopicCount ,
+        //        ectopicIndices ,
+        //        missedBeatCount ,
+        //        missedBeatIndices ,
+        //        hasEctopics ,
+        //        hasMissedBeats
+        //    } 
+
+        console.log("running <i>get Or Compute Metric </i> logic for Poincaré :", advancedStats);
+
+        const finalPlotTraces = [scatterTrace, identityLine]; // collating the identity line as well as the points for the traces
+        let poincareAnnotations = [];
+
+        // if everything has  been parsed safely generate the rotated trace
+        if (advancedStats) {
+            const { sd1, sd2, sd1_sd2_ratio, ellipse_area } = advancedStats.poincare;
+            const { sdrr_straight, sdnn_approx, sdnn_interpolated } = advancedStats.variability;
+            const { rawLength, beatsProcessedInInterpolation, noiseCount, ectopicCount, hasEctopics, hasMissedBeats } = advancedStats.qaReport;
+
+            // Visual Indicator 2: Signal Quality / Ignored Beats Warning Banner
+            const requiresAttention = hasEctopics || hasMissedBeats || noiseCount > 0;
+            const bannerColor = requiresAttention ? '#bf616a' : '#a3be8c'; // Red-orange warning vs green safety
+
+            const noiseColor = noiseCount > 0 ? '#d08770' : '#a3be8c';
+            const ectopicColor = ectopicCount > 0 ? '#d08770' : '#a3be8c';
+
+
+            // Visual Indicator 1: Quantitative HRV Metrics Text Box
+            poincareAnnotations.push({
+                text: `<b>Data Summary:</b><br>` +
+                    `• Raw Data Length: <b>${rawLength}</b> beats<br>` +
+                    `<span style="color: ${noiseColor};">• Noise Artifacts Ignored: <b>${noiseCount}</b></span><br>` +
+                    `<span style="color: ${noiseColor};">• Valid / Interpolated: <b>${beatsProcessedInInterpolation}</b> beats</span><br>` +
+                    `<span style="color: ${ectopicColor};">• Ectopic Beats Dropped: <b>${ectopicCount}</b></span><br><br>` +
+                    `<b>HRV Descriptors (Non-linear):</b><br>` +
+                    `• SD1 (Short-term): ${sd1?.toFixed(1) || 'N/A'} ms<br>` +
+                    `• SD2 (Long-term): ${sd2?.toFixed(1) || 'N/A'} ms<br>` +
+                    `• SD1/SD2 Ratio: ${sd1_sd2_ratio?.toFixed(2) || 'N/A'}<br>` +
+                    `• Ellipse Area: ${ellipse_area?.toFixed(0) || 'N/A'} ms²<br><br>` +
+                    `<b>Variability Matrix:</b><br>` +
+                    `• SDRR: ${sdrr_straight?.toFixed(1) || 'N/A'} ms<br>` +
+                    `• SDNN Approx: ${sdnn_approx?.toFixed(1) || 'N/A'} ms<br>` +
+                    `• SDNN Interp: ${sdnn_interpolated?.toFixed(1) || 'N/A'} ms`,
+                xref: 'paper', yref: 'paper',
+                x: 1.05, y: 0.95, // Positioned outside right margin
+                xanchor: 'left', yanchor: 'top',
+                showarrow: false,
+                align: 'left',
+                font: { family: 'monospace', size: 11, color: '#f2f4f8' },
+                bordercolor: '#2e3440', borderwidth: 1, borderpad: 8, bgcolor: '#1c1e24'
+            });
+
+
+        }
+
+        // the lyout objet that dictates how the plot is gonna look like i.e. bgcolor, foregroundcolor, annotations, legends etc.
+        const poincareLayout = {
+            paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
+            font: { color: '#f2f4f8', family: 'monospace' },
+            title: `| stats Poincaré map calculated=true`,
+            xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: axisRange },
+            yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: axisRange },
+            margin: { l: 60, r: 240, t: 60, b: 60 }, // Expanded margins dynamically allocate space for metrics & warning boxes
+            annotations: poincareAnnotations,
+            legend: {
+                orientation: 'h',
+                y: -0.15, x: 0.0,
+                xanchor: 'left', yanchor: 'top'
+            }
+        };
+        // finally render directly the poincare plot
+        Plotly.newPlot('poincare-container', finalPlotTraces, poincareLayout);
+        //Plotly.newPlot('poincare-container', finalPlotTraces );
     }
-
-    // the lyout objet that dictates how the plot is gonna look like i.e. bgcolor, foregroundcolor, annotations, legends etc.
-    const poincareLayout = {
-        paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
-        font: { color: '#f2f4f8', family: 'monospace' },
-        title: `| stats Poincaré map calculated=true`,
-        xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: axisRange },
-        yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: axisRange },
-        margin: { l: 60, r: 240, t: 60, b: 60 }, // Expanded margins dynamically allocate space for metrics & warning boxes
-        annotations: poincareAnnotations,
-        legend: {
-            orientation: 'h',
-            y: -0.15, x: 0.0,
-            xanchor: 'left', yanchor: 'top'
-        }
-    };
-    // finally render directly the poincare plot
-    Plotly.newPlot('poincare-container', finalPlotTraces, poincareLayout);
-    //Plotly.newPlot('poincare-container', finalPlotTraces );
-}
 
     /*
         This function off-loads some work the client side, too.
@@ -2095,7 +2117,7 @@ poincareAnnotations.push({
                     `━━━━━━━━━━━━━━━<br>` +
                     `Mean RR: <b>${stats.mean.toFixed(1)} ms</b><br>` +
                     `Mode RR: <b>${stats.mode.toFixed(0)} ms</b><br>` +
-                   // `Std Dev (SDNN): <span style="color:${statusColor}"><b>${stats.sdnn.toFixed(1)} ms</b></span><br>` +
+                    // `Std Dev (SDNN): <span style="color:${statusColor}"><b>${stats.sdnn.toFixed(1)} ms</b></span><br>` +
                     `RMSSD (Local): <span style="color:${statusColor}"><b>${stats.rmssd.toFixed(1)} ms</b></span><br>` +
                     `pNN50 Index: <span style="color:${statusColor}"><b>${stats.pnn50.toFixed(1)}%</b></span><br>` +
                     `Total Beats: <b>${stats.total}</b><br>` +
@@ -2122,299 +2144,299 @@ poincareAnnotations.push({
         // calling the plotly's API to finally do the printing
         Plotly.newPlot('stacked-n-RR-beats-overlay-container', finalPlotTraces, overlayLayout);
     }
- 
+
 
     async function updateStackedChart(serverPayload, beatsToStack = 2, samplingRate = 300, currentConfig) {
 
-    // calling sliceStackedBeatsFrontend() to manipulate the server's payload  
-    const stackedBeats = sliceStackedBeatsFrontend(
-        serverPayload.data,
-        serverPayload.features,
-        beatsToStack,
-        samplingRate
-    );
+        // calling sliceStackedBeatsFrontend() to manipulate the server's payload  
+        const stackedBeats = sliceStackedBeatsFrontend(
+            serverPayload.data,
+            serverPayload.features,
+            beatsToStack,
+            samplingRate
+        );
 
-    const finalPlotTraces = [];
-    // feature map is same as before 
-    const featureMap = {
-        P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
-        Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
-        R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
-        S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
-        T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
-    };
+        const finalPlotTraces = [];
+        // feature map is same as before 
+        const featureMap = {
+            P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
+            Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
+            R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
+            S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
+            T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
+        };
 
-    // getting markers from the signal also the same as before 
-    for (const chunk of stackedBeats) {
-        finalPlotTraces.push({
-            x: chunk.time_ms,
-            y: chunk.amplitude_mv,
-            type: 'scatter',
-            mode: 'lines',
-            line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.2 },
-            showlegend: false,
-            hoverinfo: 'skip'
-        });
-
-        // this part is also the same as before, this is a quick and dirty way to work on 5 arrays without writing 5 loops
-        ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
-            chunk.features[wave].forEach(marker => {
-                featureMap[wave].x.push(marker.x);
-                featureMap[wave].y.push(marker.y);
-            });
-        });
-    }
-
-    // plotting the Scatter Points to the view 
-    for (const [key, cfg] of Object.entries(featureMap)) {
-        if (cfg.x.length > 0) {
+        // getting markers from the signal also the same as before 
+        for (const chunk of stackedBeats) {
             finalPlotTraces.push({
-                x: cfg.x, y: cfg.y, type: 'scatter', mode: 'markers', name: cfg.name,
-                marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
-                hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                x: chunk.time_ms,
+                y: chunk.amplitude_mv,
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.2 },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+
+            // this part is also the same as before, this is a quick and dirty way to work on 5 arrays without writing 5 loops
+            ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+                chunk.features[wave].forEach(marker => {
+                    featureMap[wave].x.push(marker.x);
+                    featureMap[wave].y.push(marker.y);
+                });
             });
         }
-    }
 
-    // R-R interval horizontal lines 
-    const rrIntervalLines = [];
-    featureMap.R.x.forEach((r2OffsetMs, i) => {
-        if (r2OffsetMs > 0) {
-            rrIntervalLines.push({
-                type: 'line', x0: 0, y0: featureMap.R.y[i], x1: r2OffsetMs, y1: featureMap.R.y[i],
-                line: { color: 'rgba(235, 123, 43, 0.30)', width: 1 }
-            });
-        }
-    });
-
-    // 1. Fetch Time Domain Stats
-    const stats = await getOrComputeMetric(
-        serverPayload.record_id,
-        `${currentConfig}-time_domain_analytics_object`,
-        "1.0.0",
-        () => calculateCardiacAnalytics(featureMap.R.x)
-    );
-
-    // 2. Fetch Poincaré and QA Report Stats using the exact same strategy
-    const poincareStats = await getOrComputeMetric(
-        serverPayload.record_id,
-        `${currentConfig}-poincare_analytics_object`,
-        "1.0.0",
-        () => calculatePoincareAnalytics(featureMap.R.x) // Assumes this uses your R peak data
-    );
-
-    console.log("getOrComputeStatistic TimeDomain:", stats);
-    console.log("getOrComputeStatistic Poincare:", poincareStats);
-
-    let statsAnnotation = [];
-
-    if (stats) {
-        const isAFib = stats.sdnn > 50 || stats.rmssd > 60;
-        const statusColor = isAFib ? '#e74c3c' : '#2ecc71';
-        const statusText = isAFib
-            ? '☠️ CHAOTIC ERA Sir Francis Bacon<br>: High SD/RMSSD (Potentially AFib)'
-            : '💖 STABLE ERA Dr. Copernicus<br>: Low Variance (Normal Sinus)';
-
-        // Primary base text block 
-        let annotationText = `<b>R-R Analytics Summary</b><br>` +
-            `━━━━━━━━━━━━━━━<br>` +
-            `Mean RR: <b>${stats.mean.toFixed(1)} ms</b><br>` +
-            `Mode RR: <b>${stats.mode.toFixed(0)} ms</b><br>` +
-            `RMSSD (Local): <span style="color:${statusColor}"><b>${stats.rmssd.toFixed(1)} ms</b></span><br>` +
-            `pNN50 Index: <span style="color:${statusColor}"><b>${stats.pnn50.toFixed(1)}%</b></span><br>` +
-            `Total Beats: <b>${stats.total}</b><br>`;
-
-        // Append the QA/Poincaré information safely if it successfully resolves
-        if (poincareStats && poincareStats.qaReport) {
-            const qa = poincareStats.qaReport;
-            const noiseColor = qa.noiseCount > 0 ? '#d08770' : '#2ecc71';
-            const ectopicColor = qa.ectopicCount > 0 ? '#d08770' : '#2ecc71';
-
-            annotationText += `━━━━━━━━━━━━━━━<br>` +
-                `<b>Signal QA Report:</b><br>` +
-                `• Raw Beats Recieved: <b>${qa.rawLength}</b><br>` +
-                `<span style="color: ${noiseColor};">• Noise Ignored: <b>${qa.noiseCount}</b></span><br>` +
-                `<span style="color: ${ectopicColor};">• Ectopics Dropped: <b>${qa.ectopicCount}</b></span><br>`;
-        }
-
-        // Complete the block with your diagnostic indicator
-        annotationText += `━━━━━━━━━━━━━━━<br><span style="color:${statusColor}"><b>${statusText}</b></span>`;
-
-        statsAnnotation = [{
-            x: 0.98, y: 0.95, xref: 'paper', yref: 'paper',
-            text: annotationText,
-            align: 'left', showarrow: false,
-            bgcolor: 'rgba(46, 52, 64, 0.9)', bordercolor: statusColor,
-            borderwidth: 1.5, borderpad: 8,
-            font: { color: '#d8dee9', size: 11, family: 'monospace' }
-        }];
-    }
-
-    // finally creating the final object to pass into plotly
-    const maxRangeX = beatsToStack === 1 ? 450 : beatsToStack === 2 ? 1100 : 1800;
-    const overlayLayout = {
-        title: { text: `<b>Superimposed Cycles (${beatsToStack}x Beat Phase View)</b>`, font: { size: 16 } },
-        xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, maxRangeX], gridcolor: '#2e3440' },
-        yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
-        shapes: rrIntervalLines,
-        annotations: statsAnnotation,
-        plot_bgcolor: '#1c1e24', paper_bgcolor: '#1c1e24',
-        showlegend: true, legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
-        hovermode: 'closest'
-    };
-    // calling the plotly's API to finally do the printing
-    Plotly.newPlot('stacked-n-RR-beats-overlay-container', finalPlotTraces, overlayLayout);
-}
-
-
-
-function updateVerificationUiState(isVerified, savedSignature = "", stampedAt = "", isInitialLoad = false) {
-    const badge = document.getElementById("rubber-stamp-status-badge");
-    const btn = document.getElementById("rubber-stamp-btn");
-    const caption = document.getElementById("tuld-caption");
-
-    if (isVerified) {
-        // Splunk Rubber-Stamp badge is highlighted like the orientation-badge  
-        badge.innerText = "✓ GROUND TRUTH LOCKED";
-        badge.style.backgroundColor = "#1b5e20"; // Dark Emerald Background
-        badge.style.color = "#a5d6a7";           // Light crisp green text
-        badge.style.borderColor = "#2e7d32";
-
-        // Disable the main action button to show the work is finished
-        btn.innerText = "✓ Position Closed";
-        btn.style.backgroundColor = "#2f3542";     
-        btn.style.color = "#747d8c";
-        btn.style.borderColor = "#475266";
-        btn.style.cursor = "default";
-        btn.disabled = true; 
-
-        //Format the audit timestamp text cleanly for display
-        let formattedDate = "Unknown Time";
-
-        console.log(`stampedAt: ${stampedAt}`);
-
-        if (stampedAt) {
-            const dateObj = new Date(stampedAt);
-            
-            // CRITICAL GUARD: Only convert to ISO string if the date object is structurally valid
-            if (!isNaN(dateObj.getTime())) {
-                console.log("Its too complicated to explain tis here so we're just putting the if-clause above that returned 1, plus its JS so it won't hep even if we understand, its like Quantum Mechanics.")
-                formattedDate = dateObj.toISOString().replace('T', ' ').substring(0, 19);
-            } else {
-                console.warn("⚠️ Received unrecognizable timestamp format:", stampedAt);
-                formattedDate = "Malformed Timestamp";
+        // plotting the Scatter Points to the view 
+        for (const [key, cfg] of Object.entries(featureMap)) {
+            if (cfg.x.length > 0) {
+                finalPlotTraces.push({
+                    x: cfg.x, y: cfg.y, type: 'scatter', mode: 'markers', name: cfg.name,
+                    marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
+                    hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                });
             }
         }
 
-        // 4. Update the boardroom caption text to show the audit logs
-        caption.innerHTML = `STAMPED: <span style="color: #f1c40f;">${formattedDate} UTC</span> | CONFIG: ${savedSignature}`;
-        caption.style.color = "#a5d6a7";
-        caption.style.opacity = "1";
-
-
-        
-                //  DECOUPLING LOGIC: Only force the UI switches to move if this is a fresh record load pass
-        if (isInitialLoad) {
-            console.log("⚙️ Fresh record load detected. Aligning UI switches to historical ground truth.");
-            applySavedConfigToUiSwitches(savedSignature);
-        } else {
-            console.log("⚡ Manual update cycle or active session. Preserving operator switch states.");
-        }
-
-
-
-
-    } else {
-        // Reset the interface parameters back to cold unverified warning amber tracking mode
-        badge.innerText = "UNVERIFIED RAW SIGNAL";
-        badge.style.backgroundColor = "#2f3542";
-        badge.style.color = "#f2994a"; // Splunk Warning Amber
-        badge.style.borderColor = "#475266";
-
-        btn.innerText = "🔒 This Is It! Lock Configuration";
-        btn.style.backgroundColor = "#5cc24a";
-        btn.style.color = "#111111";
-        btn.style.borderColor = "#44a635";
-        btn.style.cursor = "pointer";
-        btn.disabled = false;
-
-        caption.innerText = 'Tuld: "This is it. Close it out. Sell it all today."';
-        caption.style.color = "#747d8c";
-        caption.style.opacity = "0.4";
-    }
-}
-
-//Update the controls on the webpage to update the changes in the switches
-function applySavedConfigToUiSwitches(signature) {
-    // Splits "currentScale:full-useFilter:false-CancelQRS:false-Orientation:Inversion Correction Applied"
-    const parts = signature.split("-");
-    if (parts.length < 4) return;
-    
-    // Extract the values behind the colons safely
-    const scaleValue = parts[0].split(":")[1];       // "full" or "small"
-    const filterValue = parts[1].split(":")[1];      // "true" or "false"
-    const qrsValue = parts[2].split(":")[1];         // "true" or "false"
-    const orientationValue = parts[3].split(":")[1]; // "Inversion Correction Applied", etc.
-
-    // Force your UI components to visually adapt dynamically
-    document.getElementById("scale-selector").value = scaleValue; 
-    document.getElementById("toggle-filter").checked = (filterValue === "true");
-    document.getElementById("toggle-cancel").checked = (qrsValue === "true");
-    
-    // Set your custom orientation status tracking value variables here as well...
-    console.log(`🤖 Dashboard auto-aligned to verified state matrix: Scale=${scaleValue}, Filter=${filterValue}`);
-}
-
- 
-async function checkRecordStampStatus(recordId, isInitialLoad = false) { // Pass it down from the event
-    try {
-        const response = await fetch(`/api/v1/splunk/get-record-meta?record_id=${encodeURIComponent(recordId)}`, {
-            method: 'GET'
-        });
-        const result = await response.json();
-        
-        if (result.status === "Success") {
-            if (result.is_verified) {
-                // Pass true/false downwards into the UI updater
-                //updateVerificationUiState(true, result.verified_signature, result.stamped_at, false);
-    
-                updateVerificationUiState(true, result.verified_signature, result.stamped_at, isInitialLoad);
-
-
-            } else {
-                updateVerificationUiState(false, null, null, isInitialLoad);
+        // R-R interval horizontal lines 
+        const rrIntervalLines = [];
+        featureMap.R.x.forEach((r2OffsetMs, i) => {
+            if (r2OffsetMs > 0) {
+                rrIntervalLines.push({
+                    type: 'line', x0: 0, y0: featureMap.R.y[i], x1: r2OffsetMs, y1: featureMap.R.y[i],
+                    line: { color: 'rgba(235, 123, 43, 0.30)', width: 1 }
+                });
             }
-        }
-    } catch (err) {
-        console.error("🚨 Failed to fetch record metadata:", err);
-    }
-}
-
-
-async function executeTuldRubberStamp(recordId, completedConfigString) {
-    try {
-        // Changed URL to target the dedicated writer endpoint
-        const response = await fetch('/api/v1/splunk/rubber-stamp-record', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                record_id: recordId,
-                verified_signature: completedConfigString
-            })
         });
-        const result = await response.json();
-        
-        if (result.status === "Success") {
-            // Turn your Splunk dashboard badge green instantly
-            updateVerificationUiState(true, completedConfigString, new Date().toISOString());
-            console.log(`🔒 [SYSTEM] Ground truth secured for ${recordId}. Position closed.`);
-        } else {
-            console.error("❌ Server rejected stamp operation:", result.error);
+
+        // 1. Fetch Time Domain Stats
+        const stats = await getOrComputeMetric(
+            serverPayload.record_id,
+            `${currentConfig}-time_domain_analytics_object`,  // we're getting the general stats values such as 
+            "1.0.0",
+            () => calculateCardiacAnalytics(featureMap.R.x)
+        );
+
+        // 2. Fetch Poincaré and QA Report Stats using the exact same strategy
+        const poincareStats = await getOrComputeMetric(
+            serverPayload.record_id,
+            `${currentConfig}-poincare_analytics_object`,
+            "1.0.0",
+            () => calculatePoincareAnalytics(featureMap.R.x) // Assumes this uses your R peak data
+        );
+
+        console.log("getOrComputeStatistic TimeDomain:", stats);
+        console.log("getOrComputeStatistic Poincare:", poincareStats);
+
+        let statsAnnotation = [];
+
+        if (stats) {
+            const isAFib = stats.sdnn > 50 || stats.rmssd > 60;
+            const statusColor = isAFib ? '#e74c3c' : '#2ecc71';
+            const statusText = isAFib
+                ? '☠️ CHAOTIC ERA Sir Francis Bacon<br>: High SD/RMSSD (Potentially AFib)'
+                : '💖 STABLE ERA Dr. Copernicus<br>: Low Variance (Normal Sinus)';
+
+            // Primary base text block 
+            let annotationText = `<b>R-R Analytics Summary</b><br>` +
+                `━━━━━━━━━━━━━━━<br>` +
+                `Mean RR: <b>${stats.mean.toFixed(1)} ms</b><br>` +
+                `Mode RR: <b>${stats.mode.toFixed(0)} ms</b><br>` +
+                `RMSSD (Local): <span style="color:${statusColor}"><b>${stats.rmssd.toFixed(1)} ms</b></span><br>` +
+                `pNN50 Index: <span style="color:${statusColor}"><b>${stats.pnn50.toFixed(1)}%</b></span><br>` +
+                `Total Beats: <b>${stats.total}</b><br>`;
+
+            // Append the QA/Poincaré information safely if it successfully resolves
+            if (poincareStats && poincareStats.qaReport) {
+                const qa = poincareStats.qaReport;
+                const noiseColor = qa.noiseCount > 0 ? '#d08770' : '#2ecc71';
+                const ectopicColor = qa.ectopicCount > 0 ? '#d08770' : '#2ecc71';
+
+                annotationText += `━━━━━━━━━━━━━━━<br>` +
+                    `<b>Signal QA Report:</b><br>` +
+                    `• Raw Beats Recieved: <b>${qa.rawLength}</b><br>` +
+                    `<span style="color: ${noiseColor};">• Noise Ignored: <b>${qa.noiseCount}</b></span><br>` +
+                    `<span style="color: ${ectopicColor};">• Ectopics Dropped: <b>${qa.ectopicCount}</b></span><br>`;
+            }
+
+            // Complete the block with your diagnostic indicator
+            annotationText += `━━━━━━━━━━━━━━━<br><span style="color:${statusColor}"><b>${statusText}</b></span>`;
+
+            statsAnnotation = [{
+                x: 0.98, y: 0.95, xref: 'paper', yref: 'paper',
+                text: annotationText,
+                align: 'left', showarrow: false,
+                bgcolor: 'rgba(46, 52, 64, 0.9)', bordercolor: statusColor,
+                borderwidth: 1.5, borderpad: 8,
+                font: { color: '#d8dee9', size: 11, family: 'monospace' }
+            }];
         }
-    } catch (err) {
-        console.error("🚨 Critical database write lock exception:", err);
+
+        // finally creating the final object to pass into plotly
+        const maxRangeX = beatsToStack === 1 ? 450 : beatsToStack === 2 ? 1100 : 1800;
+        const overlayLayout = {
+            title: { text: `<b>Superimposed Cycles (${beatsToStack}x Beat Phase View)</b>`, font: { size: 16 } },
+            xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, maxRangeX], gridcolor: '#2e3440' },
+            yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+            shapes: rrIntervalLines,
+            annotations: statsAnnotation,
+            plot_bgcolor: '#1c1e24', paper_bgcolor: '#1c1e24',
+            showlegend: true, legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+            hovermode: 'closest'
+        };
+        // calling the plotly's API to finally do the printing
+        Plotly.newPlot('stacked-n-RR-beats-overlay-container', finalPlotTraces, overlayLayout);
     }
-}
+
+
+
+    function updateVerificationUiState(isVerified, savedSignature = "", stampedAt = "", isInitialLoad = false) {
+        const badge = document.getElementById("rubber-stamp-status-badge");
+        const btn = document.getElementById("rubber-stamp-btn");
+        const caption = document.getElementById("tuld-caption");
+
+        if (isVerified) {
+            // Splunk Rubber-Stamp badge is highlighted like the orientation-badge  
+            badge.innerText = "✓ GROUND TRUTH LOCKED";
+            badge.style.backgroundColor = "#1b5e20"; // Dark Emerald Background
+            badge.style.color = "#a5d6a7";           // Light crisp green text
+            badge.style.borderColor = "#2e7d32";
+
+            // Disable the main action button to show the work is finished
+            btn.innerText = "✓ Position Closed";
+            btn.style.backgroundColor = "#2f3542";
+            btn.style.color = "#747d8c";
+            btn.style.borderColor = "#475266";
+            btn.style.cursor = "default";
+            btn.disabled = true;
+
+            //Format the audit timestamp text cleanly for display
+            let formattedDate = "Unknown Time";
+
+            console.log(`stampedAt: ${stampedAt}`);
+
+            if (stampedAt) {
+                const dateObj = new Date(stampedAt);
+
+                // CRITICAL GUARD: Only convert to ISO string if the date object is structurally valid
+                if (!isNaN(dateObj.getTime())) {
+                    console.log("Its too complicated to explain tis here so we're just putting the if-clause above that returned 1, plus its JS so it won't hep even if we understand, its like Quantum Mechanics.")
+                    formattedDate = dateObj.toISOString().replace('T', ' ').substring(0, 19);
+                } else {
+                    console.warn("⚠️ Received unrecognizable timestamp format:", stampedAt);
+                    formattedDate = "Malformed Timestamp";
+                }
+            }
+
+            // 4. Update the boardroom caption text to show the audit logs
+            caption.innerHTML = `STAMPED: <span style="color: #f1c40f;">${formattedDate} UTC</span> | CONFIG: ${savedSignature}`;
+            caption.style.color = "#a5d6a7";
+            caption.style.opacity = "1";
+
+
+
+            //  DECOUPLING LOGIC: Only force the UI switches to move if this is a fresh record load pass
+            if (isInitialLoad) {
+                console.log("⚙️ Fresh record load detected. Aligning UI switches to historical ground truth.");
+                applySavedConfigToUiSwitches(savedSignature);
+            } else {
+                console.log("⚡ Manual update cycle or active session. Preserving operator switch states.");
+            }
+
+
+
+
+        } else {
+            // Reset the interface parameters back to cold unverified warning amber tracking mode
+            badge.innerText = "UNVERIFIED RAW SIGNAL";
+            badge.style.backgroundColor = "#2f3542";
+            badge.style.color = "#f2994a"; // Splunk Warning Amber
+            badge.style.borderColor = "#475266";
+
+            btn.innerText = "🔒 This Is It! Lock Configuration";
+            btn.style.backgroundColor = "#5cc24a";
+            btn.style.color = "#111111";
+            btn.style.borderColor = "#44a635";
+            btn.style.cursor = "pointer";
+            btn.disabled = false;
+
+            caption.innerText = 'Tuld: "This is it. Close it out. Sell it all today."';
+            caption.style.color = "#747d8c";
+            caption.style.opacity = "0.4";
+        }
+    }
+
+    //Update the controls on the webpage to update the changes in the switches
+    function applySavedConfigToUiSwitches(signature) {
+        // Splits "currentScale:full-useFilter:false-CancelQRS:false-Orientation:Inversion Correction Applied"
+        const parts = signature.split("-");
+        if (parts.length < 4) return;
+
+        // Extract the values behind the colons safely
+        const scaleValue = parts[0].split(":")[1];       // "full" or "small"
+        const filterValue = parts[1].split(":")[1];      // "true" or "false"
+        const qrsValue = parts[2].split(":")[1];         // "true" or "false"
+        const orientationValue = parts[3].split(":")[1]; // "Inversion Correction Applied", etc.
+
+        // Force your UI components to visually adapt dynamically
+        document.getElementById("scale-selector").value = scaleValue;
+        document.getElementById("toggle-filter").checked = (filterValue === "true");
+        document.getElementById("toggle-cancel").checked = (qrsValue === "true");
+
+        // Set your custom orientation status tracking value variables here as well...
+        console.log(`🤖 Dashboard auto-aligned to verified state matrix: Scale=${scaleValue}, Filter=${filterValue}`);
+    }
+
+
+    async function checkRecordStampStatus(recordId, isInitialLoad = false) { // Pass it down from the event
+        try {
+            const response = await fetch(`/api/v1/splunk/get-record-meta?record_id=${encodeURIComponent(recordId)}`, {
+                method: 'GET'
+            });
+            const result = await response.json();
+
+            if (result.status === "Success") {
+                if (result.is_verified) {
+                    // Pass true/false downwards into the UI updater
+                    //updateVerificationUiState(true, result.verified_signature, result.stamped_at, false);
+
+                    updateVerificationUiState(true, result.verified_signature, result.stamped_at, isInitialLoad);
+
+
+                } else {
+                    updateVerificationUiState(false, null, null, isInitialLoad);
+                }
+            }
+        } catch (err) {
+            console.error("🚨 Failed to fetch record metadata:", err);
+        }
+    }
+
+
+    async function executeTuldRubberStamp(recordId, completedConfigString) {
+        try {
+            // Changed URL to target the dedicated writer endpoint
+            const response = await fetch('/api/v1/splunk/rubber-stamp-record', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    record_id: recordId,
+                    verified_signature: completedConfigString
+                })
+            });
+            const result = await response.json();
+
+            if (result.status === "Success") {
+                // Turn your Splunk dashboard badge green instantly
+                updateVerificationUiState(true, completedConfigString, new Date().toISOString());
+                console.log(`🔒 [SYSTEM] Ground truth secured for ${recordId}. Position closed.`);
+            } else {
+                console.error("❌ Server rejected stamp operation:", result.error);
+            }
+        } catch (err) {
+            console.error("🚨 Critical database write lock exception:", err);
+        }
+    }
 
 
 
@@ -2517,7 +2539,7 @@ async function executeTuldRubberStamp(recordId, completedConfigString) {
                 console.log("payload received:", payload)
 
                 let current_config = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${payload.orientation_status}`
- 
+
                 //***************** TILL THIS POINT WE HAVE SENT THE REQEUST, RECEIVED THE RESPONSE AND CONVERTED THE PAYLOAD INTO JSON *****************
 
 
@@ -2526,33 +2548,33 @@ async function executeTuldRubberStamp(recordId, completedConfigString) {
 
 
                 checkRecordStampStatus(payload.record_id, true);
-//                window.removeEventListener('tuldLockRequested', handleTuldEventTrigger);   // first clearing any stale handlers if present
+                //                window.removeEventListener('tuldLockRequested', handleTuldEventTrigger);   // first clearing any stale handlers if present
 
 
-//                async function handleTuldEventTrigger(e) {
-//                    // Gather your active checkbox and slider configuration states on the spot
-//                    const currentScale    = document.getElementById("scale-selector").value;
-//                    const useFilter       = document.getElementById('toggle-filter').checked;
-//                    const useCancel       = document.getElementById('toggle-cancel').checked;
-//                    const orientation     = document.getElementById('orientation-status-badge');
-//                    const activeRecordId  = document.getElementById('record-selector')
-//                                
-//                    // Compile your unique hyphenated signature string
-//                    const configKey = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${orientation}`;
-//                                
-//                    console.log(`📡 [EVENT CAPTURED] Lock request verified for ${activeRecordId}. Launching save...`);
-//                                
-//                    // Pass the parameters straight down to the execution script!
-//                    await executeTuldRubberStamp(activeRecordId, configKey);
-//                }
-            
-//                // Bind the listener to watch the browser window for the button's event dispatch
-//                window.addEventListener('tuldLockRequested', handleTuldEventTrigger);
+                //                async function handleTuldEventTrigger(e) {
+                //                    // Gather your active checkbox and slider configuration states on the spot
+                //                    const currentScale    = document.getElementById("scale-selector").value;
+                //                    const useFilter       = document.getElementById('toggle-filter').checked;
+                //                    const useCancel       = document.getElementById('toggle-cancel').checked;
+                //                    const orientation     = document.getElementById('orientation-status-badge');
+                //                    const activeRecordId  = document.getElementById('record-selector')
+                //                                
+                //                    // Compile your unique hyphenated signature string
+                //                    const configKey = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${orientation}`;
+                //                                
+                //                    console.log(`📡 [EVENT CAPTURED] Lock request verified for ${activeRecordId}. Launching save...`);
+                //                                
+                //                    // Pass the parameters straight down to the execution script!
+                //                    await executeTuldRubberStamp(activeRecordId, configKey);
+                //                }
+
+                //                // Bind the listener to watch the browser window for the button's event dispatch
+                //                window.addEventListener('tuldLockRequested', handleTuldEventTrigger);
 
 
 
 
-                
+
                 //***************** BELOW THIS POINT, EVERYTHING HAPPENS IN THE BROWSER ON THE CLIENT SIDE  *****************
                 const badge = document.getElementById('orientation-status-badge');
                 if (badge && payload.orientation_status) {
@@ -2698,59 +2720,59 @@ async function executeTuldRubberStamp(recordId, completedConfigString) {
 
                 // Render Graph 3 (Poincaré Scatter Mapping)
                 // we converted the logic into a separate function. The main loop is growing too large, hence we had to reduce that
-                 
+
 
                 renderPoincareGraph(payload, usePoincare, current_config);
 
-                
-               //if (usePoincare && payload.poincare && payload.poincare.x.length > 0) {
-               //    const scatterTrace = {
-               //        x: payload.poincare.x, y: payload.poincare.y,
-               //        type: 'scatter', mode: 'markers', name: 'Interval Matrix',
-               //        marker: { color: '#eb7b2b', size: 8, opacity: 0.7 }
-               //    };
-               //    const maxVal = Math.max(...payload.poincare.x, ...payload.poincare.y, 1100);
-               //    const minVal = Math.min(...payload.poincare.x, ...payload.poincare.y, 400);
-               //    const identityLine = { // this represents the y=x line in the poincare plot
-               //        x: [minVal, maxVal], y: [minVal, maxVal],
-               //        type: 'scatter', mode: 'lines', name: 'Identity (y=x)',
-               //        line: { color: '#4c566a', width: 1, dash: 'dash' }, hoverinfo: 'none'
-               //    };
-               //    const poincareLayout = {
-               //        paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
-               //        font: { color: '#f2f4f8', family: 'monospace' },
-               //        title: `| stats Poincaré  map calculated=true`,
-               //        xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
-               //        yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
 
-               //        legend: {
-               //            orientation: 'h',
-               //            y: -0.20, // by trial and error, best legend position y has been -0.2 or 20 %         
-               //            x: 0.0,
-               //            xanchor: 'left',
-               //            yanchor: 'top'
-               //        },
-               //        //                   annotations: [{
-               //        //                       text: '',
-               //        //                       xref: 'paper',
-               //        //                       yref: 'paper',
-               //        //                       x: 0.0,
-               //        //                       y: -0.30,  // by trial and erro, best annotation box positon x has been -0.4 or 40%
-               //        //                       xanchor: 'left',
-               //        //                       yanchor: 'top',
-               //        //                       showarrow: false,
-               //        //                       font: { family: 'monospace', size: 11, color: '#4c566a' }
-               //        //                   }],
+                //if (usePoincare && payload.poincare && payload.poincare.x.length > 0) {
+                //    const scatterTrace = {
+                //        x: payload.poincare.x, y: payload.poincare.y,
+                //        type: 'scatter', mode: 'markers', name: 'Interval Matrix',
+                //        marker: { color: '#eb7b2b', size: 8, opacity: 0.7 }
+                //    };
+                //    const maxVal = Math.max(...payload.poincare.x, ...payload.poincare.y, 1100);
+                //    const minVal = Math.min(...payload.poincare.x, ...payload.poincare.y, 400);
+                //    const identityLine = { // this represents the y=x line in the poincare plot
+                //        x: [minVal, maxVal], y: [minVal, maxVal],
+                //        type: 'scatter', mode: 'lines', name: 'Identity (y=x)',
+                //        line: { color: '#4c566a', width: 1, dash: 'dash' }, hoverinfo: 'none'
+                //    };
+                //    const poincareLayout = {
+                //        paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
+                //        font: { color: '#f2f4f8', family: 'monospace' },
+                //        title: `| stats Poincaré  map calculated=true`,
+                //        xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
+                //        yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
 
-               //        //                   //  FORCE THE SAME BUFFER ZONE SO IT NEVER CLIPS OUT
-               //        //                   margin: {
-               //        //                       l: 50, r: 30,
-               //        //                       t: 100,
-               //        //                       b: 100
-               //        //                   }
-               //    };
-               //    Plotly.newPlot('poincare-container', [scatterTrace, identityLine], poincareLayout);
-               //}
+                //        legend: {
+                //            orientation: 'h',
+                //            y: -0.20, // by trial and error, best legend position y has been -0.2 or 20 %         
+                //            x: 0.0,
+                //            xanchor: 'left',
+                //            yanchor: 'top'
+                //        },
+                //        //                   annotations: [{
+                //        //                       text: '',
+                //        //                       xref: 'paper',
+                //        //                       yref: 'paper',
+                //        //                       x: 0.0,
+                //        //                       y: -0.30,  // by trial and erro, best annotation box positon x has been -0.4 or 40%
+                //        //                       xanchor: 'left',
+                //        //                       yanchor: 'top',
+                //        //                       showarrow: false,
+                //        //                       font: { family: 'monospace', size: 11, color: '#4c566a' }
+                //        //                   }],
+
+                //        //                   //  FORCE THE SAME BUFFER ZONE SO IT NEVER CLIPS OUT
+                //        //                   margin: {
+                //        //                       l: 50, r: 30,
+                //        //                       t: 100,
+                //        //                       b: 100
+                //        //                   }
+                //    };
+                //    Plotly.newPlot('poincare-container', [scatterTrace, identityLine], poincareLayout);
+                //}
 
                 // Render Graph 4 (Wavelet decomposition plot)
                 if (useWavelet && payload.wavelets && Object.keys(payload.wavelets).length > 0) {
@@ -3113,48 +3135,48 @@ async function executeTuldRubberStamp(recordId, completedConfigString) {
     document.addEventListener("DOMContentLoaded", () => {
         updateSampleDropdown();
         updatePeakDetectionDropdown();
-    
- 
 
-// Placing the button's event listener setup inside DOMContentLoaded ensures execution safety.
-// It guarantees the browser completes its HTML parsing pass and builds the elements in memory before JavaScript looks for them. 
-// If we ran this setup code raw in the script file without waiting, it would execute instantly, grab a handful of null values, and crash before the page even finishes rendering.
-// This architectural checkpoint ensures all UI nodes are fully registered in RAM, preventing a critical runtime exception—and saving Tuld from another margin call.
 
-      const stampButton = document.getElementById("rubber-stamp-btn");
-    if (stampButton) {
-        stampButton.addEventListener("click", async () => {
-            // Get the current record ID 
-            const currentRecordId = document.getElementById('record-selector').value;
-            
-            // getting the signature of the current confguraton
-            const currentScale    = document.getElementById("scale-selector").value;
-            const useFilter       = document.getElementById('toggle-filter').checked;
-            const useCancel       = document.getElementById('toggle-cancel').checked;
-            const orientation     = document.getElementById('orientation-status-badge');
-            const orientationValue = orientation ? orientation.textContent.trim() : "Unknown";
-           
-            const current_config = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${orientationValue}`
 
- 
-            if (!currentRecordId) {
-                alert("❌ Please select a valid record first, mate");
-                return;
-            }
+        // Placing the button's event listener setup inside DOMContentLoaded ensures execution safety.
+        // It guarantees the browser completes its HTML parsing pass and builds the elements in memory before JavaScript looks for them. 
+        // If we ran this setup code raw in the script file without waiting, it would execute instantly, grab a handful of null values, and crash before the page even finishes rendering.
+        // This architectural checkpoint ensures all UI nodes are fully registered in RAM, preventing a critical runtime exception—and saving Tuld from another margin call.
 
-            // Disable button briefly to prevent double-submitting during disk IO
-            stampButton.disabled = true;
+        const stampButton = document.getElementById("rubber-stamp-btn");
+        if (stampButton) {
+            stampButton.addEventListener("click", async () => {
+                // Get the current record ID 
+                const currentRecordId = document.getElementById('record-selector').value;
 
-            // Trigger the POST request to Flask
-            await executeTuldRubberStamp(currentRecordId, current_config);
+                // getting the signature of the current confguraton
+                const currentScale = document.getElementById("scale-selector").value;
+                const useFilter = document.getElementById('toggle-filter').checked;
+                const useCancel = document.getElementById('toggle-cancel').checked;
+                const orientation = document.getElementById('orientation-status-badge');
+                const orientationValue = orientation ? orientation.textContent.trim() : "Unknown";
 
-            // Re-enable the button
-            stampButton.disabled = false;
-        });
+                const current_config = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${orientationValue}`
 
-    }
 
-    
-    
+                if (!currentRecordId) {
+                    alert("❌ Please select a valid record first, mate");
+                    return;
+                }
+
+                // Disable button briefly to prevent double-submitting during disk IO
+                stampButton.disabled = true;
+
+                // Trigger the POST request to Flask
+                await executeTuldRubberStamp(currentRecordId, current_config);
+
+                // Re-enable the button
+                stampButton.disabled = false;
+            });
+
+        }
+
+
+
     });
 </script>
