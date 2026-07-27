@@ -426,7 +426,8 @@
             <label for="toggle-manual-flip" style="color: #f2994a; font-weight: bold;">| Verify This Configuration</label>
         </div>
         -->
-        <button id="rubber-stamp-btn" older_code_onclick="lockThisIsItConfiguration()"
+        <button id="rubber-stamp-btn" 
+            older_code_onclick="lockThisIsItConfiguration()"
             old_onclick="window.dispatchEvent(new CustomEvent('tuldLockRequested'))"
             style="background-color: #5cc24a; color: #111111; border: 1px solid #44a635; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px;"
             onmouseover="this.style.backgroundColor='#4cb03b'; this.style.boxShadow='0 0 4px rgba(92,194,74,0.4)';"
@@ -442,6 +443,45 @@
 
     </div>
 
+
+
+    <div class="panel control-group" style="margin-top: 15px;">
+    <!-- RECORD NAVIGATION CONTROLS -->
+    <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">Record NAVIGATION CONTROLS</label>
+
+    <!-- Unified Current Record Status Badge -->
+    <div id="record-navigation-status-badge"
+        style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block; margin-right: 8px;">
+        Viewing Record: #---
+    </div>
+
+    <!-- PREVIOUS Record BUTTON -->
+    <button id="prev-Record-btn" 
+        onclick="window.dispatchEvent(new CustomEvent('navPrevRecordRequested'))"
+        style="background-color: #2e3440; color: #d8dee9; border: 1px solid #4c566a; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 6px;"
+        onmouseover="this.style.backgroundColor='#3b4252'; this.style.borderColor='#5e81ac';"
+        onmouseout="this.style.backgroundColor='#2e3440'; this.style.borderColor='#4c566a';">
+        ◀ Prev Record
+    </button>
+
+    <!-- NEXT Record BUTTON -->
+    <button id="next-Record-btn" 
+        onclick="window.dispatchEvent(new CustomEvent('navNextRecordRequested'))"
+        style="background-color: #5cc24a; color: #111111; border: 1px solid #44a635; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px;"
+        onmouseover="this.style.backgroundColor='#4cb03b'; this.style.boxShadow='0 0 4px rgba(92,194,74,0.4)';"
+        onmouseout="this.style.backgroundColor='#5cc24a'; this.style.boxShadow='none';">
+        Next Record ▶
+    </button>
+
+    <!-- 💰 THE TULD NAVIGATION CAPTION -->
+    <span id="tuld-nav-caption"
+        style="font-size: 9px; font-family: monospace; color: #747d8c; margin-top: 4px; padding-left: 2px; text-transform: uppercase; letter-spacing: 0.3px; opacity: 0.4; transition: opacity 0.15s ease-in-out; display: block;">
+        Protocol: Review sequence. Maintain alignment. Run pipeline.
+    </span>
+</div>
+
+
+    
     <div class="panel">
         <!-- 
         Added citation directly on beneath the plot - Makes design simpler-->
@@ -1745,7 +1785,7 @@
             const result = await response.json();
 
             if (result.status === "Success") {
-                // Turn your Splunk dashboard badge green instantly
+                // Turn On the Splunk dashboard badge green instantly
                 updateVerificationUiState(true, completedConfigString, new Date().toISOString());
                 console.log(`🔒 [SYSTEM] Ground truth secured for ${recordId}. Position closed.`);
             } else {
@@ -1783,6 +1823,11 @@
         const useWavelet = document.getElementById('toggle-wavelet').checked;
         const forceManualFlip = document.getElementById('toggle-manual-flip').checked;
         // const usePanTompkinsWithNk2 = document.getElementById('pan_tompkins_using_nk2').checked;
+        
+        const recordBadge = document.getElementById("record-navigation-status-badge");
+        console.log(`record-navigation-status-badge updated to: ${recordBadge.innerText}`);
+        document.getElementById("record-navigation-status-badge").innerText = recordId;
+
 
         const peakDetectionMethod = document.getElementById('Peak-Detection-Selector').value;
         console.log("Peak Detection method passed to the Controller : ", peakDetectionMethod) // ohh yes, we're still using the classic Javascript debugging Technique
@@ -2454,8 +2499,7 @@
         updateSampleDropdown();
         updatePeakDetectionDropdown();
 
-
-
+        
         // Placing the button's event listener setup inside DOMContentLoaded ensures execution safety.
         // It guarantees the browser completes its HTML parsing pass and builds the elements in memory before JavaScript looks for them. 
         // If we ran this setup code raw in the script file without waiting, it would execute instantly, grab a handful of null values, and crash before the page even finishes rendering.
@@ -2464,9 +2508,7 @@
         const stampButton = document.getElementById("rubber-stamp-btn");
         if (stampButton) {
             stampButton.addEventListener("click", async () => {
-                // Get the current record ID 
-                const currentRecordId = document.getElementById('record-selector').value;
-
+ 
                 // getting the signature of the current confguraton
                 const currentScale = document.getElementById("scale-selector").value;
                 const useFilter = document.getElementById('toggle-filter').checked;
@@ -2477,11 +2519,14 @@
                 const current_config = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${orientationValue}`
 
 
+                
+
                 if (!currentRecordId) {
                     alert("❌ Please select a valid record first, mate");
                     return;
                 }
 
+                console.log("got Past current record check...")
                 // Disable button briefly to prevent double-submitting during disk IO
                 stampButton.disabled = true;
 
@@ -2490,9 +2535,96 @@
 
                 // Re-enable the button
                 stampButton.disabled = false;
+
             });
+ 
+
 
         }
+ 
+     // Helper function to shift the dropdown and trigger the pipeline
+    function navigateRecord(direction) {
+        const recordSelector = document.getElementById('record-selector');
+        if (!recordSelector) {
+            console.error("Record selector element not found.");
+            return;
+        }
+
+        // 1. Get the currently selected index
+        const currentIndex = recordSelector.selectedIndex;
+        const totalOptions = recordSelector.options.length;
+
+        // Verify we actually have options to navigate
+        if (totalOptions === 0) {
+            alert("❌ No records available to navigate.");
+            return;
+        }
+
+        let newIndex = currentIndex;
+
+        // 2. Calculate the next or previous index
+        if (direction === 'next') {
+            newIndex = currentIndex + 1;
+            // Prevent going past the last item
+            if (newIndex >= totalOptions) {
+                alert("ℹ️ You are already on the last record.");
+                return;
+            }
+        } else if (direction === 'prev') {
+            newIndex = currentIndex - 1;
+            // Prevent going past the first item
+            if (newIndex < 0) {
+                alert("ℹ️ You are already on the first record.");
+                return;
+            }
+        }
+
+        // 3. Update the dropdown selection to the new value
+        recordSelector.selectedIndex = newIndex;
+
+        // 4. Update your text badge immediately to show progress
+        const navBadge = document.getElementById("report-navigation-status-badge");
+        if (navBadge) {
+            navBadge.innerText = `Viewing Report: #${recordSelector.value}`;
+        }
+
+
+            console.log(`Loading pipeline for new record: ${recordSelector.value}`);
+            loadEcgPipeline(); 
+ 
+    }
+
+    //  PREVIOUS REPORT BUTTON LOGIC
+    const prevButton = document.getElementById("prev-Record-btn");
+    if (prevButton) {
+        prevButton.addEventListener("click", () => {
+            prevButton.disabled = true;
+            
+            // Execute the navigation logic
+            navigateRecord('prev');
+            
+            // Optional global event dispatch if other systems are listening
+            window.dispatchEvent(new CustomEvent('navPrevReportRequested'));
+            
+            prevButton.disabled = false;
+        });
+    }
+
+    //  NEXT REPORT BUTTON LOGIC
+    const nextButton = document.getElementById("next-Record-btn");
+    if (nextButton) {
+        nextButton.addEventListener("click", () => {
+            nextButton.disabled = true;
+            
+            // Execute the navigation logic
+            navigateRecord('next');
+            
+            // Optional global event dispatch if other systems are listening
+            window.dispatchEvent(new CustomEvent('navNextReportRequested'));
+            
+            nextButton.disabled = false;
+        });
+    }
 
 
 
