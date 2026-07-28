@@ -426,8 +426,7 @@
             <label for="toggle-manual-flip" style="color: #f2994a; font-weight: bold;">| Verify This Configuration</label>
         </div>
         -->
-        <button id="rubber-stamp-btn" 
-            older_code_onclick="lockThisIsItConfiguration()"
+        <button id="rubber-stamp-btn" older_code_onclick="lockThisIsItConfiguration()"
             old_onclick="window.dispatchEvent(new CustomEvent('tuldLockRequested'))"
             style="background-color: #5cc24a; color: #111111; border: 1px solid #44a635; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px;"
             onmouseover="this.style.backgroundColor='#4cb03b'; this.style.boxShadow='0 0 4px rgba(92,194,74,0.4)';"
@@ -446,42 +445,40 @@
 
 
     <div class="panel control-group" style="margin-top: 15px;">
-    <!-- RECORD NAVIGATION CONTROLS -->
-    <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">Record NAVIGATION CONTROLS</label>
+        <!-- RECORD NAVIGATION CONTROLS -->
+        <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">Record NAVIGATION CONTROLS</label>
 
-    <!-- Unified Current Record Status Badge -->
-    <div id="record-navigation-status-badge"
-        style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block; margin-right: 8px;">
-        Viewing Record: #---
+        <!-- Unified Current Record Status Badge -->
+        <div id="record-navigation-status-badge"
+            style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block; margin-right: 8px;">
+            Viewing Record: #---
+        </div>
+
+        <!-- PREVIOUS Record BUTTON -->
+        <button id="prev-Record-btn" onclick="window.dispatchEvent(new CustomEvent('navPrevRecordRequested'))"
+            style="background-color: #2e3440; color: #d8dee9; border: 1px solid #4c566a; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 6px;"
+            onmouseover="this.style.backgroundColor='#3b4252'; this.style.borderColor='#5e81ac';"
+            onmouseout="this.style.backgroundColor='#2e3440'; this.style.borderColor='#4c566a';">
+            ◀ Prev Record
+        </button>
+
+        <!-- NEXT Record BUTTON -->
+        <button id="next-Record-btn" onclick="window.dispatchEvent(new CustomEvent('navNextRecordRequested'))"
+            style="background-color: #5cc24a; color: #111111; border: 1px solid #44a635; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px;"
+            onmouseover="this.style.backgroundColor='#4cb03b'; this.style.boxShadow='0 0 4px rgba(92,194,74,0.4)';"
+            onmouseout="this.style.backgroundColor='#5cc24a'; this.style.boxShadow='none';">
+            Next Record ▶
+        </button>
+
+        <!-- 💰 THE TULD NAVIGATION CAPTION -->
+        <span id="tuld-nav-caption"
+            style="font-size: 9px; font-family: monospace; color: #747d8c; margin-top: 4px; padding-left: 2px; text-transform: uppercase; letter-spacing: 0.3px; opacity: 0.4; transition: opacity 0.15s ease-in-out; display: block;">
+            Protocol: Review sequence. Maintain alignment. Run pipeline.
+        </span>
     </div>
 
-    <!-- PREVIOUS Record BUTTON -->
-    <button id="prev-Record-btn" 
-        onclick="window.dispatchEvent(new CustomEvent('navPrevRecordRequested'))"
-        style="background-color: #2e3440; color: #d8dee9; border: 1px solid #4c566a; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 6px;"
-        onmouseover="this.style.backgroundColor='#3b4252'; this.style.borderColor='#5e81ac';"
-        onmouseout="this.style.backgroundColor='#2e3440'; this.style.borderColor='#4c566a';">
-        ◀ Prev Record
-    </button>
-
-    <!-- NEXT Record BUTTON -->
-    <button id="next-Record-btn" 
-        onclick="window.dispatchEvent(new CustomEvent('navNextRecordRequested'))"
-        style="background-color: #5cc24a; color: #111111; border: 1px solid #44a635; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px;"
-        onmouseover="this.style.backgroundColor='#4cb03b'; this.style.boxShadow='0 0 4px rgba(92,194,74,0.4)';"
-        onmouseout="this.style.backgroundColor='#5cc24a'; this.style.boxShadow='none';">
-        Next Record ▶
-    </button>
-
-    <!-- 💰 THE TULD NAVIGATION CAPTION -->
-    <span id="tuld-nav-caption"
-        style="font-size: 9px; font-family: monospace; color: #747d8c; margin-top: 4px; padding-left: 2px; text-transform: uppercase; letter-spacing: 0.3px; opacity: 0.4; transition: opacity 0.15s ease-in-out; display: block;">
-        Protocol: Review sequence. Maintain alignment. Run pipeline.
-    </span>
-</div>
 
 
-    
     <div class="panel">
         <!-- 
         Added citation directly on beneath the plot - Makes design simpler-->
@@ -630,7 +627,7 @@
      * Pulls matching sample IDs from the Flask registry slice endpoint
      * and rebuilds the RECORDING selector automatically on modification.
      */
-    function updateSampleDropdown() {
+    function updateSampleDropdown_() {
         const chosenClass = document.getElementById('class-selector').value;
 
         // hardcoded URL
@@ -660,6 +657,66 @@
             })
             .catch(err => console.error("Error compilation failing on registry slice:", err));
     }
+
+
+let currentRecordOffset = 0; 
+const RECORDS_PER_BATCH = 50;
+let isRecordLoading = false; // Flag to prevent accidental double-fetching
+
+function updateSampleDropdown(isAppending = false) {
+    if (isRecordLoading) return; // Guard clause to prevent spamming requests
+    isRecordLoading = true;
+
+    const chosenClass = document.getElementById('class-selector').value;
+    const recordMenu = document.getElementById('record-selector');
+
+    // 1. Reset or advance offset tracker
+    if (!isAppending) {
+        currentRecordOffset = 0;
+        recordMenu.innerHTML = ""; // Wipe previous entries cleanly
+    }
+
+    const registryUrl = `/api/v1/splunk/registry?class=${chosenClass}&limit=${RECORDS_PER_BATCH}&offset=${currentRecordOffset}`;
+
+    fetch(registryUrl)
+        .then(res => res.json())
+        .then(payload => {
+            if (payload.samples.length === 0) {
+                isRecordLoading = false;
+                return; // Nothing left to load
+            }
+
+            // Record the current selected index before adding new options
+            const originalSelectedIndex = recordMenu.selectedIndex;
+
+            // 2. Inject the new batch of matching recordings
+            payload.samples.forEach((rec) => {
+                const opt = document.createElement('option');
+                opt.value = rec;
+                opt.textContent = `${rec} (True: ${chosenClass})`;
+                recordMenu.appendChild(opt);
+            });
+
+            // 3. Maintain active selection state
+            if (isAppending) {
+                // Keep the active index locked on what the user was viewing
+                recordMenu.selectedIndex = originalSelectedIndex;
+            } else {
+                // For a brand new class, fallback to the default chain reaction execution
+                loadEcgPipeline();
+            }
+
+            // Advance offset for the next dynamic trigger
+            currentRecordOffset += payload.samples.length;
+            isRecordLoading = false;
+        })
+        .catch(err => {
+            console.error("Error compilation failing on registry slice:", err);
+            isRecordLoading = false;
+        });
+}
+
+
 
 
     async function updatePeakDetectionDropdown() {
@@ -775,7 +832,7 @@
          server's payload for each R-R plot, but now the server just sends the Processed signal array and the feature array(Pan-Tompkins/Peak detection) 
          and rest of figured out by the browser in real time 
     */
-  
+
     /**
      * Decoupled VIX function
         * our earlier code had VIX logicintegratedinto the plotting function, here we'e separated the 2.
@@ -833,7 +890,7 @@
             total_beats: totalValidBeats
         };
     }
- 
+
     /*
     This function plots the Volatility Index (VIX) in a separate view. Volatility indexes are used in finance to forecast how volatile or unstable a market
      might be over a strict, fixed 30-day forward horizon. This volatility can swing in either direction, meaning an individual asset can either climb or deprecate in value. 
@@ -846,7 +903,7 @@
     
      So the function runVolatilityIndexPlot() borrows heavily from the above function - updateStackedChart() in terms of structure. the only difference is in the core Math
      */
-  
+
     async function runVolatilityIndexPlot(serverPayload,
         beatsToStack = 2,
         samplingRate = 300,
@@ -1037,7 +1094,7 @@
         Plotly.newPlot('beats-voltility-index-overlay-container', finalPlotTraces, overlayLayout);
 
     }
- 
+
     /**
      * calcualtes the metrics or features for the given ECG signal. 
      * Note that some of the metrics are calcualted in separte functions, we'll use this function for a cleaner approch
@@ -1055,7 +1112,7 @@
         Created this function to calcualte the HRV metrics separately rather than having the view and the ufunction together.
         VIX removed as that VIX has its own separate plot  
     */
-  
+
     /**
      *  
      * Compute standard, un-interpolated time-domain metrics.
@@ -1196,13 +1253,13 @@
         const variance = humanRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / humanRR.length;
         return { sdrr: Math.sqrt(variance) };
     }
-   
-  
+
+
     function runSDNN_Approx(RRIntervals) {
         const rawRR = RRIntervals.filter(x => x > 0);
         const cleanRR = [];
         const recentWindow = [];
-    
+
         for (let i = 0; i < rawRR.length; i++) {
             const current = rawRR[i];
             let isHuman = current >= 300 && current <= 2000;
@@ -1220,11 +1277,11 @@
                 if (recentWindow.length > 5) recentWindow.shift();
             }
         }
-    
-        if (cleanRR.length === 0){ return null;}
+
+        if (cleanRR.length === 0) { return null; }
         const mean = cleanRR.reduce((s, v) => s + v, 0) / cleanRR.length;
         const variance = cleanRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / cleanRR.length;
-    
+
         return { sdnn_approx: Math.sqrt(variance) };
     }
 
@@ -1284,7 +1341,7 @@
         };
     }
 
- 
+
     async function renderPoincareGraph(serverPayload, usePoincare, currentConfig) {
         // the switch to enable/disable the poincare plot.
         // this condition was there in the loadEcgPipeline()'s main loop, we've shifted it in here  
@@ -1504,7 +1561,7 @@
     /*
         * we've redone the function cause the original one was too long and unmanageable to incoperate additional 
           HRV features like RMSSD
-    */ 
+    */
     async function updateStackedChart(serverPayload, beatsToStack = 2, samplingRate = 300, currentConfig) {
 
         // calling sliceStackedBeatsFrontend() to manipulate the server's payload  
@@ -1646,7 +1703,7 @@
         // calling the plotly's API to finally do the printing
         Plotly.newPlot('stacked-n-RR-beats-overlay-container', finalPlotTraces, overlayLayout);
     }
- 
+
 
     function updateVerificationUiState(isVerified, savedSignature = "", stampedAt = "", isInitialLoad = false) {
         const badge = document.getElementById("rubber-stamp-status-badge");
@@ -1823,7 +1880,7 @@
         const useWavelet = document.getElementById('toggle-wavelet').checked;
         const forceManualFlip = document.getElementById('toggle-manual-flip').checked;
         // const usePanTompkinsWithNk2 = document.getElementById('pan_tompkins_using_nk2').checked;
-        
+
         const recordBadge = document.getElementById("record-navigation-status-badge");
         console.log(`record-navigation-status-badge updated to: ${recordBadge.innerText}`);
         document.getElementById("record-navigation-status-badge").innerText = recordId;
@@ -2496,10 +2553,22 @@
 
     // Automatic boot execution when HTML layer finishes initializing
     document.addEventListener("DOMContentLoaded", () => {
-        updateSampleDropdown();
+        //updateSampleDropdown();
+
+        updateSampleDropdown(false); 
+        document.getElementById('record-selector').addEventListener('scroll', function(e) {
+        const el = e.target;
+        const triggerThreshold = el.scrollHeight - el.scrollTop <= el.clientHeight + 10;
+
+        if (triggerThreshold && !isRecordLoading) {
+            updateSampleDropdown(true); // Fire appending mode
+        }
+    });
+
+
         updatePeakDetectionDropdown();
 
-        
+
         // Placing the button's event listener setup inside DOMContentLoaded ensures execution safety.
         // It guarantees the browser completes its HTML parsing pass and builds the elements in memory before JavaScript looks for them. 
         // If we ran this setup code raw in the script file without waiting, it would execute instantly, grab a handful of null values, and crash before the page even finishes rendering.
@@ -2508,7 +2577,10 @@
         const stampButton = document.getElementById("rubber-stamp-btn");
         if (stampButton) {
             stampButton.addEventListener("click", async () => {
- 
+
+
+                const currentRecordId = document.getElementById('record-selector').value;
+
                 // getting the signature of the current confguraton
                 const currentScale = document.getElementById("scale-selector").value;
                 const useFilter = document.getElementById('toggle-filter').checked;
@@ -2519,7 +2591,7 @@
                 const current_config = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${orientationValue}`
 
 
-                
+
 
                 if (!currentRecordId) {
                     alert("❌ Please select a valid record first, mate");
@@ -2537,94 +2609,94 @@
                 stampButton.disabled = false;
 
             });
- 
+
 
 
         }
- 
-     // Helper function to shift the dropdown and trigger the pipeline
-    function navigateRecord(direction) {
-        const recordSelector = document.getElementById('record-selector');
-        if (!recordSelector) {
-            console.error("Record selector element not found.");
-            return;
-        }
 
-        // 1. Get the currently selected index
-        const currentIndex = recordSelector.selectedIndex;
-        const totalOptions = recordSelector.options.length;
-
-        // Verify we actually have options to navigate
-        if (totalOptions === 0) {
-            alert("❌ No records available to navigate.");
-            return;
-        }
-
-        let newIndex = currentIndex;
-
-        // 2. Calculate the next or previous index
-        if (direction === 'next') {
-            newIndex = currentIndex + 1;
-            // Prevent going past the last item
-            if (newIndex >= totalOptions) {
-                alert("ℹ️ You are already on the last record.");
+        // Helper function to shift the dropdown and trigger the pipeline
+        function navigateRecord(direction) {
+            const recordSelector = document.getElementById('record-selector');
+            if (!recordSelector) {
+                console.error("Record selector element not found.");
                 return;
             }
-        } else if (direction === 'prev') {
-            newIndex = currentIndex - 1;
-            // Prevent going past the first item
-            if (newIndex < 0) {
-                alert("ℹ️ You are already on the first record.");
+
+            // 1. Get the currently selected index
+            const currentIndex = recordSelector.selectedIndex;
+            const totalOptions = recordSelector.options.length;
+
+            // Verify we actually have options to navigate
+            if (totalOptions === 0) {
+                alert("❌ No records available to navigate.");
                 return;
             }
-        }
 
-        // 3. Update the dropdown selection to the new value
-        recordSelector.selectedIndex = newIndex;
+            let newIndex = currentIndex;
 
-        // 4. Update your text badge immediately to show progress
-        const navBadge = document.getElementById("report-navigation-status-badge");
-        if (navBadge) {
-            navBadge.innerText = `Viewing Report: #${recordSelector.value}`;
-        }
+            // 2. Calculate the next or previous index
+            if (direction === 'next') {
+                newIndex = currentIndex + 1;
+                // Prevent going past the last item
+                if (newIndex >= totalOptions) {
+                    alert("ℹ️ You are already on the last record.");
+                    return;
+                }
+            } else if (direction === 'prev') {
+                newIndex = currentIndex - 1;
+                // Prevent going past the first item
+                if (newIndex < 0) {
+                    alert("ℹ️ You are already on the first record.");
+                    return;
+                }
+            }
+
+            // 3. Update the dropdown selection to the new value
+            recordSelector.selectedIndex = newIndex;
+
+            // 4. Update your text badge immediately to show progress
+            const navBadge = document.getElementById("report-navigation-status-badge");
+            if (navBadge) {
+                navBadge.innerText = `Viewing Report: #${recordSelector.value}`;
+            }
 
 
             console.log(`Loading pipeline for new record: ${recordSelector.value}`);
-            loadEcgPipeline(); 
- 
-    }
+            loadEcgPipeline();
 
-    //  PREVIOUS REPORT BUTTON LOGIC
-    const prevButton = document.getElementById("prev-Record-btn");
-    if (prevButton) {
-        prevButton.addEventListener("click", () => {
-            prevButton.disabled = true;
-            
-            // Execute the navigation logic
-            navigateRecord('prev');
-            
-            // Optional global event dispatch if other systems are listening
-            window.dispatchEvent(new CustomEvent('navPrevReportRequested'));
-            
-            prevButton.disabled = false;
-        });
-    }
+        }
 
-    //  NEXT REPORT BUTTON LOGIC
-    const nextButton = document.getElementById("next-Record-btn");
-    if (nextButton) {
-        nextButton.addEventListener("click", () => {
-            nextButton.disabled = true;
-            
-            // Execute the navigation logic
-            navigateRecord('next');
-            
-            // Optional global event dispatch if other systems are listening
-            window.dispatchEvent(new CustomEvent('navNextReportRequested'));
-            
-            nextButton.disabled = false;
-        });
-    }
+        //  PREVIOUS REPORT BUTTON LOGIC
+        const prevButton = document.getElementById("prev-Record-btn");
+        if (prevButton) {
+            prevButton.addEventListener("click", () => {
+                prevButton.disabled = true;
+
+                // Execute the navigation logic
+                navigateRecord('prev');
+
+                // Optional global event dispatch if other systems are listening
+                window.dispatchEvent(new CustomEvent('navPrevReportRequested'));
+
+                prevButton.disabled = false;
+            });
+        }
+
+        //  NEXT REPORT BUTTON LOGIC
+        const nextButton = document.getElementById("next-Record-btn");
+        if (nextButton) {
+            nextButton.addEventListener("click", () => {
+                nextButton.disabled = true;
+
+                // Execute the navigation logic
+                navigateRecord('next');
+
+                // Optional global event dispatch if other systems are listening
+                window.dispatchEvent(new CustomEvent('navNextReportRequested'));
+
+                nextButton.disabled = false;
+            });
+        }
 
 
 
