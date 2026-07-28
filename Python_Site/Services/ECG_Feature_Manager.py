@@ -1,217 +1,138 @@
-# Services/physionet_manager.py
 import os
-import urllib.request
+import json
+import threading
 
-import scipy.io
-import numpy as np
+# As we move further, the app needs to store the discovered features such as the HRV stats, VIX etc.
+# we would store those features in a JSON file for now. We need a well defined method for Creating/Updating/Reading
+# those feaures. We have this JSON file which would servr this purpose.
+# currently we will add everything in this JSON and JSON would be loaded on the server's memory. THis would ensure that 
+# Access is lightening fast. Rather thah having an individual feature file for all the features, we shall haev a collective file
+# since readin 1 file is quicker than reading 8.5K+ files. 
+# Later on, when the app grows and we have more ECG Leads and more metrics, we will move this file to a MongoDB Cloud.
+# This would ensure seamless integration without and change the access API.
 
-import wfdb
 
-#we've moved the entire logic of fetchign the physionet recordings from the app.py to this file
-# we've used a class to prevent the use of free- floating variables in the global namespace
+#1 . Core ObjectiveTo establish a resilient, high-performance telemetry configuration locking mechanism (the "Rubber Stamp" pipeline) for ECG signal processing. 
+# This subsystem protects downstream Stage 2 CNN pipelines by locking down verified ground truth parameters and preventing raw configuration drift during active operator sessions.
 
-class PhysioNetRegistryManager:
+# 2. Backend Design & Concurrency ModelIn-Memory RAM Cache: A dedicated service layer class (ECG_Signal_Feature_Manager) maps the master JSON dataset straight into active server memory during startup, 
+# enabling microsecond read operations (GET).
+# Decoupled Asynchronous Persistence: To prevent disk I/O bottlenecks from freezing the Flask web application worker loops, state-changing write operations (POST) utilize a non-blocking architecture. 
+# Updates are committed instantly to live RAM, while an isolated background thread (threading.Thread) asynchronously flushes the memory structure back to physical storage (all_features_JSON_database.json).
+# Data Integrity: Access to physical storage is mediated via a dedicated synchronization primitive thread lock (threading.Lock) to prevent race conditions during heavy concurrent read/write phases.
 
+# 3. Frontend State Management & LifecycleExecution Safety Checkpoint: Front-end event listener initialization is securely wrapped inside a DOMContentLoaded event cycle. 
+# This ensures the browser engine fully parses the HTML structure and registers all UI element nodes into RAM before JavaScript hunts for DOM targets, eliminating runtime pointer exceptions.
+# Network Pipeline Guard: The frontend UI synchronization logic implements a strict data-cleansing guard. It handles date-parsing inconsistencies (such as trailing time-zone marker anomalies from legacy datasets) by catching exceptions gracefully. 
+# If JavaScript's native date engine encounters malformed historical strings, the runtime falls back seamlessly to robust raw string-slicing protocols to prevent dashboard rendering failure.
+
+# 4. Intentional Immutability Constraint (Design Justification)The system intentionally implements an Immutable Ground Truth Lock lifecycle. 
+# Once an operator commits a verified configuration via the backend POST routine, the interface locks out further changes for that telemetry record. 
+# The action button is programmatically deactivated, and manual adjustment switches are synchronized exclusively to the stored database snapshot upon initial record load.
+# While dynamic overwriting was considered, this strict write-once barrier was chosen as a deliberate design constraint to enforce strict audit trail integrity, prevent accidental session regression, 
+# and ensure that once a record is verified, its data signature remains static and reliable for subsequent deep-learning model passes.
+
+class ECG_Signal_Feature_Manager:
+
+    #default constructor to Manage initilization
     def __init__(self, cache_dir: str = "data_cache"):
         self.cache_dir = cache_dir
-        self.csv_path = os.path.join(self.cache_dir, "REFERENCE-v2.csv")
-        self._registry_cache = {}
+        self.json_path = os.path.join(self.cache_dir, "all_features_JSON_database.json")
+        
+        # Initialize the isolated in-memory RAM cache
+        self._ram_store = {}
+        # Thread lock dedicated entirely to this JSON file's disk operations
+        self._disk_lock = threading.Lock()
         
         os.makedirs(self.cache_dir, exist_ok=True)
+        # Automatically seed the RAM cache on instantiation
+        self._load_database_into_ram()
 
-    def initialize_registry(self) -> None:
-        """
-        Public orchestration engine. 
-        It only dictates the order of execution steps.
-        """
-        if self._registry_cache:
-            return
-            
-        self._validate_and_clean_cache()
-        self._ensure_file_exists()
-        
-        # Parse files and print diagnostics
-        compiled_map, metrics = self._parse_csv_file()
-        self._registry_cache = compiled_map
-        self._print_diagnostic_logs(metrics)
-
-    # ==========================================
-    # PRIVATE DECOMPOSED STEPS (Helper Methods)
-    # ==========================================
-
-    def _validate_and_clean_cache(self) -> None:
-        """Step 1: Check for corrupted HTML wrapper proxies."""
-        if not os.path.exists(self.csv_path):
-            return
-            
-        with open(self.csv_path, "r", encoding="utf-8", errors="ignore") as test_f:
-            first_line = test_f.readline()
-            if "<!DOCTYPE" in first_line or "<html" in first_line:
-                print("\n[REGISTRY ENGINE] Detected corrupted HTML placeholder file. Purging cache...")
-                os.remove(self.csv_path)
-
-    def _ensure_file_exists(self) -> None:
-        """Step 2: Handle raw web I/O down-streaming safely."""
-        if os.path.exists(self.csv_path):
-            return
-
-        print("\n" + "="*55)
-        print("[REGISTRY ENGINE] Fetching raw file matrix via download stream...")
-        print("="*55)
-        
-        url = "https://physionet.org"
-        try:
-            opener = urllib.request.build_opener()
-            opener.addheaders = [
-                ('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
-            ]
-            urllib.request.install_opener(opener)
-            urllib.request.urlretrieve(url, self.csv_path)
-            print("[REGISTRY ENGINE] Raw download stream pipe closed successfully.")
-        except Exception as e:
-            raise IOError(f"[REGISTRY ENGINE] CRITICAL: Download failed: {e}")
-
-    def _parse_csv_file(self) -> tuple[dict, dict]:
-        """Step 3: Extract structured rows from raw stream file block."""
-        compiled_map = {"N": [], "A": [], "O": [], "~": []}
-        metrics = {
-            "total_lines": 0, "success": 0, "skipped": 0, "previews": []
-        }
-
-        with open(self.csv_path, "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                metrics["total_lines"] += 1
-                
-                if len(metrics["previews"]) < 5:
-                    metrics["previews"].append(line.replace("\n", "").replace("\r", ""))
-
-                clean_line = line.replace("\r", "").replace("\n", "").strip()
-                if not clean_line or "," not in clean_line: 
-                    metrics["skipped"] += 1
-                    continue
-                    
-                parts = clean_line.split(",", maxsplit=1)
-                record, label = parts[0].strip(), parts[1].strip()
-                
-                if "," in label:
-                    label = label.split(",")[0].strip()
-
-                if label in compiled_map:
-                    compiled_map[label].append(record)
-                    metrics["success"] += 1
-                else:
-                    metrics["skipped"] += 1
-                    
-        return compiled_map, metrics
-
-    def _print_diagnostic_logs(self, metrics: dict) -> None:
-        """Step 4: Output clean telemetry formatting logs to server."""
-        print("\n" + "="*65)
-        print("         PHYSIONET CHALLENGE 2017 REGISTRY DATA LOG         ")
-        print("="*65)
-        print(f" [FILE METRICS]")
-        print(f"   -> Target Source Path:   {self.csv_path}")
-        print(f"   -> Total Lines Found:    {metrics['total_lines']} rows")
-        print(f"   -> Successfully Parsed:  {metrics['success']} rows")
-        print(f"   -> Skipped / Ignored:    {metrics['skipped']} rows")
-        print("-"*65)
-        
-        print(" [RAW FILE SAMPLES PREVIEW]")
-        for idx, raw_row in enumerate(metrics["previews"], 1):
-            print(f"   Row {idx} ->  \"{raw_row}\"")
-        print("-"*65)
-        
-        print(" [MEMORY CATEGORY ALLOCATIONS]")
-        for key, records in self._registry_cache.items():
-            class_name = {
-                "N": "Normal Sinus Rhythm (N)",
-                "A": "Atrial Fibrillation (A)",
-                "O": "Other Alternative (O)  ",
-                "~": "Too Noisy / Corrupt (~) "
-            }.get(key, key)
-            
-            pct = (len(records) / metrics["success"] * 100) if metrics["success"] > 0 else 0
-            print(f"   -> {class_name} : {len(records):>4} items ({pct:>5.1f}%) | Samples: {records[:4]}")
-        print("="*65 + "\n")
-
-    # ==========================================
-    # PUBLIC ACCESSORS
-    # ==========================================
-    def get_registry(self) -> dict:
-        return self._registry_cache
-
-    def get_records_by_class(self, target_class: str) -> list:
-        return self._registry_cache.get(target_class, [])
-
-    def get_individual_record(self, record_id: str) -> np.ndarray:
-        """
-        Checks local cache for a specific recording, downloads it if missing,
-        and returns a normalized NumPy vector of signal voltages.
-        """
-        # Centralized path using the public instance property
-        txt_filename = os.path.join(self.cache_dir, f"{record_id}.txt")
-        
-        if not os.path.exists(txt_filename):
-            print(f"[MANAGER] Cache file missing for record {record_id}. Initiating streaming download...")
-            folder_prefix = record_id[:3]
-            
-            # Direct PhysioNet Matrice URL Stream Endpoint
-            url = f"https://physionet.org{folder_prefix}/{record_id}.mat?download"
-            
+# standardCRUD OPERATIONS below 
+    def _load_database_into_ram(self) -> None:
+        """Private startup method: Maps the disk dataset into active server memory."""
+        if os.path.exists(self.json_path):
             try:
-                opener = urllib.request.build_opener()
-                opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)')]
-                urllib.request.install_opener(opener)
-                
-                temp_mat = os.path.join(self.cache_dir, f"temp_{record_id}.mat")
-                urllib.request.urlretrieve(url, temp_mat)
-                
-                # Load the binary MATLAB array structure
-                mat_data = scipy.io.loadmat(temp_mat)
-                
-                # Save out raw signal rows to a flat text cache file line by line
-                with open(txt_filename, "w") as f:
-                    f.write("\n".join(map(str, mat_data['val'][0])))
-                    
-                # Garbage clean the temporary download workspace buffer
-                os.remove(temp_mat)
-                print(f"[MANAGER] Successfully downloaded and cached recording: {record_id}")
+                with open(self.json_path, "r", encoding="utf-8") as f:
+                    self._ram_store = json.load(f)
+                print(f"🤖 [FEATURE MGR] Loaded {len(self._ram_store)} records into active RAM.")
             except Exception as e:
-                raise IOError(f"PhysioNet Network/IO Failure for record {record_id}: {str(e)}")
+                print(f"🚨 FEATURE MGR Error reading disk file, starting empty: {e}")
+                self._ram_store = {}
+        else:
+            print("📝 [FEATURE MGR] No existing database file found. Initializing empty state.")
+            self._ram_store = {}
 
-        # 1. Read base signal matrix text lines
-        raw_units = np.loadtxt(txt_filename)
+    def get_metric(self, record_id: str, stat_name: str, version: str) -> dict | None:
+        """Public Reader: Fetches data straight from RAM in microseconds."""
         
-        # 2. Divide by 1000.0 to rescale millivolt parameters
-        signal_values = raw_units / 1000.0
-        return signal_values
+        print(f"inside ECG_Signal_Feature_Manager.get_metric(), search for metric {record_id}, {stat_name}, {version}")
+        if record_id in self._ram_store:
+            record_data = self._ram_store[record_id]
+            if stat_name in record_data and record_data[stat_name].get("version") == version:
+                return {
+                    "record_id": record_id,
+                    "statistic_name": stat_name,
+                    "value": record_data[stat_name]["value"],
+                    "version": version,
+                    "last_calculated": record_data[stat_name].get("last_calculated")
+                }
+        return None
 
-    # The older appraoch read the recording using Sci-pi's matlab parser
-    # However it gave us considerable problems for file-IO so we swithced back to the Native WFDB parser
-    def get_individual_record_wfdb(self, record_id: str) -> np.ndarray:
-        """         
-        Natively reads local .MAT and .HEA file pairs from the manual upload cache.
-        Returns a perfectly calibrated 1D NumPy vector of signal voltages (mV).
+    def update_metric(self, record_id: str, stat_name: str, value: any, version: str, timestamp: str) -> None:
+        """Public Writer: Updates live RAM and triggers a safe background write to disk."""
+        if record_id not in self._ram_store:
+            self._ram_store[record_id] = {}
+            
+        self._ram_store[record_id][stat_name] = {
+            "value": value,
+            "version": version,
+            "last_calculated": timestamp
+        }
+        
+        # Fire-and-forget background thread to handle disk saving asynchronously
+        threading.Thread(target=self._persist_to_disk).start()
+
+    def _persist_to_disk(self) -> None:
+        """Private Worker: Safely flushes the memory structure back to the physical drive."""
+        with self._disk_lock:
+            with open(self.json_path, "w", encoding="utf-8") as f:
+                json.dump(self._ram_store, f, indent=4)
+
+
+    # this function will rubber stamp a config for a record, when the user hits the rubber stamp button
+    def rubber_stamp_record_config(self, record_id: str, verified_signature: str) -> None:
         """
-        mat_path = os.path.join(self.cache_dir, f"{record_id}.mat")
-        hea_path = os.path.join(self.cache_dir, f"{record_id}.hea")
+        Locks down a specific configuration signature alongside an audit timestamp and bypasses raw telemetry variations to protect Stage 2 CNN pipelines.
+        """
+        from datetime import datetime, timezone
         
-        if not os.path.exists(mat_path) or not os.path.exists(hea_path):
-            raise FileNotFoundError(
-                f"[MANAGER] Missing asset pairs for record '{record_id}' in cache directory. "
-                f"Ensure both '{record_id}.mat' and '{record_id}.hea' are uploaded manually."
-            )
+        if record_id not in self._ram_store:
+            self._ram_store[record_id] = {}
+            
+        # Get current UTC timestamp with explicit timezone markers
+        current_utc_time = datetime.now(timezone.utc).isoformat() 
+            
+        #upgrade successfully -  Storethis as  a nested tracking metadata object rather than a flat string
+        self._ram_store[record_id]["verified_orientation_config"] = {
+            "signature": verified_signature,
+            "stamped_at": current_utc_time
+        }
+        
+        # Flush the updated tracking matrix back to the master JSON file on disk
+        threading.Thread(target=self._persist_to_disk).start()
+        print(f"[TULD ENGINE] Ground Truth locked for {record_id} -> {verified_signature} at {current_utc_time}")
 
-        try:
-            # wfdb requires only the shared base directory track name
-            record_base_path = os.path.join(self.cache_dir, record_id)
-            
-            # Reads signal data automatically using structural parameters from header file
-            signals, fields = wfdb.rdsamp(record_base_path)
-            
-            # Extracts single lead signal as flat 1D vector shape (N,)
-            signal_values = signals[:, 0].astype(np.float64)
-            return signal_values
-            
-        except Exception as e:
-            raise IOError(f"[MANAGER] Native WFDB parsing error for record '{record_id}': {str(e)}")        
+    # this fnction will read the current record's rubber stamp
+    def get_rubber_stamp_config(self, record_id: str) -> dict | None:
+        """Public Reader: Safely fetches the stamp metadata from RAM."""
+        record_data = self._ram_store.get(record_id, {})
+        stamp_data = record_data.get("verified_orientation_config", None)
+
+        if isinstance(stamp_data, dict):
+            return {
+                "record_id": record_id,
+                "is_verified": True,
+                "verified_signature": stamp_data["signature"],
+                "stamped_at": stamp_data.get("stamped_at")
+            }
