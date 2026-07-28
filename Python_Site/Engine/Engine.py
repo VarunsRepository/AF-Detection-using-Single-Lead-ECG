@@ -151,12 +151,12 @@ def run_ecg_pipeline(signal_values: np.ndarray,
         #    features = run_pan_tompkins_segmentation(processed_signal)
           
     if config['enable_poincare']:
-        long_peaks = detect_local_max_r_peaks(long_signal)
-        if len(long_peaks) > 1:
-            rr_intervals_ms = (np.diff(long_peaks) / 300.0) * 1000.0
-            if len(rr_intervals_ms) > 1:
-                poincare_data["x"] = rr_intervals_ms[:-1].tolist()
-                poincare_data["y"] = rr_intervals_ms[1:].tolist()
+        long_peaks = detect_local_max_r_peaks(long_signal) # get the R-Peaks 
+        if len(long_peaks) > 1:                            # if R peaks exist from the previous step
+            rr_intervals_ms = (np.diff(long_peaks) / 300.0) * 1000.0 # get RR intervals in seconds
+            if len(rr_intervals_ms) > 1:                   # if R-R intervals are calculated from the previous step 
+                poincare_data["x"] = rr_intervals_ms[:-1].tolist()  # generate x vector for all the x-axis points
+                poincare_data["y"] = rr_intervals_ms[1:].tolist()   # generate y vector for all the y-axis points
                  
     if config['enable_fft']:
         if config['enable_cancel']:
