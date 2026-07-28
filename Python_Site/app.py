@@ -70,7 +70,7 @@ app = Flask(__name__)
 # PHYSIONET MANAGER TO MANAGE THE I/O FROM THE PHYSIONET WEBSITE  
 #  pass the configuration directories directly into the PhysioNetRegistryManager class constructor
 # we have created an object for easier state management
-physionet_mgr = PhysioNetRegistryManager(cache_dir="data_cache")
+physionet_mgr = PhysioNetRegistryManager(cache_dir="data_cache/training2017")
 
 physionet_mgr.initialize_registry()
 
