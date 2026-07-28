@@ -5,6 +5,8 @@ import urllib.request
 import scipy.io
 import numpy as np
 
+import wfdb
+
 #we've moved the entire logic of fetchign the physionet recordings from the app.py to this file
 # we've used a class to prevent the use of free- floating variables in the global namespace
 
@@ -201,13 +203,13 @@ class PhysioNetRegistryManager:
             )
 
         try:
-             
+            # wfdb requires only the shared base directory track name
             record_base_path = os.path.join(self.cache_dir, record_id)
             
-         
+            # Reads signal data automatically using structural parameters from header file
             signals, fields = wfdb.rdsamp(record_base_path)
             
-            # to send the data in the right shape i.e. eacty in the form the previous function took
+            # Extracts single lead signal as flat 1D vector shape (N,)
             signal_values = signals[:, 0].astype(np.float64)
             return signal_values
             
