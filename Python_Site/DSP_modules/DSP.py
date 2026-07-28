@@ -363,7 +363,6 @@ def generate_stacked_pqrst_dataset(processed_signal, sampling_rate=300.0):
     return stacked_beats_dataset
 
 
-
 def generate_stacked_RR_dataset(processed_signal, sampling_rate=300.0):
 #def generate_stacked_pqrst_dataset(processed_signal, sampling_rate=300.0):
     """
