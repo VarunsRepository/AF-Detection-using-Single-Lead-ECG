@@ -659,62 +659,62 @@
     }
 
 
-let currentRecordOffset = 0; 
-const RECORDS_PER_BATCH = 50;
-let isRecordLoading = false; // Flag to prevent accidental double-fetching
+    let currentRecordOffset = 0;
+    const RECORDS_PER_BATCH = 100;
+    let isRecordLoading = false; // Flag to prevent accidental Double-Reads 
 
-function updateSampleDropdown(isAppending = false) {
-    if (isRecordLoading) return; // Guard clause to prevent spamming requests
-    isRecordLoading = true;
+    function updateSampleDropdown(isAppending = false) {
+        if (isRecordLoading) return; // Guard clause to prevent spamming requests
+        isRecordLoading = true;
 
-    const chosenClass = document.getElementById('class-selector').value;
-    const recordMenu = document.getElementById('record-selector');
+        const chosenClass = document.getElementById('class-selector').value;
+        const recordMenu = document.getElementById('record-selector');
 
-    // 1. Reset or advance offset tracker
-    if (!isAppending) {
-        currentRecordOffset = 0;
-        recordMenu.innerHTML = ""; // Wipe previous entries cleanly
-    }
+        // 1. Reset or advance offset tracker
+        if (!isAppending) {
+            currentRecordOffset = 0;
+            recordMenu.innerHTML = ""; // Wipe previous entries cleanly
+        }
 
-    const registryUrl = `/api/v1/splunk/registry?class=${chosenClass}&limit=${RECORDS_PER_BATCH}&offset=${currentRecordOffset}`;
+        const registryUrl = `/api/v1/splunk/registry?class=${chosenClass}&limit=${RECORDS_PER_BATCH}&offset=${currentRecordOffset}`;
 
-    fetch(registryUrl)
-        .then(res => res.json())
-        .then(payload => {
-            if (payload.samples.length === 0) {
+        fetch(registryUrl)
+            .then(res => res.json())
+            .then(payload => {
+                if (payload.samples.length === 0) {
+                    isRecordLoading = false;
+                    return; // Nothing left to load
+                }
+
+                // Record the current selected index before adding new options
+                const originalSelectedIndex = recordMenu.selectedIndex;
+
+                // 2. Inject the new batch of matching recordings
+                payload.samples.forEach((rec) => {
+                    const opt = document.createElement('option');
+                    opt.value = rec;
+                    opt.textContent = `${rec} (True: ${chosenClass})`;
+                    recordMenu.appendChild(opt);
+                });
+
+                // 3. Maintain active selection state
+                if (isAppending) {
+                    // Keep the active index locked on what the user was viewing
+                    recordMenu.selectedIndex = originalSelectedIndex;
+                } else {
+                    // For a brand new class, fallback to the default chain reaction execution
+                    loadEcgPipeline();
+                }
+
+                // Advance offset for the next dynamic trigger
+                currentRecordOffset += payload.samples.length;
                 isRecordLoading = false;
-                return; // Nothing left to load
-            }
-
-            // Record the current selected index before adding new options
-            const originalSelectedIndex = recordMenu.selectedIndex;
-
-            // 2. Inject the new batch of matching recordings
-            payload.samples.forEach((rec) => {
-                const opt = document.createElement('option');
-                opt.value = rec;
-                opt.textContent = `${rec} (True: ${chosenClass})`;
-                recordMenu.appendChild(opt);
+            })
+            .catch(err => {
+                console.error("Error compilation failing on registry slice:", err);
+                isRecordLoading = false;
             });
-
-            // 3. Maintain active selection state
-            if (isAppending) {
-                // Keep the active index locked on what the user was viewing
-                recordMenu.selectedIndex = originalSelectedIndex;
-            } else {
-                // For a brand new class, fallback to the default chain reaction execution
-                loadEcgPipeline();
-            }
-
-            // Advance offset for the next dynamic trigger
-            currentRecordOffset += payload.samples.length;
-            isRecordLoading = false;
-        })
-        .catch(err => {
-            console.error("Error compilation failing on registry slice:", err);
-            isRecordLoading = false;
-        });
-}
+    }
 
 
 
@@ -975,7 +975,7 @@ function updateSampleDropdown(isAppending = false) {
         // 3 beats : 1800ms wide
         const maxRangeX = beatsToStack === 1 ? 450 : beatsToStack === 2 ? 1100 : 1800;
 
-
+        
 
 
         // we will generate Horizontal indicator lines that literally show the  R-R interval lengths
@@ -1008,6 +1008,7 @@ function updateSampleDropdown(isAppending = false) {
         const pureRRIntervals = featureMap.R.x.filter(x => x > 0);
         const totalValidBeats = pureRRIntervals.length;
 
+
         let statsAnnotation = [];
 
         //******************************  CODE FOR MANAGING/DISPLYAING SIGNAL STATS END HERE  ******************************  //
@@ -1035,15 +1036,26 @@ function updateSampleDropdown(isAppending = false) {
 
         console.log(`getOrComputeMetric: ${vixResults}`)
 
-        // 🎛️ INJECT PRE-COMPUTED VIX ANNOTATIONS DIRECTLY
+        // INJECT PRE-COMPUTED VIX ANNOTATIONS DIRECTLY
         if (vixResults) {
             const statusColor = vixResults.is_volatile ? '#e74c3c' : '#5e81ac';
 
-            // Push your telemetry box text using variables passed directly from cache payload
-            statsAnnotation.push({
+
+            // Pushing a dummy entry
+            finalPlotTraces.push({
+                type: 'scatter',
+                mode: 'markers',
+                name: 'Summary Box',        // The text that appears in your legend
+                showlegend: true,
+                x: [null], y: [null],       // Draws absolutely nothing on the screen
+                legendgroup: 'summary_group' // 🔑 The secret key linking it to the annotation
+            });
+
+
+            let statusBoxObject_v1 = {
                 x: 0.98, y: 0.62,
                 xref: 'paper', yref: 'paper',
-                text: `<b>Heart Beat volatility Tracker</b><br>` +
+                text: `<b>Heart Beat volatility Trackerdre5u</b><br>` +
                     `━━━━━━━━━━━━━━━<br>` +
                     `R-R Volatility Index: <span style="color:${statusColor}"><b>${vixResults.volatility_percentage}%</b></span><br>` +
                     `Status: <b>${vixResults.is_volatile ? 'VOLATILE BEAT' : 'STABLE BEAT'}</b>`,
@@ -1054,9 +1066,35 @@ function updateSampleDropdown(isAppending = false) {
                 borderwidth: 1.5,
                 borderpad: 8,
                 font: { color: '#eceff4', size: 10, family: 'monospace' }
-            });
+            }
 
-            // Push Bollinger-Band highlight rectangles using cached float boundaries
+            let statusBoxObject_v2 = {
+                x: 0.98, y: 0.62,
+
+                xref: 'paper', yref: 'paper',
+                align: 'left',
+                showarrow: false,
+
+                text:
+                    `<b>Heart Beat Volatility Tracker</b><br>` +
+                    `━━━━━━━━━━━━━━━<br>` +
+                    `R-R Volatility Index: <b>${vixResults.volatility_percentage}%</b><br>` +
+                    `Status: <b>${vixResults.is_volatile ? 'VOLATILE BEAT' : 'STABLE BEAT'}</b>`,
+
+                bgcolor: '#1c1e24',       // Perfect match for dark theme background
+                bordercolor: '#4c566a',   // Structural frame line
+                borderwidth: 1,           // Thickness
+                font: { color: '#aaaaaa', size: 12 },
+
+                legendgroup: 'summary_group'
+
+            };
+
+            statsAnnotation.push(statusBoxObject_v1);
+
+
+
+            // Push Bollinger-Band highlight rectangles using cached float boundary values
             rrIntervalLines.push({
                 type: 'rect',
                 xref: 'x', yref: 'paper',
@@ -1065,6 +1103,8 @@ function updateSampleDropdown(isAppending = false) {
                 fillcolor: 'rgba(136, 192, 208, 0.05)',
                 line: { color: 'rgba(136, 192, 208, 0.3)', width: 1, dash: 'dash' }
             });
+
+
         }
 
 
@@ -1091,7 +1131,31 @@ function updateSampleDropdown(isAppending = false) {
             hovermode: 'closest'
         };
 
-        Plotly.newPlot('beats-voltility-index-overlay-container', finalPlotTraces, overlayLayout);
+        Plotly.newPlot('beats-voltility-index-overlay-container'
+            , finalPlotTraces
+            , overlayLayout
+        );
+
+
+
+        let isSummaryBoxVisible = true;
+        const plotContainerDiv = document.getElementById('beats-voltility-index-overlay-container');
+
+        plotContainerDiv.on('plotly_legendclick', function(data) {
+        // Check if the user specifically clicked the 'Toggle Summary Box' trace item
+            if (data.curveNumber === finalPlotTraces.length - 1) {
+                isSummaryBoxVisible = !isSummaryBoxVisible;
+                
+                // Update ONLY the visibility state of the annotation inside the layout engine
+                Plotly.relayout('beats-voltility-index-overlay-container', {
+                    'annotations[0].visible': isSummaryBoxVisible
+                });
+                
+                // Returning true allows Plotly to dim the legend item text natively, showing it is off
+                return true; 
+            }
+        });
+
 
     }
 
@@ -1099,7 +1163,7 @@ function updateSampleDropdown(isAppending = false) {
      * calcualtes the metrics or features for the given ECG signal. 
      * Note that some of the metrics are calcualted in separte functions, we'll use this function for a cleaner approch
      * We will also add other metrics later to this function
-     * This function takes the raw R-R points in time and does the math for namely :
+     * This function takes the raw R-R points in time and does the math for :
      1. Mean R-R Interval
      2. Median R-R Interval
      3. standard Deviation 
@@ -1247,13 +1311,19 @@ function updateSampleDropdown(isAppending = false) {
     //  the following 3 functions are meant for corrected and interpolated HRV metrics
 
     function runSDRR_Straight(RRIntervals) {
+        //1. First step is to play "I'm only human after all" by  Rag'n'Bone Man
         const humanRR = RRIntervals.filter(x => x >= 300 && x <= 2000);
+        //2.  Next up is "I AM NOTHING" by Kat Von D 
         if (humanRR.length === 0) return null;
+        //3. mean girls by KATSEYE(we could have taken Mean by Taylor Swift but WE'RE NOT "SWIFTIES" )
         const mean = humanRR.reduce((s, v) => s + v, 0) / humanRR.length;
+        //4. couldn't find a song with variance
+        // "Variance" by Coteen (A deep electronic track—ironically, this artist also has a track named "Mean"!)
+        // or Justin Bieber — "Changes"(we'll accept Bieber though)
         const variance = humanRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / humanRR.length;
+        // Kelly Clarkson - "Einstein"
         return { sdrr: Math.sqrt(variance) };
     }
-
 
     function runSDNN_Approx(RRIntervals) {
         const rawRR = RRIntervals.filter(x => x > 0);
@@ -1262,6 +1332,7 @@ function updateSampleDropdown(isAppending = false) {
 
         for (let i = 0; i < rawRR.length; i++) {
             const current = rawRR[i];
+            // "I'm only human after all" by  Rag'n'Bone Man
             let isHuman = current >= 300 && current <= 2000;
             if (isHuman && cleanRR.length > 0) {
                 if (Math.abs(current - cleanRR[cleanRR.length - 1]) / cleanRR[cleanRR.length - 1] > 0.20) isHuman = false;
@@ -1340,7 +1411,6 @@ function updateSampleDropdown(isAppending = false) {
             noiseCount: noiseCount + (RRIntervals.length - rawRR.length)
         };
     }
-
 
     async function renderPoincareGraph(serverPayload, usePoincare, currentConfig) {
         // the switch to enable/disable the poincare plot.
@@ -1647,6 +1717,18 @@ function updateSampleDropdown(isAppending = false) {
         let statsAnnotation = [];
 
         if (stats) {
+
+                        // Pushing a dummy entry
+            finalPlotTraces.push({
+                type: 'scatter',
+                mode: 'markers',
+                name: 'Summary Box',        // The text that appears in your legend
+                showlegend: true,
+                x: [null], y: [null],       // Draws absolutely nothing on the screen
+                legendgroup: 'summary_group' // 🔑 The secret key linking it to the annotation
+            });
+
+
             const isAFib = stats.sdnn > 50 || stats.rmssd > 60;
             const statusColor = isAFib ? '#e74c3c' : '#2ecc71';
             const statusText = isAFib
@@ -1678,14 +1760,24 @@ function updateSampleDropdown(isAppending = false) {
             // Complete the block with your diagnostic indicator
             annotationText += `━━━━━━━━━━━━━━━<br><span style="color:${statusColor}"><b>${statusText}</b></span>`;
 
-            statsAnnotation = [{
+            let statusBoxObject_v1  = {
                 x: 0.98, y: 0.95, xref: 'paper', yref: 'paper',
                 text: annotationText,
                 align: 'left', showarrow: false,
                 bgcolor: 'rgba(46, 52, 64, 0.9)', bordercolor: statusColor,
                 borderwidth: 1.5, borderpad: 8,
                 font: { color: '#d8dee9', size: 11, family: 'monospace' }
-            }];
+            } 
+
+            statsAnnotation.push(statusBoxObject_v1)
+            //statsAnnotation = [{
+            //    x: 0.98, y: 0.95, xref: 'paper', yref: 'paper',
+            //    text: annotationText,
+            //    align: 'left', showarrow: false,
+            //    bgcolor: 'rgba(46, 52, 64, 0.9)', bordercolor: statusColor,
+            //    borderwidth: 1.5, borderpad: 8,
+            //    font: { color: '#d8dee9', size: 11, family: 'monospace' }
+            //}];
         }
 
         // finally creating the final object to pass into plotly
@@ -1702,6 +1794,26 @@ function updateSampleDropdown(isAppending = false) {
         };
         // calling the plotly's API to finally do the printing
         Plotly.newPlot('stacked-n-RR-beats-overlay-container', finalPlotTraces, overlayLayout);
+    
+    let isSummaryBoxVisible = true;
+const plotContainerDiv = document.getElementById('stacked-n-RR-beats-overlay-container');
+
+plotContainerDiv.on('plotly_legendclick', function(data) {
+    // Check if the user specifically clicked the 'Toggle Summary Box' trace item
+    if (data.curveNumber === finalPlotTraces.length - 1) {
+        isSummaryBoxVisible = !isSummaryBoxVisible;
+        
+        // Update ONLY the visibility state of the annotation inside the layout engine
+        Plotly.relayout('stacked-n-RR-beats-overlay-container', {
+            'annotations[0].visible': isSummaryBoxVisible
+        });
+        
+        // Returning true allows Plotly to dim the legend item text natively, showing it is off
+        return true; 
+    }
+});
+ 
+
     }
 
 
@@ -2555,15 +2667,15 @@ function updateSampleDropdown(isAppending = false) {
     document.addEventListener("DOMContentLoaded", () => {
         //updateSampleDropdown();
 
-        updateSampleDropdown(false); 
-        document.getElementById('record-selector').addEventListener('scroll', function(e) {
-        const el = e.target;
-        const triggerThreshold = el.scrollHeight - el.scrollTop <= el.clientHeight + 10;
+        updateSampleDropdown(false);
+        document.getElementById('record-selector').addEventListener('scroll', function (e) {
+            const el = e.target;
+            const triggerThreshold = el.scrollHeight - el.scrollTop <= el.clientHeight + 10;
 
-        if (triggerThreshold && !isRecordLoading) {
-            updateSampleDropdown(true); // Fire appending mode
-        }
-    });
+            if (triggerThreshold && !isRecordLoading) {
+                updateSampleDropdown(true); // Fire appending mode
+            }
+        });
 
 
         updatePeakDetectionDropdown();
@@ -2609,8 +2721,6 @@ function updateSampleDropdown(isAppending = false) {
                 stampButton.disabled = false;
 
             });
-
-
 
         }
 
@@ -2675,7 +2785,7 @@ function updateSampleDropdown(isAppending = false) {
                 // Execute the navigation logic
                 navigateRecord('prev');
 
-                // Optional global event dispatch if other systems are listening
+                // global event dispatch for other event Listeners
                 window.dispatchEvent(new CustomEvent('navPrevReportRequested'));
 
                 prevButton.disabled = false;
@@ -2691,7 +2801,7 @@ function updateSampleDropdown(isAppending = false) {
                 // Execute the navigation logic
                 navigateRecord('next');
 
-                // Optional global event dispatch if other systems are listening
+                // global event dispatch for other event Listeners 
                 window.dispatchEvent(new CustomEvent('navNextReportRequested'));
 
                 nextButton.disabled = false;
