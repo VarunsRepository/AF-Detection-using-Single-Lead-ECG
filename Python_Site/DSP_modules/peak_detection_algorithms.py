@@ -159,3 +159,213 @@ def run_pan_tompkins_segmentation_nk2(signal, sampling_rate=300.0):
                 "R": [], 
                 "S": [], 
                 "T": []}
+ 
+import numpy as np
+import neurokit2 as nk
+
+def run_pan_hamilton_segmentation_nk2(signal, sampling_rate=300.0):
+    sampling_rate = int(sampling_rate)
+    try:
+        # Step 1: Clean signal and find R-peaks using Hamilton method
+        cleaned_signal = nk.ecg_clean(signal, sampling_rate=sampling_rate, method="pantompkins1985")
+        _, r_peak_info = nk.ecg_peaks(cleaned_signal, sampling_rate=sampling_rate, method="hamilton2002")
+        r_peaks = r_peak_info["ECG_R_Peaks"].tolist()
+        
+        if len(r_peaks) == 0:
+            return {"P": [], "Q": [], "S": [], "R": [], "T": []}
+
+        # Step 2: Delineate waves using the peak method
+        _, wave_info = nk.ecg_delineate(cleaned_signal, r_peaks, sampling_rate=sampling_rate, method="peak")
+
+        # Step 3: Extract basic outputs directly from NeuroKit2 (filtering out NaNs)
+        p_points = [int(x) for x in wave_info.get("ECG_P_Peaks", []) if not np.isnan(x)]
+        q_points = [int(x) for x in wave_info.get("ECG_Q_Peaks", []) if not np.isnan(x)]
+        s_points = [int(x) for x in wave_info.get("ECG_S_Peaks", []) if not np.isnan(x)]
+        t_points = [int(x) for x in wave_info.get("ECG_T_Peaks", []) if not np.isnan(x)]
+
+        return {"P": p_points, "Q": q_points, "R": r_peaks, "S": s_points, "T": t_points}
+
+    except Exception as e:
+        print(f"[NeuroKit2 Error]: Pipeline failed. Reason: {str(e)}")
+        return {"P": [], "Q": [], "R": [], "S": [], "T": []}
+
+import numpy as np
+import neurokit2 as nk
+
+def run_engelse_zeelenberg_segmentation_nk2(signal, sampling_rate=300.0):
+    sampling_rate = int(sampling_rate)
+    try:
+        # Step 1: Clean signal and find R-peaks using Engelse-Zeelenberg method
+        cleaned_signal = nk.ecg_clean(signal, sampling_rate=sampling_rate, method="engzeemod2012")
+        _, r_peak_info = nk.ecg_peaks(cleaned_signal, sampling_rate=sampling_rate, method="engzeemod2012")
+        r_peaks = r_peak_info["ECG_R_Peaks"].tolist()
+        
+        if len(r_peaks) == 0:
+            return {"P": [], "Q": [], "S": [], "R": [], "T": []}
+
+        # Step 2: Delineate waves using the peak method
+        _, wave_info = nk.ecg_delineate(cleaned_signal, r_peaks, sampling_rate=sampling_rate, method="peak")
+
+        # Step 3: Extract basic outputs directly from NeuroKit2 (filtering out NaNs)
+        p_points = [int(x) for x in wave_info.get("ECG_P_Peaks", []) if not np.isnan(x)]
+        q_points = [int(x) for x in wave_info.get("ECG_Q_Peaks", []) if not np.isnan(x)]
+        s_points = [int(x) for x in wave_info.get("ECG_S_Peaks", []) if not np.isnan(x)]
+        t_points = [int(x) for x in wave_info.get("ECG_T_Peaks", []) if not np.isnan(x)]
+
+        return {"P": p_points, "Q": q_points, "R": r_peaks, "S": s_points, "T": t_points}
+
+    except Exception as e:
+        print(f"[NeuroKit2 Error]: Pipeline failed. Reason: {str(e)}")
+        return {"P": [], "Q": [], "R": [], "S": [], "T": []}
+
+
+import numpy as np
+import neurokit2 as nk
+
+def run_elgendi_segmentation_nk2(signal, sampling_rate=300.0):
+    sampling_rate = int(sampling_rate)
+    try:
+        # Step 1: Clean signal and find R-peaks using Elgendi method
+        cleaned_signal = nk.ecg_clean(signal, sampling_rate=sampling_rate, method="elgendi2010")
+        _, r_peak_info = nk.ecg_peaks(cleaned_signal, sampling_rate=sampling_rate, method="elgendi2010")
+        r_peaks = r_peak_info["ECG_R_Peaks"].tolist()
+        
+        if len(r_peaks) == 0:
+            return {"P": [], "Q": [], "S": [], "R": [], "T": []}
+
+        # Step 2: Delineate waves using the peak method
+        _, wave_info = nk.ecg_delineate(cleaned_signal, r_peaks, sampling_rate=sampling_rate, method="peak")
+
+        # Step 3: Extract basic outputs directly from NeuroKit2 (filtering out NaNs)
+        p_points = [int(x) for x in wave_info.get("ECG_P_Peaks", []) if not np.isnan(x)]
+        q_points = [int(x) for x in wave_info.get("ECG_Q_Peaks", []) if not np.isnan(x)]
+        s_points = [int(x) for x in wave_info.get("ECG_S_Peaks", []) if not np.isnan(x)]
+        t_points = [int(x) for x in wave_info.get("ECG_T_Peaks", []) if not np.isnan(x)]
+
+        return {"P": p_points, "Q": q_points, "R": r_peaks, "S": s_points, "T": t_points}
+
+    except Exception as e:
+        print(f"[NeuroKit2 Error]: Pipeline failed. Reason: {str(e)}")
+        return {"P": [], "Q": [], "R": [], "S": [], "T": []}
+
+
+import numpy as np
+import neurokit2 as nk
+
+def run_kalidas_segmentation_nk2(signal, sampling_rate=300.0):
+    sampling_rate = int(sampling_rate)
+    try:
+        # Step 1: Clean signal (default NK2) and find R-peaks using Kalidas method
+        cleaned_signal = nk.ecg_clean(signal, sampling_rate=sampling_rate, method="neurokit")
+        _, r_peak_info = nk.ecg_peaks(cleaned_signal, sampling_rate=sampling_rate, method="kalidas2017")
+        r_peaks = r_peak_info["ECG_R_Peaks"].tolist()
+        
+        if len(r_peaks) == 0:
+            return {"P": [], "Q": [], "S": [], "R": [], "T": []}
+
+        # Step 2: Delineate waves using the peak method
+        _, wave_info = nk.ecg_delineate(cleaned_signal, r_peaks, sampling_rate=sampling_rate, method="peak")
+
+        # Step 3: Extract basic outputs directly from NeuroKit2 (filtering out NaNs)
+        p_points = [int(x) for x in wave_info.get("ECG_P_Peaks", []) if not np.isnan(x)]
+        q_points = [int(x) for x in wave_info.get("ECG_Q_Peaks", []) if not np.isnan(x)]
+        s_points = [int(x) for x in wave_info.get("ECG_S_Peaks", []) if not np.isnan(x)]
+        t_points = [int(x) for x in wave_info.get("ECG_T_Peaks", []) if not np.isnan(x)]
+
+        return {"P": p_points, "Q": q_points, "R": r_peaks, "S": s_points, "T": t_points}
+
+    except Exception as e:
+        print(f"[NeuroKit2 Error]: Pipeline failed. Reason: {str(e)}")
+        return {"P": [], "Q": [], "R": [], "S": [], "T": []}
+
+
+def run_martinez_segmentation_nk2(signal, sampling_rate=300.0):
+    sampling_rate = int(sampling_rate)
+    try:
+        # Martinez uses standard neurokit baseline filtering for raw peak location
+        cleaned_signal = nk.ecg_clean(signal, sampling_rate=sampling_rate, method="neurokit")
+        _, r_peak_info = nk.ecg_peaks(cleaned_signal, sampling_rate=sampling_rate, method="martinez2003")
+        r_peaks = r_peak_info["ECG_R_Peaks"].tolist()
+        
+        if len(r_peaks) == 0:
+            return {"P": [], "Q": [], "S": [], "R": [], "T": []}
+
+        _, wave_info = nk.ecg_delineate(cleaned_signal, r_peaks, sampling_rate=sampling_rate, method="peak")
+
+        p_points = [int(x) for x in wave_info.get("ECG_P_Peaks", []) if not np.isnan(x)]
+        q_points = [int(x) for x in wave_info.get("ECG_Q_Peaks", []) if not np.isnan(x)]
+        s_points = [int(x) for x in wave_info.get("ECG_S_Peaks", []) if not np.isnan(x)]
+        t_points = [int(x) for x in wave_info.get("ECG_T_Peaks", []) if not np.isnan(x)]
+
+        return {"P": p_points, "Q": q_points, "R": r_peaks, "S": s_points, "T": t_points}
+    except Exception as e:
+        print(f"[NeuroKit2 Error]: Pipeline failed. Reason: {str(e)}")
+        return {"P": [], "Q": [], "R": [], "S": [], "T": []}
+
+
+
+def run_christov_segmentation_nk2(signal, sampling_rate=300.0):
+    sampling_rate = int(sampling_rate)
+    try:
+        cleaned_signal = nk.ecg_clean(signal, sampling_rate=sampling_rate, method="neurokit")
+        _, r_peak_info = nk.ecg_peaks(cleaned_signal, sampling_rate=sampling_rate, method="christov2004")
+        r_peaks = r_peak_info["ECG_R_Peaks"].tolist()
+        
+        if len(r_peaks) == 0:
+            return {"P": [], "Q": [], "S": [], "R": [], "T": []}
+
+        _, wave_info = nk.ecg_delineate(cleaned_signal, r_peaks, sampling_rate=sampling_rate, method="peak")
+
+        p_points = [int(x) for x in wave_info.get("ECG_P_Peaks", []) if not np.isnan(x)]
+        q_points = [int(x) for x in wave_info.get("ECG_Q_Peaks", []) if not np.isnan(x)]
+        s_points = [int(x) for x in wave_info.get("ECG_S_Peaks", []) if not np.isnan(x)]
+        t_points = [int(x) for x in wave_info.get("ECG_T_Peaks", []) if not np.isnan(x)]
+
+        return {"P": p_points, "Q": q_points, "R": r_peaks, "S": s_points, "T": t_points}
+    except Exception as e:
+        print(f"[NeuroKit2 Error]: Pipeline failed. Reason: {str(e)}")
+        return {"P": [], "Q": [], "R": [], "S": [], "T": []}    
+
+def run_gamboa_segmentation_nk2(signal, sampling_rate=300.0):
+    sampling_rate = int(sampling_rate)
+    try:
+        cleaned_signal = nk.ecg_clean(signal, sampling_rate=sampling_rate, method="neurokit")
+        _, r_peak_info = nk.ecg_peaks(cleaned_signal, sampling_rate=sampling_rate, method="gamboa2008")
+        r_peaks = r_peak_info["ECG_R_Peaks"].tolist()
+        
+        if len(r_peaks) == 0:
+            return {"P": [], "Q": [], "S": [], "R": [], "T": []}
+
+        _, wave_info = nk.ecg_delineate(cleaned_signal, r_peaks, sampling_rate=sampling_rate, method="peak")
+
+        p_points = [int(x) for x in wave_info.get("ECG_P_Peaks", []) if not np.isnan(x)]
+        q_points = [int(x) for x in wave_info.get("ECG_Q_Peaks", []) if not np.isnan(x)]
+        s_points = [int(x) for x in wave_info.get("ECG_S_Peaks", []) if not np.isnan(x)]
+        t_points = [int(x) for x in wave_info.get("ECG_T_Peaks", []) if not np.isnan(x)]
+
+        return {"P": p_points, "Q": q_points, "R": r_peaks, "S": s_points, "T": t_points}
+    except Exception as e:
+        print(f"[NeuroKit2 Error]: Pipeline failed. Reason: {str(e)}")
+        return {"P": [], "Q": [], "R": [], "S": [], "T": []}    
+
+def run_neurokit_segmentation_nk2(signal, sampling_rate=300.0):
+    sampling_rate = int(sampling_rate)
+    try:
+        cleaned_signal = nk.ecg_clean(signal, sampling_rate=sampling_rate, method="neurokit")
+        _, r_peak_info = nk.ecg_peaks(cleaned_signal, sampling_rate=sampling_rate, method="neurokit")
+        r_peaks = r_peak_info["ECG_R_Peaks"].tolist()
+        
+        if len(r_peaks) == 0:
+            return {"P": [], "Q": [], "S": [], "R": [], "T": []}
+
+        _, wave_info = nk.ecg_delineate(cleaned_signal, r_peaks, sampling_rate=sampling_rate, method="peak")
+
+        p_points = [int(x) for x in wave_info.get("ECG_P_Peaks", []) if not np.isnan(x)]
+        q_points = [int(x) for x in wave_info.get("ECG_Q_Peaks", []) if not np.isnan(x)]
+        s_points = [int(x) for x in wave_info.get("ECG_S_Peaks", []) if not np.isnan(x)]
+        t_points = [int(x) for x in wave_info.get("ECG_T_Peaks", []) if not np.isnan(x)]
+
+        return {"P": p_points, "Q": q_points, "R": r_peaks, "S": s_points, "T": t_points}
+    except Exception as e:
+        print(f"[NeuroKit2 Error]: Pipeline failed. Reason: {str(e)}")
+        return {"P": [], "Q": [], "R": [], "S": [], "T": []}    
