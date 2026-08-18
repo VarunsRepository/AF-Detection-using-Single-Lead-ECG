@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECG Frequency Feature Studio</title>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<style>
+    :root { --bg:#121418; --panel:#1c1e24; --line:#2e3440; --muted:#8b93a1; --text:#f2f4f8; --orange:#eb7b2b; --blue:#3498db; --green:#5cc24a; --yellow:#f1c40f; }
+    * { box-sizing:border-box; }
+    body { margin:20px; background:var(--bg); color:var(--text); font-family:Monaco,Consolas,monospace; }
+    h1,h2,h3 { color:var(--orange); margin-top:0; }
+    h2 { border-bottom:2px solid var(--line); padding-bottom:10px; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:16px; margin-bottom:18px; }
+    .grid { display:grid; grid-template-columns:repeat(4,minmax(160px,1fr)); gap:14px; }
+    .two { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+    .field { display:flex; flex-direction:column; gap:6px; }
+    label { color:var(--muted); font-size:12px; }
+    select,input,button { background:#2e3440; color:var(--text); border:1px solid #4c566a; border-radius:4px; padding:9px 10px; font-family:inherit; }
+    button { cursor:pointer; font-weight:bold; }
+    button.primary { background:#8f4a1e; border-color:var(--orange); }
+    button:hover { filter:brightness(1.15); }
+    .checks { display:flex; flex-wrap:wrap; gap:16px; align-items:center; }
+    .checks label { color:var(--text); display:flex; gap:7px; align-items:center; }
+    .status { padding:8px 10px; border:1px solid var(--line); border-radius:4px; color:var(--green); }
+    .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+    .stat { background:#17191e; border:1px solid var(--line); padding:14px; border-radius:5px; }
+    .stat strong { display:block; font-size:22px; margin-top:5px; }
+    .table-wrap { overflow:auto; max-height:430px; }
+    table { width:100%; border-collapse:collapse; min-width:900px; font-size:12px; }
+    th,td { border-bottom:1px solid var(--line); padding:9px 8px; text-align:right; white-space:nowrap; }
+    th:first-child,td:first-child,th:nth-child(2),td:nth-child(2) { text-align:left; }
+    th { position:sticky; top:0; background:#252933; color:var(--orange); }
+    .heat { background:linear-gradient(90deg,#1b2530,var(--blue)); }
+    .chart { height:430px; }
+    .hint { color:var(--muted); font-size:11px; line-height:1.5; }
+    .band-row { display:grid; grid-template-columns:90px 1fr 100px; gap:12px; align-items:center; margin:8px 0; }
+    .band { height:12px; background:#252933; border-radius:6px; overflow:hidden; }
+    .band span { display:block; height:100%; background:var(--blue); }
+    @media(max-width:850px) { body{margin:10px}.grid,.two,.stats{grid-template-columns:1fr}.chart{height:360px} }
+</style>
+</head>
+<body>
+<h2>ECG Frequency Feature Studio: 10-BAND FFT</h2>
+
+<div class="panel">
+    <h3>01 // SAMPLE SELECTION</h3>
+    <div class="grid">
+        <div class="field"><label>CLINICAL CLASS</label><select id="classFilter"><option>All Classes</option><option>N — Normal</option><option>A — Atrial Fibrillation</option><option>O — Other</option><option>~ — Noisy</option></select></div>
+        <div class="field"><label>SAMPLE SEARCH</label><input id="sampleSearch" placeholder="record ID"></div>
+        <div class="field"><label>SAMPLE RANGE</label><select id="sampleCount"><option>25 samples</option><option selected>100 samples</option><option>250 samples</option><option>500 samples</option><option>1000 samples</option></select></div>
+        <div class="field"><label>SEGMENT</label><select><option>Full 30 s</option><option>8.3 s snippet</option><option>Fixed 10 s window</option></select></div>
+    </div>
+    <div class="checks" style="margin-top:14px">
+        <label><input type="checkbox" id="includeN" checked> N</label>
+        <label><input type="checkbox" id="includeA" checked> A</label>
+        <label><input type="checkbox" id="includeO"> O</label>
+        <label><input type="checkbox" id="includeNoise"> ~</label>
+        <button onclick="selectAllSamples()">SELECT ALL</button>
+        <button onclick="clearSamples()">CLEAR</button>
+        <button class="primary" onclick="runAnalysis()">ANALYSE SELECTED</button>
+        <span class="status" id="status">Ready — 0 samples selected</span>
+    </div>
+</div>
+
+<div class="panel">
+    <h3>02 // FFT CONFIGURATION</h3>
+    <div class="grid">
+        <div class="field"><label>LOW FREQUENCY (Hz)</label><input id="fLow" type="number" value="0.5" step="0.1"></div>
+        <div class="field"><label>HIGH FREQUENCY (Hz)</label><input id="fHigh" type="number" value="10" step="0.5"></div>
+        <div class="field"><label>NUMBER OF BANDS</label><input id="bandCount" type="number" value="10" readonly></div>
+        <div class="field"><label>FEATURE TYPE</label><select id="featureType"><option>Relative Band Power</option><option>Absolute Band Power</option><option>Log Power</option><option>PSD</option></select></div>
+    </div>
+    <div class="checks" style="margin-top:14px">
+        <label><input type="checkbox" checked> detrend</label>
+        <label><input type="checkbox" checked> window before FFT</label>
+        <label><input type="checkbox" checked> normalize spectrum</label>
+        <label><input type="checkbox"> suppress QRS before spectral analysis</label>
+    </div>
+    <p class="hint">Default feature space: 0.5–10 Hz split into 10 equal bands. Each sample produces one value per band, giving a fixed 10-feature frequency vector for ML.</p>
+</div>
+
+<div class="panel">
+    <h3>03 // TEN FREQUENCY BANDS</h3>
+    <div id="bands"></div>
+</div>
+
+<div class="stats">
+    <div class="stat"><label>SELECTED SAMPLES</label><strong id="nSamples">0</strong></div>
+    <div class="stat"><label>FEATURES / SAMPLE</label><strong>10</strong></div>
+    <div class="stat"><label>FREQUENCY RANGE</label><strong>0.5–10 Hz</strong></div>
+    <div class="stat"><label>FEATURE MATRIX</label><strong id="matrixSize">0 × 10</strong></div>
+</div>
+
+<div class="two" style="margin-top:18px">
+    <div class="panel"><h3>04 // MEAN SPECTRAL PROFILE</h3><div id="meanChart" class="chart"></div></div>
+    <div class="panel"><h3>05 // CLASS COMPARISON</h3><div id="classChart" class="chart"></div></div>
+</div>
+
+<div class="panel">
+    <h3>06 // SAMPLE × FREQUENCY FEATURE MATRIX</h3>
+    <div class="checks" style="margin-bottom:12px">
+        <input id="matrixSearch" placeholder="Filter records..." oninput="renderMatrix()">
+        <select id="matrixClass" onchange="renderMatrix()"><option>All</option><option>N</option><option>A</option><option>O</option><option>~</option></select>
+        <button onclick="downloadCSV()">EXPORT CSV</button>
+    </div>
+    <div class="table-wrap"><table id="matrix"><thead></thead><tbody></tbody></table></div>
+</div>
+
+<div class="panel">
+    <h3>07 // FEATURE DISTRIBUTION</h3>
+    <div class="grid">
+        <div class="field"><label>FEATURE / BAND</label><select id="bandSelect" onchange="updateDistribution()"></select></div>
+        <div class="field"><label>GROUP BY</label><select><option>Clinical Class</option><option>All Samples</option></select></div>
+    </div>
+    <div id="distribution" class="chart" style="margin-top:12px"></div>
+</div>
+
+<script>
+const bands = Array.from({length:10}, (_,i) => {
+    const lo = 0.5 + i * 0.95, hi = lo + 0.95;
+    return {lo, hi, label:`${lo.toFixed(2)}–${hi.toFixed(2)} Hz`};
+});
+let rows = [];
+
+function renderBands(){
+    document.getElementById('bands').innerHTML = bands.map((b,i)=>`<div class="band-row"><strong>B${i+1}</strong><div class="band"><span style="width:${35+i*5}%"></span></div><span>${b.label}</span></div>`).join('');
+    document.getElementById('bandSelect').innerHTML = bands.map((b,i)=>`<option value="${i}">B${i+1} — ${b.label}</option>`).join('');
+}
+function setStatus(n){ document.getElementById('status').textContent=`Ready — ${n} samples selected`; document.getElementById('nSamples').textContent=n; document.getElementById('matrixSize').textContent=`${n} × 10`; }
+function selectAllSamples(){ setStatus(parseInt(document.getElementById('sampleCount').value)); generateDemoData(); }
+function clearSamples(){ rows=[]; setStatus(0); renderMatrix(); }
+function generateDemoData(){
+    const n=parseInt(document.getElementById('sampleCount').value); const classes=['N','A']; rows=[];
+    for(let i=1;i<=n;i++){
+        const cls=classes[i%2]; const values=bands.map((_,j)=>Math.max(0.01,(Math.random()*(cls==='A'&&j>=3&&j<8?0.12:0.07))));
+        rows.push({id:`A${String(i).padStart(5,'0')}`,cls,values});
+    }
+    renderMatrix(); drawCharts(); updateDistribution();
+}
+function runAnalysis(){ generateDemoData(); document.getElementById('status').textContent=`Analysis complete — ${rows.length} samples`; }
+function renderMatrix(){
+    const q=(document.getElementById('matrixSearch').value||'').toLowerCase(); const c=document.getElementById('matrixClass').value;
+    const filtered=rows.filter(r=>(!q||r.id.toLowerCase().includes(q))&&(c==='All'||r.cls===c));
+    document.querySelector('#matrix thead').innerHTML='<tr><th>RECORD</th><th>CLASS</th>'+bands.map((b,i)=>`<th>B${i+1}<br>${b.lo.toFixed(1)}-${b.hi.toFixed(1)}</th>`).join('')+'</tr>';
+    document.querySelector('#matrix tbody').innerHTML=filtered.map(r=>`<tr><td>${r.id}</td><td>${r.cls}</td>${r.values.map(v=>`<td class="heat">${v.toFixed(4)}</td>`).join('')}</tr>`).join('');
+}
+function drawCharts(){
+    const mean=bands.map((_,j)=>rows.reduce((s,r)=>s+r.values[j],0)/Math.max(rows.length,1));
+    const x=bands.map(b=>(b.lo+b.hi)/2);
+    Plotly.newPlot('meanChart',[{x,y:mean,type:'scatter',mode:'lines+markers',name:'Mean band power'}],{paper_bgcolor:'#1c1e24',plot_bgcolor:'#1c1e24',font:{color:'#f2f4f8',family:'monospace'},xaxis:{title:'Frequency (Hz)'},yaxis:{title:'Feature value'},margin:{t:20,r:20,b:50,l:55}},{responsive:true,displaylogo:false});
+    const normal=bands.map((_,j)=>avg('N',j)), af=bands.map((_,j)=>avg('A',j));
+    Plotly.newPlot('classChart',[{x,y:normal,type:'scatter',mode:'lines+markers',name:'Normal (N)'},{x,y:af,type:'scatter',mode:'lines+markers',name:'AF (A)'}],{paper_bgcolor:'#1c1e24',plot_bgcolor:'#1c1e24',font:{color:'#f2f4f8',family:'monospace'},xaxis:{title:'Frequency (Hz)'},yaxis:{title:'Mean feature value'},margin:{t:20,r:20,b:50,l:55},legend:{orientation:'h'}},{responsive:true,displaylogo:false});
+}
+function avg(cls,j){const a=rows.filter(r=>r.cls===cls); return a.length?a.reduce((s,r)=>s+r.values[j],0)/a.length:0;}
+function updateDistribution(){
+    const j=parseInt(document.getElementById('bandSelect').value||0); const n=rows.filter(r=>r.cls==='N').map(r=>r.values[j]); const a=rows.filter(r=>r.cls==='A').map(r=>r.values[j]);
+    Plotly.newPlot('distribution',[{x:n,type:'histogram',name:'Normal (N)',opacity:.65},{x:a,type:'histogram',name:'AF (A)',opacity:.65}],{barmode:'overlay',paper_bgcolor:'#1c1e24',plot_bgcolor:'#1c1e24',font:{color:'#f2f4f8',family:'monospace'},xaxis:{title:bands[j].label},yaxis:{title:'Samples'},margin:{t:20,r:20,b:55,l:55}},{responsive:true,displaylogo:false});
+}
+function downloadCSV(){
+    const header=['record','class',...bands.map(b=>b.label)]; const body=rows.map(r=>[r.id,r.cls,...r.values.map(v=>v.toFixed(6))]);
+    const csv=[header,...body].map(r=>r.join(',')).join('\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='ecg_10band_fft_features.csv'; a.click();
+}
+renderBands(); setStatus(0); renderMatrix(); drawCharts(); updateDistribution();
+</script>
+</body>
+</html>
