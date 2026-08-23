@@ -174,7 +174,7 @@
 
 <!-- Panel 1: dataset + class scope + plot toggles -->
 <div class="panel">
-    <h3>01 // DATASET &amp; SCOPE</h3>
+    <h3>TARGET CLINICAL CLASS: &amp; CONTROLS</h3>
     <div class="grid">
         <div class="field">
             <label>DATASET</label>
@@ -232,7 +232,7 @@
     <h3>Distribution — % Power per Band</h3>
     <div id="plot-violin" class="chart-frame plot-container"></div>
     <div class="panel-footer-cite">
-        Violin/box statistics computed by Plotly.js directly from raw per-sample values (no server-side aggregation).
+        Violin/box statistics computed byAll charts are generated directly on the client side(web-browser) using Plotly.js. No computation is done at the server-side.
     </div>
 </div>
 
@@ -248,7 +248,7 @@
     <h3>PCA / t-SNE — 100-Band Feature Space</h3>
     <div id="plot-pcatsne" class="chart-frame plot-container"></div>
     <div class="panel-footer-cite">
-        Server-computed, cached per (dataset, class selection). May take a moment on first request for a new combination.
+        Server-computed, cached per (dataset, class selection). Calculated on the server and saved for quick loading. The first time you select a new dataset or class combination may take a moment.
     </div>
 </div>
 
