@@ -5,8 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ECG Analytics Workspace Studio</title>
+    <script src="https://tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
+
         body {
             background-color: #121418;
             color: #f2f4f8;
@@ -223,7 +225,7 @@
 
 <body>
 
-    <!-- 
+<!-- 
 <div class="panel">
   
     <h3 style="color: #eb7b2b; margin-top: 0; font-size: 14px; border-bottom: 1px solid #2e3440; padding-bottom: 5px; font-family: monospace;">
@@ -356,8 +358,6 @@
             <input type="checkbox" id="beats-VIX" onchange="loadEcgPipeline()">
             <label for="beats-VIX" style="color: #f1c40f;">| Plot Volatility-Index for Beats </label>
         </div>
-
-
     </div>
 
 
@@ -428,7 +428,9 @@
         -->
         <button id="rubber-stamp-btn" older_code_onclick="lockThisIsItConfiguration()"
             old_onclick="window.dispatchEvent(new CustomEvent('tuldLockRequested'))"
-            style="background-color: #5cc24a; color: #111111; border: 1px solid #44a635; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px;"
+            style="background-color: #5cc24a; color: #111111; border: 1px solid #44a635; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px;"   
+            Super_class="bg-[#5cc24a] text-[#111111] font-bold text-[12px] uppercase tracking-[0.5px] px-4 py-[6px] border border-[#44a635] rounded-[3px] cursor-pointer transition-all duration-150 ease-in-out hover:bg-[#4cb03b] hover:shadow-[0_0_4px_rgba(92,194,74,0.4)]"
+
             onmouseover="this.style.backgroundColor='#4cb03b'; this.style.boxShadow='0 0 4px rgba(92,194,74,0.4)';"
             onmouseout="this.style.backgroundColor='#5cc24a'; this.style.boxShadow='none';">
             🔒 This Is It! Lock Configuration
@@ -618,6 +620,33 @@
         </div>
     </div>
 
+
+        <!-- this panel holds the STATISTICAL FEATURES DSP methods and control -->
+    <div class="panel control-group">
+
+        <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">UNIFIED STACKED PEAKS & WAVEWLET PLOT</label>
+
+
+        <div>
+            <input type="checkbox" id="toggle-Stacked-Wavelets-On-Wavelets" onchange="loadEcgPipeline()">
+            <label for="toggle-Stacked-Wavelets-On-Wavelets" style="color: #f1c40f;">| Stack_Wavelets</label>
+        </div>
+    </div>    
+        <div id="Stacked-Wavelets-On-Wavelets-view-overlay-panel" class="panel">
+        <!-- <h3>checking the volatility index for the beats</h3> -->
+
+        <div id="Stacked-Wavelets-On-Wavelets-overlay-container" class="chart-frame"></div>
+        <div class="panel-footer-cite">
+            An experimental plot that unified stacked chart with the waavelet transform.
+            The plot still shows the stacked RR chart with the Consequitive beats alinged at their R-peaks.
+            It instead of showing the beats, it now shows the wavelets, this helping us to understand     
+ 
+            <a href="https://doi.org" target="_blank"
+                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
+        </div>
+    </div>
+
+    
 </body>
 
 </html>
@@ -1965,7 +1994,335 @@ plotContainerDiv.on('plotly_legendclick', function(data) {
         }
     }
 
+ function sliceStackedWaveletsFrontend(waveletBands, signal, absoluteIndices, beatsToStack = 2, samplingRate = 300) {
+    const rPeaks = absoluteIndices.R || [];
+    const stackedDataset = [];
 
+    const samplesBefore = Math.floor(0.20 * samplingRate); 
+    const samplesAfter = Math.floor(0.40 * samplingRate);  
+
+    console.log("waveletBands inside sliceStackedWaveletsFrontend before loop start ", waveletBands)
+
+    for (let idx = 0; idx < rPeaks.length - (beatsToStack - 1); idx++) {
+        const rCurrent = rPeaks[idx];                        
+        const rTargetEnd = rPeaks[idx + (beatsToStack - 1)]; 
+
+        const startSample = rCurrent - samplesBefore; 
+        const endSample = rTargetEnd + samplesAfter;  
+
+        if (startSample < 0 || endSample >= signal.length) continue;
+
+        // 1. Slice out a reference segment to match the amplitude length property exactly
+        const referenceSlice = signal.slice(startSample, endSample);
+
+        // 2. Generate the timeline using your exact original logic
+        const timesMs = Array.from({ length: referenceSlice.length }, (_, s) => {
+            const absoluteSampleIndex = startSample + s;
+            return Number((((absoluteSampleIndex - rCurrent) / samplingRate) * 1000).toFixed(1));
+        });
+
+        // 3. Slice every wavelet band array matching the window bounds
+        const slicedBands = {};
+        for (const [bandName, fullBandArray] of Object.entries(waveletBands)) {
+            slicedBands[bandName] = fullBandArray.slice(startSample, endSample);
+        }
+
+
+        const features = { P: [], Q: [], R: [], S: [], T: [] };
+        ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+            const indices = absoluteIndices[wave] || [];
+            indices.forEach(sampleIdx => {
+                if (sampleIdx >= startSample && sampleIdx <= endSample) {
+                    features[wave].push({
+                        x: Number((((sampleIdx - rCurrent) / samplingRate) * 1000).toFixed(1)),
+                        y: signal[sampleIdx]
+                    });
+                }
+            });
+        });
+
+        stackedDataset.push({
+            beat_number: idx + 1,
+            time_ms: timesMs,
+            wavelet_bands: slicedBands, 
+            features: features
+        });
+    }
+
+    // === ADDED DEBUG LOG FOR INTERACTIVE INSPECTION ===
+    console.log("=== FRONTIER SLICED STACKED WAVELETS ===", stackedDataset);
+
+    return stackedDataset;
+}
+
+
+
+//    async function runStackedWaveletsOnWavelets(serverPayload = payload, beatsToStack = 2, samplingRate = 300, current_config){
+async function updateStackedWaveletChart(
+    serverPayload,       // The payload containing serverPayload.wavelet_bands AND serverPayload.data
+    selectedBandName,    // e.g., 'detail_band_D1', 'baseline_wander_A5', etc.
+    beatsToStack = 2, 
+    samplingRate = 300, 
+    currentConfig
+) {
+
+    console.log(
+        `updateStackedWaveletChart input payload is ${serverPayload.wavelets}`
+    );
+
+    // ---------------------------------------------------------
+    // 1. Slice the wavelet bands into the requested beat windows
+    // ---------------------------------------------------------
+
+    const stackedWavelets = sliceStackedWaveletsFrontend(
+        serverPayload.wavelets,
+        serverPayload.data,
+        serverPayload.features,
+        beatsToStack,
+        samplingRate
+    );
+
+    console.log('#stacked Wavelet Data:', stackedWavelets);
+
+    const finalPlotTraces = [];
+
+
+    // ---------------------------------------------------------
+    // 2. Convert backend wavelet names into clean legend names
+    // ---------------------------------------------------------
+
+    function getWaveletLegendName(bandName) {
+
+        const mapping = {
+            detail_band_D1: 'D1',
+            detail_band_D2: 'D2',
+            detail_band_D3: 'D3',
+            detail_band_D4: 'D4',
+            detail_band_D5: 'D5',
+            baseline_wander_A5: 'A5'
+        };
+
+        return mapping[bandName] || bandName;
+    }
+
+
+    // Keep track of which PQRST legend entries have already
+    // been created. We only want one P/Q/R/S/T entry each.
+    const markerLegendShown = {
+        P: false,
+        Q: false,
+        R: false,
+        S: false,
+        T: false
+    };
+
+
+    // ---------------------------------------------------------
+    // 3. Loop through every beat
+    // ---------------------------------------------------------
+
+    stackedWavelets.forEach((beat, beatIndex) => {
+
+
+        // -----------------------------------------------------
+        // 4. Loop through ALL wavelet bands
+        // -----------------------------------------------------
+
+        Object.entries(beat.wavelet_bands).forEach(
+            ([bandName, waveletYValues]) => {
+
+                if (!waveletYValues) return;
+
+                const legendName =
+                    getWaveletLegendName(bandName);
+
+
+                // -------------------------------------------------
+                // 5. Wavelet waveform trace
+                // -------------------------------------------------
+
+                finalPlotTraces.push({
+
+                    x: beat.time_ms,
+
+                    y: waveletYValues,
+
+                    type: 'scatter',
+
+                    mode: 'lines',
+
+                    // What appears in the legend
+                    name: legendName,
+
+                    // All beats belonging to this wavelet
+                    // are placed in the same legend group
+                    legendgroup: bandName,
+
+                    // Only the first beat creates the
+                    // visible D1/D2/... legend entry
+                    showlegend: beatIndex === 0,
+
+                    opacity: 0.7,
+
+                    line: {
+                        width: 2
+                    },
+
+                    hovertemplate:
+                        `${legendName} — Beat ${beat.beat_number}` +
+                        '<br>Time: %{x} ms' +
+                        '<br>Coefficient: %{y}' +
+                        '<extra></extra>'
+                });
+
+
+                // -------------------------------------------------
+                // 6. PQRST markers
+                // -------------------------------------------------
+
+                ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+
+                    const markers =
+                        beat.features[wave] || [];
+
+                    if (markers.length === 0) {
+                        return;
+                    }
+
+
+                    // Map the absolute PQRST locations onto
+                    // the current wavelet's Y values
+                    const markerX = markers.map(m => m.x);
+
+                    const markerY = markers.map(m => {
+
+                        const relativeIdx =
+                            beat.time_ms.indexOf(m.x);
+
+                        return relativeIdx !== -1
+                            ? waveletYValues[relativeIdx]
+                            : m.y;
+                    });
+
+
+                    // -------------------------------------------------
+                    // 7. Create marker trace
+                    // -------------------------------------------------
+
+                    finalPlotTraces.push({
+
+                        x: markerX,
+
+                        y: markerY,
+
+                        type: 'scatter',
+
+                        mode: 'markers',
+
+                        // ---------------------------------------------
+                        // IMPORTANT:
+                        //
+                        // P, Q, R, S and T each get their OWN
+                        // legend group.
+                        // ---------------------------------------------
+
+                        legendgroup: wave,
+
+                        name: wave,
+
+                        // Only show one P/Q/R/S/T item in the legend.
+                        //
+                        // Once that legend entry exists, all the
+                        // remaining marker traces are hidden from
+                        // the legend but remain in the same group.
+                        showlegend:
+                            !markerLegendShown[wave],
+
+                        marker: {
+                            size: 6
+                        },
+
+                        hovertemplate:
+                            `${wave} Peak` +
+                            `<br>${legendName}` +
+                            `<br>Beat ${beat.beat_number}` +
+                            '<br>Time: %{x} ms' +
+                            '<extra></extra>'
+                    });
+
+
+                    // We've now created the single legend entry
+                    // for this marker type.
+                    markerLegendShown[wave] = true;
+
+                });
+
+            }
+        );
+    });
+
+
+    // ---------------------------------------------------------
+    // 8. Configure layout
+    // ---------------------------------------------------------
+
+    const overlayLayout = {
+
+        title: {
+            text:
+                'Stacked Wavelet Decomposition — All Layers',
+            font: {
+                size: 16
+            }
+        },
+
+        xaxis: {
+
+            title:
+                'Time aligned to current R-Peak (ms)',
+
+            zeroline: true,
+
+            zerolinecolor: '#ff0000',
+
+            zerolinewidth: 1.5
+        },
+
+        yaxis: {
+
+            title:
+                'Wavelet Coefficient Amplitude',
+
+            automargin: true
+        },
+
+        hovermode: 'closest',
+
+        showlegend: true,
+
+        legend: {
+
+            orientation: 'h',
+
+            y: -0.2,
+
+            // Clicking a legend item toggles the
+            // ENTIRE legend group.
+            groupclick: 'togglegroup'
+        }
+    };
+
+
+    // ---------------------------------------------------------
+    // 9. Render plot
+    // ---------------------------------------------------------
+
+    Plotly.newPlot(
+        'Stacked-Wavelets-On-Wavelets-overlay-container',
+        finalPlotTraces,
+        overlayLayout
+    );
+}
 
 
 
@@ -2015,6 +2372,10 @@ plotContainerDiv.on('plotly_legendclick', function(data) {
         const showBeatsVIX = document.getElementById('beats-VIX').checked;
         console.log("showBeatsVIX in the request", showBeatsVIX)
 
+        // Stacked wavelets 
+        const showStackedWaveletsOnWavelets = document.getElementById('toggle-Stacked-Wavelets-On-Wavelets').checked;
+        console.log("Stacked-Wavelets-On-Wavelets in the request", showStackedWaveletsOnWavelets)
+
 
         // conditional statements with ternary operator for displaying the selected visuaization only when the corresponding control is activated 
         document.getElementById('poincare-panel').style.display = usePoincare ? 'block' : 'none';
@@ -2052,7 +2413,8 @@ plotContainerDiv.on('plotly_legendclick', function(data) {
             StackedBeats: showStackedBeats,
             StackedBeatsOnBeats: showStackedBeatsOnBeats,
             Stacked_n_RR_Beats: showStacked_n_RR_Beats,
-            VIX_Beats: showBeatsVIX
+            VIX_Beats: showBeatsVIX,
+            StackedWaveletsOnWavelets: showStackedWaveletsOnWavelets 
 
         };
         //***************** TILL THIS POINT WE HAVE JUST GENERATED THE REQEUST, NOTHING MORE  *****************
@@ -2256,7 +2618,7 @@ plotContainerDiv.on('plotly_legendclick', function(data) {
 
                 renderPoincareGraph(payload, usePoincare, current_config);
 
-
+                // Old inline poincare renderer code 
                 //if (usePoincare && payload.poincare && payload.poincare.x.length > 0) {
                 //    const scatterTrace = {
                 //        x: payload.poincare.x, y: payload.poincare.y,
@@ -2309,6 +2671,8 @@ plotContainerDiv.on('plotly_legendclick', function(data) {
                 // Render Graph 4 (Wavelet decomposition plot)
                 if (useWavelet && payload.wavelets && Object.keys(payload.wavelets).length > 0) {
                     console.log("Wavelet data successfully delivered in the main payload!");
+                    
+                    console.log("=== WAVELET PAYLOAD DATA ===", payload.wavelets);
 
                     const waveletTraces = [];
 
@@ -2412,13 +2776,15 @@ plotContainerDiv.on('plotly_legendclick', function(data) {
 
 
                     Plotly.newPlot('wavelet-container', waveletTraces, waveletLayout);
-                }
-
-                if (useWavelet) {
+                
+                    // lastly we are syncing the waveletdata plot and the mains signal plot
                     synchronizeCharts('chart-container', 'wavelet-container'); //chart container syncs with wavelet container
                     synchronizeCharts('wavelet-container', 'chart-container'); // wavelet container syncs with chart container
+
                 }
 
+
+ 
 
                 console.log("showStackedBeats:", showStackedBeats)
                 console.log("payload.stacked_beats_dataset:", payload.stacked_beats_dataset)
@@ -2592,6 +2958,25 @@ plotContainerDiv.on('plotly_legendclick', function(data) {
                 // BEATS VIX INDICATOR
                 if (showBeatsVIX && payload.features) {
                     runVolatilityIndexPlot(serverPayload = payload, beatsToStack = 2, samplingRate = 300, current_config)
+                }
+
+
+                // showStackedWaveletsOnWavelets        
+                if (showStackedWaveletsOnWavelets          // This condition signifies that we'd need:  and  
+                     && payload.features                       // 1. payload.features for R peaks
+                    && payload.wavelets                       // 2. payload.wavelets for wavelet info
+                    && Object.keys(payload.wavelets).length > 0 // 3. payload.wavelets for wavelet data
+                    ) { 
+                        console.log("wavelets info inside checkbox check statement ", payload.wavelets)
+                   // runStackedWaveletsOnWavelets(serverPayload = payload, beatsToStack = 2, samplingRate = 300, current_config)
+                   updateStackedWaveletChart(
+                    serverPayload    = payload,       // The payload containing serverPayload.wavelet_bands AND serverPayload.data
+                    selectedBandName = 'detail_band_D1',    // e.g., 'detail_band_D1', 'baseline_wander_A5', etc.
+                    beatsToStack     = 2, 
+                    samplingRate     = 300, 
+                    currentConfig    = current_config
+                )
+                
                 }
 
                 console.log(current_config)
