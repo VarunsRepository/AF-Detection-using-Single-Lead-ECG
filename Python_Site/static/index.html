@@ -481,6 +481,44 @@
 
 
 
+        <div class="panel control-group" style="margin-top: 15px;">
+        <!-- STATISTICAL ANALYSIS NAVIGATION -->
+        <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">STATISTICAL ANALYSIS</label>
+
+        <!-- Unified Status Badge -->
+        <div id="stats-nav-status-badge"
+            style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block; margin-right: 8px;">
+            Spectral Band Dashboard
+        </div>
+
+
+
+        <!-- OPEN STATISTICAL ANALYSIS BUTTON -->
+        <a id="open-stats-btn" href="/statistical_analytics/"
+            style="background-color: #5cc24a; color: #111111; border: 1px solid #44a635; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 6px; text-decoration: none; display: inline-block;"
+            onmouseover="this.style.backgroundColor='#4cb03b'; this.style.boxShadow='0 0 4px rgba(92,194,74,0.4)';"
+            onmouseout="this.style.backgroundColor='#5cc24a'; this.style.boxShadow='none';">
+            Open Analysis ▶
+        </a>
+
+        <!-- OPEN IN NEW TAB BUTTON
+        <a id="open-stats-newtab-btn" href="/statistical_analytics/" target="_blank" rel="noopener"
+            style="background-color: #2e3440; color: #d8dee9; border: 1px solid #4c566a; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px; text-decoration: none; display: inline-block;"
+            onmouseover="this.style.backgroundColor='#3b4252'; this.style.borderColor='#5e81ac';"
+            onmouseout="this.style.backgroundColor='#2e3440'; this.style.borderColor='#4c566a';">
+            ◱ New Tab
+        </a>
+         -->
+
+        <!-- 💰 THE TULD NAVIGATION CAPTION -->
+        <span id="tuld-stats-nav-caption"
+            style="font-size: 9px; font-family: monospace; color: #747d8c; margin-top: 4px; padding-left: 2px; text-transform: uppercase; letter-spacing: 0.3px; opacity: 0.4; transition: opacity 0.15s ease-in-out; display: block;">
+            Protocol: Aggregate the signal. Compare the classes. Trust the spread.
+        </span>
+    </div>
+
+
+
     <div class="panel">
         <!-- 
         Added citation directly on beneath the plot - Makes design simpler-->
@@ -624,14 +662,16 @@
         <!-- this panel holds the STATISTICAL FEATURES DSP methods and control -->
     <div class="panel control-group">
 
-        <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">UNIFIED STACKED PEAKS & WAVEWLET PLOT</label>
+        <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">UNIFIED STACKED PEAKS & WAVEWLET PLOT :</label>
 
 
         <div>
             <input type="checkbox" id="toggle-Stacked-Wavelets-On-Wavelets" onchange="loadEcgPipeline()">
             <label for="toggle-Stacked-Wavelets-On-Wavelets" style="color: #f1c40f;">| Stack_Wavelets</label>
         </div>
-    </div>    
+    </div>  
+    
+    
         <div id="Stacked-Wavelets-On-Wavelets-view-overlay-panel" class="panel">
         <!-- <h3>checking the volatility index for the beats</h3> -->
 
@@ -2385,7 +2425,7 @@ async function updateStackedWaveletChart(
         document.getElementById('stacked-beats-on-beats-overlay-panel').style.display = showStackedBeatsOnBeats ? 'block' : 'none';
         document.getElementById('stacked-n-RR-beats-overlay-panel').style.display = showStacked_n_RR_Beats ? 'block' : 'none';
         document.getElementById('beats-voltility-index-overlay-panel').style.display = showBeatsVIX ? 'block' : 'none';
-
+        document.getElementById('Stacked-Wavelets-On-Wavelets-view-overlay-panel').style.display = showStackedWaveletsOnWavelets ? 'block' : 'none';
 
         // FIXED: Synchronized matching variable references and cleanly mapped all toggles to URL query keys
         //const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}`;
