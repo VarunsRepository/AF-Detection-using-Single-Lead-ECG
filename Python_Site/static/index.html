@@ -272,6 +272,7 @@
             <select id="scale-selector" onchange="loadEcgPipeline()">
                 <option value="short">Zoomed Snippet (8.3s)</option>
                 <option value="full">Full Stream (30.0s)</option>
+                <option value="fullLengthSample">Full Sample Stream (Upto 90.0s)</option>
             </select>
         </div>
 
@@ -1048,27 +1049,64 @@
 
 
         // we will generate Horizontal indicator lines that literally show the  R-R interval lengths
-        const rrIntervalLines = [];
 
-        // Looping into the feature map that we genearted above using the signal and the Pan-tompkins Markers
-        featureMap.R.x.forEach((r2OffsetMs, i) => {
-            if (r2OffsetMs > 0) {
-                // Get the corresponding voltage peak so the line reaches all the way up to the apex
-                const r2Voltage = featureMap.R.y[i];
+const rrIntervalLines = [];
 
-                rrIntervalLines.push({
-                    type: 'line',
-                    x0: 0,           // Starts at the first R-peak 
-                    y0: r2Voltage,   // Connects horizontally at the peak voltage level
-                    x1: r2OffsetMs,  // Stretches to the second R-peak location
-                    y1: r2Voltage,   // Keeps it flat
-                    line: {
-                        color: 'rgba(235, 123, 43, 0.30)', // splunk style orange color, with 30% opacity. not too bright or else it will steal the spotlight from the main signal  
-                        width: 1 // not too thick  or else it will take off the spotlight from the main signal 
-                    }
-                });
+let prevRrLengthMs = null; // RR interval of the previous pair, for comparison
+
+featureMap.R.x.forEach((r2OffsetMs, i) => {
+    if (r2OffsetMs > 0) {
+        const r2Voltage = featureMap.R.y[i];
+
+        // Compare this pair's RR length to the previous pair's RR length
+        let lineColor;
+        if (prevRrLengthMs === null) {
+            lineColor = 'rgba(50, 168, 82, 0.30)'; // green — no previous pair to compare against
+        } else {
+            const deltaMs = Math.abs(r2OffsetMs - prevRrLengthMs);
+            lineColor = deltaMs > 50
+                ? 'rgba(220, 53, 43, 0.30)'   // red-ish, 30% opacity — RR changed by >50ms vs previous
+                : 'rgba(50, 168, 82, 0.30)';  // green-ish, 30% opacity — stable RR
+        }
+
+        rrIntervalLines.push({
+            type: 'line',
+            x0: 0,
+            y0: r2Voltage,
+            x1: r2OffsetMs,
+            y1: r2Voltage,
+            line: {
+                color: lineColor,
+                width: 1
             }
         });
+
+        prevRrLengthMs = r2OffsetMs; // this pair's RR becomes "previous" for the next one
+    }
+});
+
+
+        //       const rrIntervalLines = [];
+//
+//       // Looping into the feature map that we genearted above using the signal and the Pan-tompkins Markers
+//       featureMap.R.x.forEach((r2OffsetMs, i) => {
+//           if (r2OffsetMs > 0) {
+//               // Get the corresponding voltage peak so the line reaches all the way up to the apex
+//               const r2Voltage = featureMap.R.y[i];
+//
+//               rrIntervalLines.push({
+//                   type: 'line',
+//                   x0: 0,           // Starts at the first R-peak 
+//                   y0: r2Voltage,   // Connects horizontally at the peak voltage level
+//                   x1: r2OffsetMs,  // Stretches to the second R-peak location
+//                   y1: r2Voltage,   // Keeps it flat
+//                   line: {
+//                       color: 'rgba(235, 123, 43, 0.30)', // splunk style orange color, with 30% opacity. not too bright or else it will steal the spotlight from the main signal  
+//                       width: 1 // not too thick  or else it will take off the spotlight from the main signal 
+//                   }
+//               });
+//           }
+//       });
 
 
         //************************ THE CODE BELOW MANAGES THE STATS FOR THE CURRENT SAMPLE ************************ //
@@ -1120,6 +1158,17 @@
                 legendgroup: 'summary_group' // 🔑 The secret key linking it to the annotation
             });
 
+            // pushing a dummy value for RR interval lines
+            finalPlotTraces.push({
+                type: 'scatter',
+                mode: 'markers',
+                name: 'RR Intervals',        // The text that appears in your legend
+                showlegend: true,
+                x: [null], y: [null],       // Draws absolutely nothing on the screen
+                legendgroup: 'RR_Intervals' // 🔑 The secret key linking it to the annotation
+            });
+            
+            
 
             let statusBoxObject_v1 = {
                 x: 0.98, y: 0.62,
@@ -1210,21 +1259,48 @@
         let isSummaryBoxVisible = true;
         const plotContainerDiv = document.getElementById('beats-voltility-index-overlay-container');
 
-        plotContainerDiv.on('plotly_legendclick', function(data) {
-        // Check if the user specifically clicked the 'Toggle Summary Box' trace item
-            if (data.curveNumber === finalPlotTraces.length - 1) {
-                isSummaryBoxVisible = !isSummaryBoxVisible;
-                
-                // Update ONLY the visibility state of the annotation inside the layout engine
-                Plotly.relayout('beats-voltility-index-overlay-container', {
-                    'annotations[0].visible': isSummaryBoxVisible
-                });
-                
-                // Returning true allows Plotly to dim the legend item text natively, showing it is off
-                return true; 
-            }
-        });
+//        plotContainerDiv.on('plotly_legendclick', function(data) {
+//        // Check if the user specifically clicked the 'Toggle Summary Box' trace item
+//            if (data.curveNumber === finalPlotTraces.length - 1) {
+//                isSummaryBoxVisible = !isSummaryBoxVisible;
+//                
+//                // Update ONLY the visibility state of the annotation inside the layout engine
+//                Plotly.relayout('beats-voltility-index-overlay-container', {
+//                    'annotations[0].visible': isSummaryBoxVisible
+//                });
+//                
+//                // Returning true allows Plotly to dim the legend item text natively, showing it is off
+//                return true; 
+//            }
+//        });
 
+
+// Now we will incoperate two controls(RR intervals, Summary box) to Legend bar instead of one 
+let isRrLinesVisible = true;
+plotContainerDiv.on('plotly_legendclick', function(data) {
+    const clickedTrace = finalPlotTraces[data.curveNumber];
+
+
+    if (clickedTrace.name === 'Summary Box') {
+        isSummaryBoxVisible = !isSummaryBoxVisible;
+        Plotly.relayout('beats-voltility-index-overlay-container', {
+            'annotations[0].visible': isSummaryBoxVisible
+        });
+        return true;
+    }
+
+     
+    if (clickedTrace.name === 'RR Intervals') {
+        isRrLinesVisible = !isRrLinesVisible;
+        Plotly.relayout('beats-voltility-index-overlay-container', {
+            shapes: isRrLinesVisible ? rrIntervalLines : []
+        });
+        return true;
+    }
+
+
+
+});
 
     }
 
