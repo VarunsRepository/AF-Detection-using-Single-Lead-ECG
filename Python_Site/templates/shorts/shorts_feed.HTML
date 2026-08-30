@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ECG Shorts</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='shorts/shorts_feed.css') }}">
+</head>
+<body>
+
+<!-- VERTICAL AXIS: scroll-snap container, one <section class="card"> per sample.
+     Real app: cards are generated/appended dynamically by shorts_feed.js as the
+     feed fetches more samples. These three are static placeholders to prove the
+     shell out before wiring real data. -->
+<!-- VERTICAL AXIS: scroll-snap container. Cards are now generated
+     dynamically by shorts_feed.js, populated with real record IDs fetched
+     from /shorts/api/samples -- no hardcoded sample IDs here anymore. -->
+<!-- VERTICAL AXIS: scroll-snap container. Cards are now generated
+     dynamically by shorts_feed.js, populated with real record IDs fetched
+     from /shorts/api/samples. Each card includes its own right-side control
+     rail (speed/color/invert) -- see .stage-rail in shorts_feed.css. -->
+<main id="feed" class="feed"></main>
+
+<!-- session summary card, shown after N cards viewed -- see shorts_feed.js -->
+<div id="session-summary" class="session-summary hidden">
+    <div class="summary-card">
+        <div class="summary-title">Nice session</div>
+        <div class="summary-body" id="summary-body">You've explored <span id="summary-count">0</span> records.</div>
+        <button id="summary-dismiss" class="summary-dismiss">Keep scrolling</button>
+    </div>
+</div>
+
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<script src="{{ url_for('static', filename='shorts/shorts_feed.js') }}"></script>
+</body>
+</html>
