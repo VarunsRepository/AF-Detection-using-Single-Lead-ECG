@@ -9,9 +9,9 @@
     --danger: #a32638;
     --warn: #c98a1f;
 }
-
+ 
 * { box-sizing: border-box; }
-
+ 
 html, body {
     margin: 0;
     height: 100%;
@@ -20,7 +20,7 @@ html, body {
     font-family: "IBM Plex Sans", sans-serif;
     overflow: hidden; /* prevent the page itself from scrolling -- only #feed scrolls */
 }
-
+ 
 /* ---------------------------------------------------------------------
    VERTICAL AXIS -- native scroll-snap. This is the ONLY axis that
    responds to touch/wheel scrolling directly.
@@ -35,7 +35,7 @@ html, body {
     scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch; /* smoother momentum scrolling on iOS */
 }
-
+ 
 .card {
     height: 100vh;
     height: 100dvh;
@@ -51,7 +51,7 @@ html, body {
     padding-bottom: env(safe-area-inset-bottom); /* keeps content clear of the
                                                      notch and home-indicator area */
 }
-
+ 
 /* ---------------------------------------------------------------------
    HORIZONTAL AXIS -- deliberately NOT scrollable. No overflow-x, no
    touch-action. Stage changes only happen via JS toggling .active on
@@ -66,7 +66,7 @@ html, body {
     touch-action: pan-y; /* explicitly allow vertical gestures to pass through
                               to the parent .feed, but not horizontal ones */
 }
-
+ 
 .stage-content {
     position: absolute;
     inset: 0;
@@ -78,12 +78,12 @@ html, body {
     opacity: 0;
     transition: opacity 0.25s ease;
 }
-
+ 
 .stage-content.active {
     display: flex;
     opacity: 1;
 }
-
+ 
 .stage-label {
     font-family: "IBM Plex Mono", monospace;
     font-size: 0.8rem;
@@ -92,13 +92,13 @@ html, body {
     text-transform: uppercase;
     margin-bottom: 12px;
 }
-
+ 
 .verdict-label {
     color: var(--accent);
     font-size: 1rem;
     font-weight: bold;
 }
-
+ 
 .early-exit-label {
     color: var(--warn);
     font-size: 0.95rem;
@@ -106,18 +106,18 @@ html, body {
     text-align: center;
     line-height: 1.4;
 }
-
+ 
 .chart-frame {
     width: 100%;
     max-width: 480px;
     aspect-ratio: 3 / 2;
     position: relative;
-    filter: drop-shadow(0 0 6px var(--ecg-trace-color, #4fd1ff)); /* falls back to cyan if JS hasn't set it yet */
+    /* filter: drop-shadow(0 0 6px var(--ecg-trace-color, #4fd1ff)); -- glow disabled for testing */
     background-image:
         repeating-linear-gradient(0deg, rgba(92,194,74,0.06) 0 1px, transparent 1px 24px),
         repeating-linear-gradient(90deg, rgba(92,194,74,0.06) 0 1px, transparent 1px 24px);
 }
-
+ 
 .chart-frame.loading::after {
     content: "loading signal…";
     position: absolute;
@@ -129,7 +129,7 @@ html, body {
     font-size: 0.75rem;
     color: var(--text-dim);
 }
-
+ 
 /* ---------------------------------------------------------------------
    Session summary overlay -- the honest stopping cue, see chat discussion
    --------------------------------------------------------------------- */
@@ -143,12 +143,12 @@ html, body {
     z-index: 100;
     transition: opacity 0.3s ease;
 }
-
+ 
 .session-summary.hidden {
     opacity: 0;
     pointer-events: none;
 }
-
+ 
 .summary-card {
     background: var(--card-bg);
     border: 1px solid var(--border);
@@ -157,20 +157,20 @@ html, body {
     text-align: center;
     max-width: 320px;
 }
-
+ 
 .summary-title {
     font-family: "IBM Plex Mono", monospace;
     color: var(--accent);
     font-size: 1.1rem;
     margin-bottom: 10px;
 }
-
+ 
 .summary-body {
     color: var(--text);
     font-size: 0.9rem;
     margin-bottom: 18px;
 }
-
+ 
 .summary-dismiss {
     background: var(--accent);
     color: #111;
@@ -183,18 +183,18 @@ html, body {
     letter-spacing: 0.05em;
     cursor: pointer;
 }
-
+ 
 .verdict-frame {
     height: auto;
 }
-
+ 
 .early-exit-frame {
     height: 120px;
     display: flex;
     align-items: center;
     justify-content: center;
 }
-
+ 
 /* ---------------------------------------------------------------------
    Segmented progress bar -- the ONLY part of the horizontal axis that's
    directly interactive (tappable to jump to a stage).
@@ -204,7 +204,7 @@ html, body {
     gap: 4px;
     padding: 12px 16px 8px;
 }
-
+ 
 .segment {
     flex: 1;
     height: 3px;
@@ -213,17 +213,17 @@ html, body {
     cursor: pointer;
     overflow: hidden;
 }
-
+ 
 .segment .fill {
     height: 100%;
     width: 0%;
     background: var(--accent);
 }
-
+ 
 .segment.completed .fill {
     width: 100%;
 }
-
+ 
 .segment.current .fill {
     animation-name: fillBar;
     animation-timing-function: linear;
@@ -232,12 +232,12 @@ html, body {
        showStage() in shorts_feed.js) -- no fixed value here on purpose,
        since different stages now run for different lengths of time. */
 }
-
+ 
 @keyframes fillBar {
     from { width: 0%; }
     to { width: 100%; }
 }
-
+ 
 .card-footer {
     padding: 10px 16px 18px;
     display: flex;
@@ -247,9 +247,9 @@ html, body {
     font-size: 0.75rem;
     color: var(--text-dim);
 }
-
+ 
 .sample-id { color: var(--text); }
-
+ 
 /* ---------------------------------------------------------------------
    Right-side control rail -- YT Shorts-style vertical icon stack, one per
    card. Positioned as an absolute overlay on the .card itself (a DOM
@@ -267,7 +267,7 @@ html, body {
     gap: 14px;
     align-items: center;
 }
-
+ 
 .rail-btn {
     width: 42px;
     height: 42px;
@@ -284,13 +284,13 @@ html, body {
     align-items: center;
     justify-content: center;
 }
-
+ 
 /* color button shows a live swatch of the currently selected trace color */
 .rail-color {
     background: var(--swatch, #4fd1ff);
     border-color: rgba(255, 255, 255, 0.3);
 }
-
+ 
 .rail-invert[aria-pressed="true"] {
     border-color: var(--accent);
     color: var(--accent);
