@@ -48,7 +48,7 @@ const THEME_PRESETS = [
     { label: "True Black", bg: "#000000", cardBg: "#0a0a0c" },
     { label: "Purple Black", bg: "#0e0a14", cardBg: "#1a1424" },
 ];
-let themeIndex = 0;
+let themeIndex = 1; // default to "True Black" -- was 0 ("Charcoal")
 
 // ---------------------------------------------------------------------------
 // INVERSION -- per-sample, not global (unlike speed/color). Flips the
@@ -122,7 +122,11 @@ function buildChartLayout(yMin, yMax, initialXRange) {
             title: { text: "mV", font: AXIS_LABEL_STYLE },
             tickfont: AXIS_LABEL_STYLE,
             showgrid: false,
-            zeroline: false,
+            zeroline: true, // horizontal reference line at 0 mV -- shows which
+                              // way a beat deflects relative to baseline, and
+                              // matters more now that Invert can flip polarity
+            zerolinecolor: "rgba(116, 125, 140, 0.4)", // subtle -- a reference, not a gridline competing with the trace
+            zerolinewidth: 1,
             ticks: "outside",
             tickcolor: "#30363d",
             range: [yMin, yMax], // static for the whole sweep -- cheap, no per-frame recompute
