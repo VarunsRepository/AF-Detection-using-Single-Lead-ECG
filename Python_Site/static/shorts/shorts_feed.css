@@ -256,6 +256,24 @@ html, body {
    sibling of .stage-viewport, NOT a descendant of it), so its clicks never
    reach the viewport's own tap-to-advance/rewind listener.
    --------------------------------------------------------------------- */
+.pause-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 45;
+    font-size: 2rem;
+    color: rgba(255, 255, 255, 0.85);
+    text-shadow: 0 0 12px rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    pointer-events: none; /* never intercepts taps -- purely visual */
+    transition: opacity 0.15s ease;
+}
+
+.card.paused .pause-indicator {
+    opacity: 1;
+}
+
 .stage-rail {
     position: absolute;
     right: 12px;
