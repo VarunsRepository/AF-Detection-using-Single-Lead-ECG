@@ -28,7 +28,7 @@ const SPEED_MODES = [
     { label: "3×", duration: () => STAGE_DURATIONS_MS[0] * 3 },
     { label: "Real", duration: (sampleId) => recordingDurationMs.get(sampleId) ?? STAGE_DURATIONS_MS[0] },
 ];
-let speedModeIndex = 0;
+let speedModeIndex = 2; // default to "Real" -- was 0 ("1×")
 
 // ---------------------------------------------------------------------------
 // TRACE COLOR -- now a cycling palette (rail's color button), not a fixed
@@ -72,26 +72,16 @@ function getStageDuration(stageIdx, sampleId) {
 
 const SESSION_SUMMARY_EVERY = 10; // show the "nice session" card every N cards viewed
 
-const STORAGE_KEY = "ecg_shorts_progress";
-
-function loadProgress() {
-    try {
-        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
-    } catch {
-        return {};
-    }
-}
-
-function saveProgress(progress) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
-}
-
-const progress = loadProgress();
+// NOTE: no localStorage progress tracking anymore. Under the new rule --
+// every card always starts at stage 0, every time you scroll to it, no
+// exceptions -- there's nothing to remember across visits. This removes an
+// entire category of state (and the bugs that came with keeping it in sync).
 let cardsViewedThisSession = 0;
 let activeTimers = new Map();
 const renderedCharts = new Set(); // "sampleId-stageIdx" keys already drawn, so we never re-animate a chart twice
 const sweepAnimationHandles = new Map(); // sampleId -> requestAnimationFrame handle, for cancellation
 
+// These three together make pause/resume possible. Without them, leaving a
 // ---------------------------------------------------------------------------
 // Stage 0 renderer: fetches the REAL raw signal for this sample from the
 // pipeline (via RawSignalStore on the backend), then draws it as an
@@ -210,15 +200,13 @@ async function drawRawSignalStage(container, sampleId) {
     // ------------------------------------------------------------------
     // requestAnimationFrame-driven sweep: updates on every real screen
     // refresh (~60fps) instead of a small fixed number of discrete jumps.
-    // Position is derived from actual ELAPSED TIME, not a step counter --
-    // so the line's progress is always exactly where it should be for
-    // however long has really passed, regardless of frame-rate hiccups.
+    // ------------------------------------------------------------------
+    // requestAnimationFrame-driven sweep: updates on every real screen
+    // refresh (~60fps) instead of a small fixed number of discrete jumps.
     // ------------------------------------------------------------------
     const totalDurationMs = getStageDuration(0, sampleId);
-    const startTime = performance.now();
 
-    function tick(now) {
-        const elapsed = now - startTime;
+    function drawAtElapsed(elapsed) {
         const progress = Math.min(1, elapsed / totalDurationMs);
         const currentIndex = Math.max(2, Math.round(progress * (t.length - 1)) + 1);
 
@@ -232,8 +220,23 @@ async function drawRawSignalStage(container, sampleId) {
             { x: [dsX], y: [dsY] },
             { xaxis: { visible: false, range: [rangeStart, rangeEnd] }, yaxis: { visible: false, range: [yMin, yMax] } }
         );
+    }
 
-        if (progress < 1) {
+    startSweepLoop(sampleId, totalDurationMs, drawAtElapsed);
+}
+
+// Plain rAF loop -- always starts fresh at elapsed=0, every single call.
+// No resume-awareness needed: under the "every visit starts at zero" rule,
+// this only ever gets called for a genuinely new stage entry, via enterStage()
+// further down, which already guarantees a clean slate before calling here.
+function startSweepLoop(sampleId, totalDurationMs, drawFn) {
+    const startTime = performance.now();
+
+    function tick(now) {
+        const elapsed = Math.min(now - startTime, totalDurationMs);
+        drawFn(elapsed);
+
+        if (elapsed < totalDurationMs) {
             sweepAnimationHandles.set(sampleId, requestAnimationFrame(tick));
         } else {
             sweepAnimationHandles.delete(sampleId);
@@ -352,6 +355,11 @@ async function loadFeedCards(limit = 10) {
 // ---------------------------------------------------------------------------
 // Per-card stage controller
 // ---------------------------------------------------------------------------
+const RESTART_THRESHOLD_MS = 400; // left-tap within this window of entering a
+                                    // stage means "go to previous"; beyond it
+                                    // means "restart current" -- same pattern
+                                    // as Spotify/YouTube's "previous" button
+
 function initCard(cardEl) {
     const sampleId = cardEl.dataset.sampleId;
     const bar = cardEl.querySelector(".stage-bar");
@@ -359,98 +367,108 @@ function initCard(cardEl) {
     const stageEls = Array.from(cardEl.querySelectorAll(".stage-content"));
     const maxStage = stageEls.length - 1;
 
-    let currentStage = progress[sampleId]?.stage ?? 0;
-    currentStage = Math.min(currentStage, maxStage);
+    let currentStage = 0; // always -- no cross-visit memory anymore
+    let stageEnteredAt = performance.now(); // live, in-the-moment only; not persisted
 
-    function showStage(stageIdx, options) {
-        const animate = !(options && options.animate === false);
-        currentStage = stageIdx;
+    // THE canonical entry point. Advancing, restarting, going to a previous
+    // stage, and a card's very first activation all funnel through here --
+    // one function, always producing a genuinely fresh state. No exceptions,
+    // no partial-resume branches to keep in sync with each other.
+    function enterStage(stageIdx) {
+        currentStage = Math.max(0, Math.min(stageIdx, maxStage));
+        stageEnteredAt = performance.now();
 
         stageEls.forEach(el => {
-            const isActive = Number(el.dataset.stage) === stageIdx;
-            el.classList.toggle("active", isActive);
-            if (isActive) {
-                const container = el.querySelector(".chart-frame");
-                if (container) renderStageChart(sampleId, stageIdx, container);
-            }
+            el.classList.toggle("active", Number(el.dataset.stage) === currentStage);
         });
 
         segments.forEach((seg, i) => {
-            seg.classList.remove("completed", "current");
             const fill = seg.querySelector(".fill");
-            if (i < stageIdx) {
+            seg.classList.remove("completed", "current");
+
+            // force a reflow between removing and re-adding "current" --
+            // without this, RESTARTING the segment you're already on (e.g.
+            // left-tap on a fresh stage) might not replay the CSS keyframe
+            // from the start, since browsers can coalesce a same-frame
+            // remove+re-add of the same class into a no-op visually
+            fill.style.animation = "none";
+            void fill.offsetWidth;
+
+            if (i < currentStage) {
                 seg.classList.add("completed");
-            } else if (i === stageIdx) {
+            } else if (i === currentStage) {
+                fill.style.animation = ""; // restore the CSS-defined fillBar animation
                 seg.classList.add("current");
-                fill.style.animationDuration = `${getStageDuration(stageIdx, sampleId)}ms`; // matches this stage's real timing
+                fill.style.animationDuration = `${getStageDuration(currentStage, sampleId)}ms`;
             }
         });
 
-        progress[sampleId] = { stage: stageIdx, seenAt: Date.now() };
-        saveProgress(progress);
+        // always a genuinely fresh render -- no memory of any prior visit
+        const key = `${sampleId}-${currentStage}`;
+        renderedCharts.delete(key);
+        cancelSweepAnimation(sampleId);
+        const activeEl = stageEls.find(el => Number(el.dataset.stage) === currentStage);
+        const container = activeEl && activeEl.querySelector(".chart-frame");
+        if (container) renderStageChart(sampleId, currentStage, container);
+
+        startAutoAdvance();
     }
 
-    function advance() {
+    function scheduleNextAdvance() {
+        clearAutoAdvance(sampleId); // never let two timers stack for the same card
+        const handle = setTimeout(onTapRight, getStageDuration(currentStage, sampleId));
+        activeTimers.set(sampleId, handle);
+    }
+
+    function startAutoAdvance() {
+        scheduleNextAdvance();
+    }
+
+    function onTapRight() {
         if (currentStage < maxStage) {
-            showStage(currentStage + 1);
-            scheduleNextAdvance(); // each stage re-schedules using ITS OWN duration
+            enterStage(currentStage + 1);
         } else {
             clearAutoAdvance(sampleId); // reached the verdict -- hold, no further advancing
         }
     }
 
-    function scheduleNextAdvance() {
-        clearAutoAdvance(sampleId); // never let two timers stack for the same card
-        const handle = setTimeout(advance, getStageDuration(currentStage, sampleId));
-        activeTimers.set(sampleId, handle);
-    }
-
-    function startAutoAdvance() {
-        scheduleNextAdvance(); // begins the chain from whatever stage we're currently on
+    function onTapLeft() {
+        const elapsedInStage = performance.now() - stageEnteredAt;
+        if (elapsedInStage > RESTART_THRESHOLD_MS) {
+            enterStage(currentStage); // still mid-stage -- restart it from zero
+        } else if (currentStage > 0) {
+            enterStage(currentStage - 1); // just arrived -- go to the previous stage instead
+        }
+        // else: already at stage 0, just entered -- nothing before it, no-op
     }
 
     segments.forEach((seg, i) => {
-        seg.addEventListener("click", () => {
-            showStage(i);
-            startAutoAdvance();
-        });
+        seg.addEventListener("click", () => enterStage(i));
     });
 
     const viewport = cardEl.querySelector(".stage-viewport");
     viewport.addEventListener("click", (e) => {
         const rect = viewport.getBoundingClientRect();
         const tappedRight = (e.clientX - rect.left) > rect.width / 2;
-        if (tappedRight) {
-            advance();
-        } else if (currentStage > 0) {
-            showStage(currentStage - 1);
-        }
-        startAutoAdvance();
+        tappedRight ? onTapRight() : onTapLeft();
     });
 
-    showStage(currentStage, { animate: false });
+    // Every time this card becomes visible, it starts at stage 0, no
+    // exceptions -- per the new rule, there's no "first time" special case
+    // to guard against; enterStage() is always safe to call again.
+    function activate() {
+        enterStage(0);
+    }
 
     // Called by the global speed toggle when its mode flips -- if this card
-    // is currently showing stage 0, re-draw it immediately (using whichever
-    // duration now applies) and reschedule the auto-advance timer to match.
+    // is currently showing stage 0, restart it with the new setting applied.
     // Cards NOT on stage 0 right now just pick up the new mode naturally the
     // next time their stage 0 becomes active (no action needed for those).
     function refreshStage0IfActive() {
-        if (currentStage !== 0) return;
-        const stage0El = stageEls.find(el => Number(el.dataset.stage) === 0);
-        const container = stage0El && stage0El.querySelector(".chart-frame");
-        if (!container) return;
-
-        renderedCharts.delete(`${sampleId}-0`); // allow drawRawSignalStage to run again
-        renderStageChart(sampleId, 0, container);
-
-        const fill = segments[0].querySelector(".fill");
-        fill.style.animationDuration = `${getStageDuration(0, sampleId)}ms`;
-
-        startAutoAdvance(); // re-schedule using the new duration
+        if (currentStage === 0) enterStage(0);
     }
 
-    return { startAutoAdvance, sampleId, refreshStage0IfActive };
+    return { sampleId, activate, refreshStage0IfActive };
 }
 
 function clearAutoAdvance(sampleId) {
@@ -471,12 +489,12 @@ function initFeed() {
             const controller = controllers.get(entry.target);
             if (!controller) return;
             if (entry.isIntersecting) {
-                controller.startAutoAdvance();
+                controller.activate(); // always starts fresh at stage 0 -- see enterStage()
                 currentlyVisibleController = controller;
                 onCardEntered(entry.target);
             } else {
                 clearAutoAdvance(controller.sampleId);
-                cancelSweepAnimation(controller.sampleId); // stop the rAF loop too, not just the stage timer
+                cancelSweepAnimation(controller.sampleId); // stop the rAF loop -- nothing needs to resume it anymore
             }
         });
     }, { threshold: 0.6 });
