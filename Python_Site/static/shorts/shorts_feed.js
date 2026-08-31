@@ -88,6 +88,26 @@ const sweepAnimationHandles = new Map(); // sampleId -> requestAnimationFrame ha
 // animated left-to-right sweep -- same fetch-then-Plotly pattern already
 // used in control_panel.js / plot_renderers.js.
 // ---------------------------------------------------------------------------
+// Shared by every stage that needs the raw signal (stage 0's sweep, stage 2's
+// peak detection, and future stages too) -- cache-aware, so only the FIRST
+// stage to touch a given sample ever actually hits the network.
+async function fetchSignal(sampleId) {
+    if (fetchedSignalCache.has(sampleId)) {
+        return fetchedSignalCache.get(sampleId);
+    }
+    try {
+        const res = await fetch(`/shorts/api/sample/${sampleId}/raw`);
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const payload = await res.json();
+        const result = { signal: payload.signal, fs: payload.fs };
+        fetchedSignalCache.set(sampleId, result);
+        return result;
+    } catch (err) {
+        console.error(`Failed to load raw signal for ${sampleId}:`, err);
+        return null;
+    }
+}
+
 async function drawRawSignalStage(container, sampleId) {
     const key = `${sampleId}-0`;
     if (renderedCharts.has(key)) return; // already drawn once, don't re-animate
@@ -97,26 +117,13 @@ async function drawRawSignalStage(container, sampleId) {
 
     container.classList.add("loading");
 
-    let signal, fs;
-    if (fetchedSignalCache.has(sampleId)) {
-        // color/invert/speed changes redraw via this same function, but
-        // none of them need fresh data -- reuse what we already fetched
-        ({ signal, fs } = fetchedSignalCache.get(sampleId));
-    } else {
-        try {
-            const res = await fetch(`/shorts/api/sample/${sampleId}/raw`);
-            if (!res.ok) throw new Error(`Server returned ${res.status}`);
-            const payload = await res.json();
-            signal = payload.signal;
-            fs = payload.fs;
-            fetchedSignalCache.set(sampleId, { signal, fs });
-        } catch (err) {
-            console.error(`Failed to load raw signal for ${sampleId}:`, err);
-            renderedCharts.delete(key); // allow a retry if the user revisits this card
-            container.classList.remove("loading");
-            return;
-        }
+    const fetched = await fetchSignal(sampleId);
+    if (!fetched) {
+        renderedCharts.delete(key); // allow a retry if the user revisits this card
+        container.classList.remove("loading");
+        return;
     }
+    const { signal, fs } = fetched;
 
     // per-sample inversion, applied here so every downstream calculation
     // (min/max, the sweep itself) already sees the corrected polarity
@@ -253,13 +260,228 @@ function cancelSweepAnimation(sampleId) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// FILTER: simplified Pan-Tompkins R-peak detection. Pure computation, no
+// rendering, no animation timing -- runs once, eagerly, the moment a stage
+// needs it. This is the "filter" half of the filter/renderer split: it
+// produces a finished result (peak indices) that a renderer can later
+// reveal at whatever pace it wants, without recomputing anything.
+//
+// This is a SIMPLIFIED version of the classic 1985 algorithm -- a single
+// fixed threshold with a refractory period, not the full adaptive dual-
+// threshold + search-back scheme from the original paper. Good enough to
+// visibly find R-peaks on reasonably clean recordings for testing/demo
+// purposes; not a clinical-grade implementation.
+// ---------------------------------------------------------------------------
+
+function bandpassFilter(x, fs, lowCutHz = 5, highCutHz = 15) {
+    const dt = 1 / fs;
+
+    // single-pole high-pass -- removes baseline wander below lowCutHz
+    const rcHigh = 1 / (2 * Math.PI * lowCutHz);
+    const alphaHigh = rcHigh / (rcHigh + dt);
+    const hp = new Array(x.length);
+    hp[0] = x[0];
+    for (let i = 1; i < x.length; i++) {
+        hp[i] = alphaHigh * (hp[i - 1] + x[i] - x[i - 1]);
+    }
+
+    // single-pole low-pass -- smooths above highCutHz
+    const rcLow = 1 / (2 * Math.PI * highCutHz);
+    const alphaLow = dt / (rcLow + dt);
+    const bp = new Array(x.length);
+    bp[0] = hp[0];
+    for (let i = 1; i < x.length; i++) {
+        bp[i] = bp[i - 1] + alphaLow * (hp[i] - bp[i - 1]);
+    }
+    return bp;
+}
+
+function derivativeFilter(x) {
+    // classic PT 5-point derivative approximation
+    const y = new Array(x.length).fill(0);
+    for (let i = 4; i < x.length; i++) {
+        y[i] = (2 * x[i] + x[i - 1] - x[i - 3] - 2 * x[i - 4]) / 8;
+    }
+    return y;
+}
+
+function movingWindowIntegration(x, fs, windowMs = 150) {
+    const windowSize = Math.max(1, Math.round((fs * windowMs) / 1000));
+    const y = new Array(x.length).fill(0);
+    let sum = 0;
+    for (let i = 0; i < x.length; i++) {
+        sum += x[i];
+        if (i >= windowSize) sum -= x[i - windowSize];
+        y[i] = sum / windowSize;
+    }
+    return y;
+}
+
+function panTompkinsDetectPeaks(rawY, fs) {
+    const bp = bandpassFilter(rawY, fs);
+    const derivative = derivativeFilter(bp);
+    const squared = derivative.map(v => v * v);
+    const integrated = movingWindowIntegration(squared, fs);
+
+    // threshold set from the signal's own scale (99th percentile, robust to
+    // a handful of unusually large spikes) rather than a fixed magic number
+    const sorted = [...integrated].sort((a, b) => b - a);
+    const robustMax = sorted[Math.floor(sorted.length * 0.01)] ?? Math.max(...integrated);
+    const threshold = robustMax * 0.35;
+
+    const refractorySamples = Math.round(fs * 0.2); // ~200ms minimum gap between beats
+    const rawPeaks = [];
+    let lastPeakIdx = -Infinity;
+
+    for (let i = 1; i < integrated.length - 1; i++) {
+        if (
+            integrated[i] > threshold &&
+            integrated[i] > integrated[i - 1] &&
+            integrated[i] >= integrated[i + 1] &&
+            i - lastPeakIdx > refractorySamples
+        ) {
+            rawPeaks.push(i);
+            lastPeakIdx = i;
+        }
+    }
+
+    // The derivative + integration stages introduce a processing DELAY --
+    // a detected peak's index lags behind the true R-wave in the raw
+    // signal. Refine each one by searching a short window backward in the
+    // ORIGINAL signal for the true local maximum, so markers land on the
+    // actual R-wave rather than the delayed integrated-signal peak.
+    const searchWindow = Math.round(fs * 0.1); // ~100ms back-search
+    const refined = rawPeaks.map(idx => {
+        const start = Math.max(0, idx - searchWindow);
+        let bestIdx = start, bestVal = rawY[start];
+        for (let i = start; i <= idx; i++) {
+            if (rawY[i] > bestVal) { bestVal = rawY[i]; bestIdx = i; }
+        }
+        return bestIdx;
+    });
+
+    return [...new Set(refined)].sort((a, b) => a - b); // de-duplicate in case refinement collapsed two detections together
+}
+
+// ---------------------------------------------------------------------------
+// Stage 2 renderer: peak detection. The FILTER (panTompkinsDetectPeaks) runs
+// ONCE, eagerly, computing every peak in the whole recording up front. This
+// function's own drawAtElapsed only ever decides which ALREADY-FOUND peaks
+// fall within the current sweep window -- no detection work happens per
+// frame. Same shape as stage 0's sweep, deliberately, since that shape is
+// exactly what made pause-free, always-fresh restarts trivial there too.
+//
+// NOTE: runs directly on the RAW signal, not a baseline-corrected one --
+// Stage 1 (Corrected) isn't built yet. Pan-Tompkins' own bandpass step
+// already does most of that work internally, so this is a reasonable stand-
+// in for now, not a hack that will need throwing away once Stage 1 exists.
+// ---------------------------------------------------------------------------
+async function drawPeakDetectionStage(container, sampleId) {
+    const key = `${sampleId}-2`;
+    if (renderedCharts.has(key)) return;
+    renderedCharts.add(key);
+
+    cancelSweepAnimation(sampleId);
+    container.classList.add("loading");
+
+    const fetched = await fetchSignal(sampleId);
+    if (!fetched) {
+        renderedCharts.delete(key);
+        container.classList.remove("loading");
+        return;
+    }
+    const { signal, fs } = fetched;
+
+    const rawY = signal;
+    const y = invertedSamples.has(sampleId) ? rawY.map(v => -v) : rawY;
+    const t = y.map((_, i) => i / fs);
+    const yMin = Math.min(...y) - 0.1;
+    const yMax = Math.max(...y) + 0.1;
+
+    // FILTER runs here, once, before any animation starts
+    const peakIndices = panTompkinsDetectPeaks(y, fs);
+
+    const ECG_WINDOW_SECONDS = 5;
+    const windowSamples = Math.round(ECG_WINDOW_SECONDS * fs);
+
+    const lineTrace = {
+        x: [t[0]], y: [y[0]], mode: "lines",
+        line: { color: TRACE_COLORS[colorIndex], width: 2, shape: "spline" },
+        hoverinfo: "skip",
+    };
+    const peakTrace = {
+        x: [], y: [], mode: "markers",
+        marker: { color: "#ff4d4d", size: 9, line: { color: "#fff", width: 1 } },
+        hoverinfo: "skip",
+    };
+
+    const layout = {
+        margin: { t: 10, r: 10, b: 10, l: 10 },
+        paper_bgcolor: "transparent",
+        plot_bgcolor: "transparent",
+        xaxis: { visible: false, range: [t[0], t[0] + ECG_WINDOW_SECONDS] },
+        yaxis: { visible: false, range: [yMin, yMax] },
+        showlegend: false,
+    };
+
+    Plotly.newPlot(container, [lineTrace, peakTrace], layout, { staticPlot: true, responsive: true });
+    container.classList.remove("loading");
+
+    const MAX_POINTS_PER_UPDATE = 200;
+    const DOWNSAMPLE_STRIDE = Math.max(1, Math.ceil(windowSamples / MAX_POINTS_PER_UPDATE));
+
+    function sampleAligned(startIdx, endIdx, stride) {
+        const dsX = [], dsY = [];
+        const firstAligned = Math.ceil(startIdx / stride) * stride;
+        for (let absIdx = firstAligned; absIdx < endIdx; absIdx += stride) {
+            dsX.push(t[absIdx]);
+            dsY.push(y[absIdx]);
+        }
+        const lastAbs = endIdx - 1;
+        if (dsX.length === 0 || dsX[dsX.length - 1] !== t[lastAbs]) {
+            dsX.push(t[lastAbs]);
+            dsY.push(y[lastAbs]);
+        }
+        return { x: dsX, y: dsY };
+    }
+
+    const totalDurationMs = getStageDuration(2, sampleId);
+
+    function drawAtElapsed(elapsed) {
+        const progress = Math.min(1, elapsed / totalDurationMs);
+        const currentIndex = Math.max(2, Math.round(progress * (t.length - 1)) + 1);
+        const startIdx = Math.max(0, currentIndex - windowSamples);
+        const rangeStart = startIdx === 0 ? t[0] : t[startIdx];
+        const rangeEnd = startIdx === 0 ? t[0] + ECG_WINDOW_SECONDS : t[currentIndex - 1];
+
+        const { x: dsX, y: dsY } = sampleAligned(startIdx, currentIndex, DOWNSAMPLE_STRIDE);
+
+        // RENDERER only: peaks were already fully computed above. This just
+        // filters which already-known peaks fall inside the current window.
+        const visiblePeaks = peakIndices.filter(idx => idx >= startIdx && idx < currentIndex);
+
+        Plotly.update(container,
+            {
+                x: [dsX, visiblePeaks.map(idx => t[idx])],
+                y: [dsY, visiblePeaks.map(idx => y[idx])],
+            },
+            { xaxis: { visible: false, range: [rangeStart, rangeEnd] }, yaxis: { visible: false, range: [yMin, yMax] } }
+        );
+    }
+
+    startSweepLoop(sampleId, totalDurationMs, drawAtElapsed);
+}
+
 function renderStageChart(sampleId, stageIdx, container) {
     switch (stageIdx) {
         case 0:
             drawRawSignalStage(container, sampleId);
             break;
-        // case 1, 2, 3, 4 -- corrected signal, peaks, metrics, verdict --
-        // still to be built.
+        case 2:
+            drawPeakDetectionStage(container, sampleId);
+            break;
+        // case 1, 3, 4 -- corrected signal, metrics, verdict -- still to be built.
         default:
             break;
     }
@@ -333,12 +555,29 @@ function buildCardElement(sampleId, label, stageCount = 5) {
 }
 
 // Fetches real record IDs and populates the feed before anything else runs.
-async function loadFeedCards(limit = 10) {
+// ---------------------------------------------------------------------------
+// Pagination state. PAGE_SIZE controls how many cards load per batch --
+// both the initial load AND every subsequent "load more" as the sentinel
+// is reached. totalAvailable is filled in from the server's first response,
+// so we know exactly when to stop trying (genuinely out of records) rather
+// than requesting forever.
+// ---------------------------------------------------------------------------
+const PAGE_SIZE = 10;
+let loadedCount = 0;
+let totalAvailable = null;
+let isLoadingMore = false;
+
+async function fetchSamplesPage(offset) {
+    const res = await fetch(`/shorts/api/samples?limit=${PAGE_SIZE}&offset=${offset}`);
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    return res.json(); // { samples, total, offset }
+}
+
+async function loadFeedCards() {
     const feed = document.getElementById("feed");
     try {
-        const res = await fetch(`/shorts/api/samples?limit=${limit}`);
-        if (!res.ok) throw new Error(`Server returned ${res.status}`);
-        const { samples } = await res.json();
+        const { samples, total } = await fetchSamplesPage(0);
+        totalAvailable = total;
 
         if (samples.length === 0) {
             feed.innerHTML = '<p style="color:#747d8c;text-align:center;margin-top:40vh;">No records found in cache.</p>';
@@ -346,9 +585,37 @@ async function loadFeedCards(limit = 10) {
         }
 
         samples.forEach(({ record_id, label }) => feed.appendChild(buildCardElement(record_id, label)));
+        loadedCount = samples.length;
     } catch (err) {
         console.error("Failed to load sample list:", err);
         feed.innerHTML = '<p style="color:#a32638;text-align:center;margin-top:40vh;">Could not load records.</p>';
+    }
+}
+
+// Called by the sentinel observer (see initFeed) whenever it comes into
+// view -- appends the next page, and hooks each new card into the SAME
+// controller map + visibility observer as the original batch, via the
+// registerCard callback initFeed provides.
+async function loadMoreCards(registerCard) {
+    if (isLoadingMore) return; // guard against a double-trigger while a fetch is already in flight
+    if (totalAvailable !== null && loadedCount >= totalAvailable) return; // genuinely out of records
+
+    isLoadingMore = true;
+    try {
+        const { samples } = await fetchSamplesPage(loadedCount);
+        const feed = document.getElementById("feed");
+        const sentinel = document.getElementById("load-more-sentinel");
+
+        samples.forEach(({ record_id, label }) => {
+            const card = buildCardElement(record_id, label);
+            feed.insertBefore(card, sentinel); // new cards go BEFORE the sentinel, so it stays last
+            registerCard(card);
+        });
+        loadedCount += samples.length;
+    } catch (err) {
+        console.error("Failed to load more samples:", err);
+    } finally {
+        isLoadingMore = false;
     }
 }
 
@@ -481,10 +748,13 @@ function clearAutoAdvance(sampleId) {
 let currentlyVisibleController = null; // updated by initFeed's observer below
 
 function initFeed() {
-    const cards = Array.from(document.querySelectorAll(".card"));
-    const controllers = new Map(cards.map(card => [card, initCard(card)]));
+    // controllers and cardObserver both live in this closure, but are
+    // reachable via registerCard -- so loadMoreCards() can add NEW cards
+    // into the exact same visibility system as the original batch, rather
+    // than those cards being invisible to the observer entirely.
+    const controllers = new Map();
 
-    const observer = new IntersectionObserver((entries) => {
+    const cardObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
             const controller = controllers.get(entry.target);
             if (!controller) return;
@@ -499,7 +769,31 @@ function initFeed() {
         });
     }, { threshold: 0.6 });
 
-    cards.forEach(card => observer.observe(card));
+    function registerCard(cardEl) {
+        const controller = initCard(cardEl);
+        controllers.set(cardEl, controller);
+        cardObserver.observe(cardEl);
+    }
+
+    Array.from(document.querySelectorAll(".card")).forEach(registerCard);
+
+    // Sentinel: a thin, invisible element kept as the LAST child of #feed.
+    // When it scrolls into view, we're near the bottom -- time to fetch the
+    // next page. Reusing IntersectionObserver here rather than a manual
+    // scroll-position calculation keeps this consistent with how the rest
+    // of the feed already detects visibility.
+    const sentinel = document.createElement("div");
+    sentinel.id = "load-more-sentinel";
+    sentinel.style.height = "1px";
+    document.getElementById("feed").appendChild(sentinel);
+
+    const sentinelObserver = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting) {
+            loadMoreCards(registerCard);
+        }
+    }, { threshold: 0.01 }); // trivial threshold -- sentinel is 1px tall, any visibility at all counts
+
+    sentinelObserver.observe(sentinel);
 }
 
 const seenThisSession = new Set();
