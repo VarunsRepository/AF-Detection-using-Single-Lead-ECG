@@ -272,3 +272,61 @@ class PhysioNetRegistryManager:
             {"record_id": rid, "label": self.get_label_for_record(rid)}
             for rid in playable_ids
         ]
+
+     
+    def list_playable_records(self, limit: int | None = None, offset: int = 0) -> list[str]:
+        """
+        Returns record IDs that are ACTUALLY playable right now -- meaning both
+        a .hea and .mat file physically exist in cache_dir. This is deliberately
+        separate from the registry CSV: the registry knows about every record in
+        the full challenge dataset, but only manually-uploaded records have real
+        files to read. A record can be "known" without being "playable."
+        `offset` supports real pagination -- not just a bigger fixed limit.
+        """
+        if not os.path.isdir(self.cache_dir):
+            return []
+    
+        hea_ids = {os.path.splitext(f)[0] for f in os.listdir(self.cache_dir) if f.endswith(".hea")}
+        mat_ids = {os.path.splitext(f)[0] for f in os.listdir(self.cache_dir) if f.endswith(".mat")}
+    
+        complete_ids = sorted(hea_ids & mat_ids)
+        sliced = complete_ids[offset:]
+        return sliced[:limit] if limit else sliced
+    
+    
+    def get_label_for_record(self, record_id: str) -> str | None:
+        """
+        Looks up a record's true class label (N/A/O/~) from the registry.
+        Builds a reverse lookup dict once, lazily, rather than scanning all
+        four class lists on every single call -- matters once this gets called
+        once per record in a batch (e.g. building the Shorts feed's card list).
+        """
+        if self._reverse_lookup_cache is None:
+            self._reverse_lookup_cache = {
+                record_id: label
+                for label, records in self._registry_cache.items()
+                for record_id in records
+            }
+        return self._reverse_lookup_cache.get(record_id)  # None if not in the registry at all
+    
+    
+    def list_playable_records_with_labels(self, limit: int | None = None, offset: int = 0) -> list[dict]:
+        """
+        The one method the Shorts feed actually wants: playable records (file
+        exists) enriched with their true label (if the registry knows it).
+        label will be None for a file that exists but isn't in the reference
+        CSV -- worth surfacing that as a flag rather than hiding it, since it's
+        a genuine data-quality gap, not something to silently paper over.
+        """
+        playable_ids = self.list_playable_records(limit=limit, offset=offset)
+        return [
+            {"record_id": rid, "label": self.get_label_for_record(rid)}
+            for rid in playable_ids
+        ]
+    
+    
+    def count_playable_records(self) -> int:
+        """Total number of playable records, so the frontend knows when it's
+        genuinely reached the end and should stop requesting more pages."""
+        return len(self.list_playable_records())
+ 
