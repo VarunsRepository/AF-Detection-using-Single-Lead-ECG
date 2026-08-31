@@ -277,8 +277,11 @@ html, body {
 .stage-rail {
     position: absolute;
     right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
+    bottom: 100px; /* anchored from the bottom, not vertically centered --
+                       center-screen is where the sweep's leading edge sits,
+                       the most important part of the plot; the rail shouldn't
+                       compete with it, same reasoning Shorts/Reels use for
+                       placing their own icon rail low-right rather than centered */
     z-index: 40;
     display: flex;
     flex-direction: column;
@@ -293,20 +296,38 @@ html, body {
     background: rgba(22, 27, 34, 0.85);
     border: 1px solid var(--border);
     color: var(--text);
-    font-family: "IBM Plex Mono", monospace;
-    font-size: 0.7rem;
-    font-weight: bold;
     cursor: pointer;
     backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative; /* anchors the swatch-dot badge, see below */
 }
 
-/* color button shows a live swatch of the currently selected trace color */
-.rail-color {
+.rail-btn svg {
+    display: block; /* removes the few stray pixels of inline-baseline spacing SVGs get by default */
+}
+
+.rail-speed-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    font-weight: bold;
+}
+
+/* Small live-color indicator, sitting in the corner of the Color and Theme
+   buttons -- replaces the OLD approach of filling the entire button
+   background with the swatch, which broke once an icon needed to sit on
+   top (a light icon vanishes against a light swatch). Icon stays neutral
+   and legible; the dot alone carries the "what's currently selected" info. */
+.swatch-dot {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
     background: var(--swatch, #4fd1ff);
-    border-color: rgba(255, 255, 255, 0.3);
+    border: 1.5px solid rgba(13, 17, 23, 0.9); /* separates the dot from whatever's behind the button */
 }
 
 .rail-invert[aria-pressed="true"] {
