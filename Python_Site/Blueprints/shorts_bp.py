@@ -60,13 +60,40 @@ def get_raw_signal(sample_id):
     })
 
 
+#@shorts_bp.route("/api/samples")
+#def list_samples():
+#    from flask import request
+#    limit = request.args.get("limit", type=int)
+#    return jsonify({"samples": registry.list_playable_records_with_labels(limit=limit)})
+ 
+
 @shorts_bp.route("/api/samples")
 def list_samples():
     from flask import request
     limit = request.args.get("limit", type=int)
-    return jsonify({"samples": registry.list_playable_records_with_labels(limit=limit)})
+    offset = request.args.get("offset", default=0, type=int)
+    samples = registry.list_playable_records_with_labels(limit=limit, offset=offset)
+    return jsonify({
+        "samples": samples,
+        "total": registry.count_playable_records(),
+        "offset": offset,
+    })
  
-
+ 
+#@shorts_bp.route("/api/sample/<sample_id>/raw")
+#def get_raw_signal(sample_id):
+#    try:
+#        signal = registry.get_individual_record_wfdb(sample_id)
+#    except FileNotFoundError:
+#        return jsonify({"error": f"Sample '{sample_id}' not found"}), 404
+#    except IOError as e:
+#        return jsonify({"error": str(e)}), 500
+# 
+#    return jsonify({
+#        "sample_id": sample_id,
+#        "signal": signal.tolist(),
+#        "fs": HARDCODED_FS,
+#    })
 
  
 
