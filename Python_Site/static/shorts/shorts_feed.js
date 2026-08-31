@@ -91,6 +91,45 @@ const sweepAnimationHandles = new Map(); // sampleId -> requestAnimationFrame ha
 // Shared by every stage that needs the raw signal (stage 0's sweep, stage 2's
 // peak detection, and future stages too) -- cache-aware, so only the FIRST
 // stage to touch a given sample ever actually hits the network.
+// Shared by every stage renderer that plots the ECG against time -- keeps
+// axis styling consistent as more stages get built, and means a future
+// styling tweak only needs to happen in one place. Y-axis range is meant to
+// be STATIC for the life of one sweep (cheap, computed once); X-axis range
+// is expected to change every frame during a sliding-window sweep, which
+// does cost a bit of per-frame tick recomputation -- a deliberate trade-off
+// for legible units over strict monitor-authenticity (real monitors mostly
+// skip numeric axes in favor of a calibration pulse + known sweep speed).
+const AXIS_LABEL_STYLE = { size: 9, color: "#747d8c", family: "IBM Plex Mono, monospace" };
+
+function buildChartLayout(yMin, yMax, initialXRange) {
+    return {
+        margin: { t: 10, r: 10, b: 30, l: 40 },
+        paper_bgcolor: "transparent",
+        plot_bgcolor: "transparent",
+        showlegend: false,
+        xaxis: {
+            visible: true,
+            title: { text: "Time (s)", font: AXIS_LABEL_STYLE },
+            tickfont: AXIS_LABEL_STYLE,
+            showgrid: false,
+            zeroline: false,
+            ticks: "outside",
+            tickcolor: "#30363d",
+            range: initialXRange,
+        },
+        yaxis: {
+            visible: true,
+            title: { text: "mV", font: AXIS_LABEL_STYLE },
+            tickfont: AXIS_LABEL_STYLE,
+            showgrid: false,
+            zeroline: false,
+            ticks: "outside",
+            tickcolor: "#30363d",
+            range: [yMin, yMax], // static for the whole sweep -- cheap, no per-frame recompute
+        },
+    };
+}
+
 async function fetchSignal(sampleId) {
     if (fetchedSignalCache.has(sampleId)) {
         return fetchedSignalCache.get(sampleId);
@@ -153,14 +192,7 @@ async function drawRawSignalStage(container, sampleId) {
         hoverinfo: "skip",
     };
 
-    const layout = {
-        margin: { t: 10, r: 10, b: 10, l: 10 },
-        paper_bgcolor: "transparent",
-        plot_bgcolor: "transparent",
-        xaxis: { visible: false, range: [t[0], t[0] + ECG_WINDOW_SECONDS] },
-        yaxis: { visible: false, range: [yMin, yMax] },
-        showlegend: false,
-    };
+    const layout = buildChartLayout(yMin, yMax, [t[0], t[0] + ECG_WINDOW_SECONDS]);
 
     Plotly.newPlot(container, [trace], layout, { staticPlot: true, responsive: true });
     container.classList.remove("loading");
@@ -225,22 +257,38 @@ async function drawRawSignalStage(container, sampleId) {
 
         Plotly.update(container,
             { x: [dsX], y: [dsY] },
-            { xaxis: { visible: false, range: [rangeStart, rangeEnd] }, yaxis: { visible: false, range: [yMin, yMax] } }
+            { "xaxis.range": [rangeStart, rangeEnd] } // dot-path patch -- only the range changes; y-axis is static and title/tick styling from buildChartLayout() is left untouched
         );
     }
 
     startSweepLoop(sampleId, totalDurationMs, drawAtElapsed);
 }
 
-// Plain rAF loop -- always starts fresh at elapsed=0, every single call.
-// No resume-awareness needed: under the "every visit starts at zero" rule,
-// this only ever gets called for a genuinely new stage entry, via enterStage()
-// further down, which already guarantees a clean slate before calling here.
-function startSweepLoop(sampleId, totalDurationMs, drawFn) {
-    const startTime = performance.now();
+// Tracks the CURRENTLY ACTIVE sweep for whichever stage is being drawn --
+// purely LIVE state, reset fresh every enterStage() call. This is deliberately
+// NOT the same thing as the cross-visit persistence we removed earlier:
+// scrolling away and back still restarts at zero regardless of this map.
+// It exists only so a genuine, deliberate, WITHIN-view pause (center tap)
+// can resume from exactly where it stopped, the same way a real pause
+// button on a video would.
+const activeSweepControl = new Map(); // sampleId -> { totalDurationMs, drawFn, lastElapsedMs }
+
+// startElapsedMs defaults to 0 (a fresh entry); a non-zero value is only
+// ever passed when resuming from a live pause.
+function startSweepLoop(sampleId, totalDurationMs, drawFn, startElapsedMs = 0) {
+    activeSweepControl.set(sampleId, { totalDurationMs, drawFn, lastElapsedMs: startElapsedMs });
+
+    if (startElapsedMs >= totalDurationMs) {
+        drawFn(totalDurationMs);
+        return;
+    }
+
+    const startTime = performance.now() - startElapsedMs;
 
     function tick(now) {
         const elapsed = Math.min(now - startTime, totalDurationMs);
+        const control = activeSweepControl.get(sampleId);
+        if (control) control.lastElapsedMs = elapsed; // kept current every frame, so a pause at ANY moment has an accurate value
         drawFn(elapsed);
 
         if (elapsed < totalDurationMs) {
@@ -416,14 +464,7 @@ async function drawPeakDetectionStage(container, sampleId) {
         hoverinfo: "skip",
     };
 
-    const layout = {
-        margin: { t: 10, r: 10, b: 10, l: 10 },
-        paper_bgcolor: "transparent",
-        plot_bgcolor: "transparent",
-        xaxis: { visible: false, range: [t[0], t[0] + ECG_WINDOW_SECONDS] },
-        yaxis: { visible: false, range: [yMin, yMax] },
-        showlegend: false,
-    };
+    const layout = buildChartLayout(yMin, yMax, [t[0], t[0] + ECG_WINDOW_SECONDS]);
 
     Plotly.newPlot(container, [lineTrace, peakTrace], layout, { staticPlot: true, responsive: true });
     container.classList.remove("loading");
@@ -466,7 +507,7 @@ async function drawPeakDetectionStage(container, sampleId) {
                 x: [dsX, visiblePeaks.map(idx => t[idx])],
                 y: [dsY, visiblePeaks.map(idx => y[idx])],
             },
-            { xaxis: { visible: false, range: [rangeStart, rangeEnd] }, yaxis: { visible: false, range: [yMin, yMax] } }
+            { "xaxis.range": [rangeStart, rangeEnd] }
         );
     }
 
@@ -503,6 +544,12 @@ function buildCardElement(sampleId, label, stageCount = 5) {
     card.dataset.trueLabel = label ?? ""; // stored for later use -- rarity framing,
                                             // guess-before-reveal, verdict stage.
                                             // Not displayed anywhere yet.
+
+    // shown/hidden purely via the .paused class on the card itself (see
+    // togglePause() in initCard) -- no JS-driven show/hide logic needed here
+    const pauseIndicator = document.createElement("div");
+    pauseIndicator.className = "pause-indicator";
+    pauseIndicator.innerHTML = "&#10074;&#10074;"; // ⏸ rendered as two bars, safe across fonts
 
     const bar = document.createElement("div");
     bar.className = "stage-bar";
@@ -551,6 +598,7 @@ function buildCardElement(sampleId, label, stageCount = 5) {
     card.appendChild(viewport);
     card.appendChild(footer);
     card.appendChild(rail);
+    card.appendChild(pauseIndicator);
     return card;
 }
 
@@ -636,6 +684,7 @@ function initCard(cardEl) {
 
     let currentStage = 0; // always -- no cross-visit memory anymore
     let stageEnteredAt = performance.now(); // live, in-the-moment only; not persisted
+    let isPaused = false; // live pause state -- reset fresh every enterStage(), never survives leaving the card
 
     // THE canonical entry point. Advancing, restarting, going to a previous
     // stage, and a card's very first activation all funnel through here --
@@ -644,6 +693,7 @@ function initCard(cardEl) {
     function enterStage(stageIdx) {
         currentStage = Math.max(0, Math.min(stageIdx, maxStage));
         stageEnteredAt = performance.now();
+        isPaused = false; // entering (or re-entering) a stage always starts unpaused
 
         stageEls.forEach(el => {
             el.classList.toggle("active", Number(el.dataset.stage) === currentStage);
@@ -660,6 +710,7 @@ function initCard(cardEl) {
             // remove+re-add of the same class into a no-op visually
             fill.style.animation = "none";
             void fill.offsetWidth;
+            fill.style.animationPlayState = "running"; // in case a prior pause left this frozen
 
             if (i < currentStage) {
                 seg.classList.add("completed");
@@ -678,17 +729,15 @@ function initCard(cardEl) {
         const container = activeEl && activeEl.querySelector(".chart-frame");
         if (container) renderStageChart(sampleId, currentStage, container);
 
+        cardEl.classList.remove("paused");
         startAutoAdvance();
     }
 
-    function scheduleNextAdvance() {
+    function startAutoAdvance(overrideDurationMs = null) {
         clearAutoAdvance(sampleId); // never let two timers stack for the same card
-        const handle = setTimeout(onTapRight, getStageDuration(currentStage, sampleId));
+        const duration = overrideDurationMs ?? getStageDuration(currentStage, sampleId);
+        const handle = setTimeout(onTapRight, duration);
         activeTimers.set(sampleId, handle);
-    }
-
-    function startAutoAdvance() {
-        scheduleNextAdvance();
     }
 
     function onTapRight() {
@@ -709,15 +758,68 @@ function initCard(cardEl) {
         // else: already at stage 0, just entered -- nothing before it, no-op
     }
 
+    // Center tap -- pause/resume, same convention as YouTube Shorts/Reels.
+    // This is a genuine, deliberate WITHIN-view pause: it freezes the sweep,
+    // the stage-advance countdown, and the progress-bar fill all together,
+    // and resuming continues from exactly the same point. It does NOT
+    // survive leaving the card -- scrolling away still restarts at zero
+    // regardless of whether you left mid-pause, per the broader "always
+    // fresh" rule elsewhere in this file.
+    function togglePause() {
+        if (!isPaused) {
+            isPaused = true;
+            cardEl.classList.add("paused");
+
+            clearAutoAdvance(sampleId); // stop the stage-advance countdown
+            cancelSweepAnimation(sampleId); // freeze the chart's rAF loop
+
+            const fill = segments[currentStage]?.querySelector(".fill");
+            if (fill) fill.style.animationPlayState = "paused"; // freeze the CSS bar too -- it runs on its own clock otherwise
+        } else {
+            isPaused = false;
+            cardEl.classList.remove("paused");
+
+            const fill = segments[currentStage]?.querySelector(".fill");
+            if (fill) fill.style.animationPlayState = "running";
+
+            const control = activeSweepControl.get(sampleId);
+            const elapsedAtPause = control ? control.lastElapsedMs : (performance.now() - stageEnteredAt);
+
+            // shift the reference point forward so future elapsed-since
+            // calculations (e.g. a left-tap right after resuming) stay
+            // consistent, as if the pause never happened time-wise
+            stageEnteredAt = performance.now() - elapsedAtPause;
+
+            const remaining = Math.max(0, getStageDuration(currentStage, sampleId) - elapsedAtPause);
+            startAutoAdvance(remaining); // resume the countdown with only what's LEFT, not a fresh full duration
+
+            if (control) {
+                startSweepLoop(sampleId, control.totalDurationMs, control.drawFn, elapsedAtPause);
+            }
+        }
+    }
+
     segments.forEach((seg, i) => {
         seg.addEventListener("click", () => enterStage(i));
     });
 
+    // Three tap zones now, not two: left third = restart/previous (see
+    // onTapLeft), middle third = pause/resume, right third = advance.
+    const CENTER_ZONE_FRACTION = 0.34;
     const viewport = cardEl.querySelector(".stage-viewport");
     viewport.addEventListener("click", (e) => {
         const rect = viewport.getBoundingClientRect();
-        const tappedRight = (e.clientX - rect.left) > rect.width / 2;
-        tappedRight ? onTapRight() : onTapLeft();
+        const relativeX = (e.clientX - rect.left) / rect.width; // 0 to 1
+        const centerStart = 0.5 - CENTER_ZONE_FRACTION / 2;
+        const centerEnd = 0.5 + CENTER_ZONE_FRACTION / 2;
+
+        if (relativeX >= centerStart && relativeX <= centerEnd) {
+            togglePause();
+        } else if (relativeX > centerEnd) {
+            onTapRight();
+        } else {
+            onTapLeft();
+        }
     });
 
     // Every time this card becomes visible, it starts at stage 0, no
@@ -740,7 +842,7 @@ function initCard(cardEl) {
 
 function clearAutoAdvance(sampleId) {
     if (activeTimers.has(sampleId)) {
-        clearTimeout(activeTimers.get(sampleId)); // setTimeout now, not setInterval -- see advance()/scheduleNextAdvance()
+        clearTimeout(activeTimers.get(sampleId)); // setTimeout now, not setInterval -- see startAutoAdvance()
         activeTimers.delete(sampleId);
     }
 }
