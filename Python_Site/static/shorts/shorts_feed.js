@@ -592,10 +592,31 @@ function buildCardElement(sampleId, label, stageCount = 5) {
     const rail = document.createElement("div");
     rail.className = "stage-rail";
     rail.innerHTML = `
-        <button class="rail-btn rail-speed" data-role="speed" title="Playback speed">${SPEED_MODES[speedModeIndex].label}</button>
-        <button class="rail-btn rail-color" data-role="color" title="Trace color" style="--swatch:${TRACE_COLORS[colorIndex]}"></button>
-        <button class="rail-btn rail-invert" data-role="invert" title="Invert signal" aria-pressed="${invertedSamples.has(sampleId)}">⇅</button>
-        <button class="rail-btn rail-theme" data-role="theme" title="Background theme" style="--swatch:${THEME_PRESETS[themeIndex].bg}"></button>
+        <button class="rail-btn rail-speed" data-role="speed" title="Playback speed">
+            <span class="rail-speed-label">${SPEED_MODES[speedModeIndex].label}</span>
+        </button>
+        <button class="rail-btn rail-color" data-role="color" title="Trace color">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.4-.3-.4-.5-.9-.5-1.4 0-1.1.9-2 2-2h2.3a3.2 3.2 0 0 0 3.2-3.2C20.5 6.7 16.7 2 12 2z"/>
+                <circle cx="7.5" cy="10.5" r="1.2" fill="currentColor"/>
+                <circle cx="12" cy="7.5" r="1.2" fill="currentColor"/>
+                <circle cx="16.5" cy="10.5" r="1.2" fill="currentColor"/>
+            </svg>
+            <span class="swatch-dot" style="--swatch:${TRACE_COLORS[colorIndex]}"></span>
+        </button>
+        <button class="rail-btn rail-invert" data-role="invert" title="Invert signal" aria-pressed="${invertedSamples.has(sampleId)}">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3v6M9 6l3-3 3 3"/>
+                <path d="M12 21v-6M9 18l3 3 3-3"/>
+            </svg>
+        </button>
+        <button class="rail-btn rail-theme" data-role="theme" title="Background theme">
+            <svg viewBox="0 0 24 24" width="20" height="20">
+                <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>
+                <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>
+            </svg>
+            <span class="swatch-dot" style="--swatch:${THEME_PRESETS[themeIndex].bg}"></span>
+        </button>
     `;
 
     card.appendChild(bar);
@@ -925,6 +946,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     // matches whatever color is currently selected in the palette
     document.documentElement.style.setProperty("--ecg-trace-color", TRACE_COLORS[colorIndex]);
 
+    // same reasoning for theme -- without this, themeIndex's default only
+    // ever affected what cycleTheme() would switch TO on the first click;
+    // the page kept rendering the CSS file's hardcoded --bg (Charcoal)
+    // until someone actually tapped the button once
+    const defaultTheme = THEME_PRESETS[themeIndex];
+    document.documentElement.style.setProperty("--bg", defaultTheme.bg);
+    document.documentElement.style.setProperty("--card-bg", defaultTheme.cardBg);
+
     await loadFeedCards(); // build real cards first...
     initFeed();             // ...then wire up stage machinery + scroll watching
 
@@ -965,16 +994,18 @@ function cycleTheme() {
     // affected, so unlike speed/color/invert this never needs a redraw
     document.documentElement.style.setProperty("--bg", preset.bg);
     document.documentElement.style.setProperty("--card-bg", preset.cardBg);
+    document.querySelectorAll(".rail-theme .swatch-dot").forEach(dot => {
+        dot.style.setProperty("--swatch", preset.bg);
+    });
     document.querySelectorAll(".rail-theme").forEach(btn => {
-        btn.style.setProperty("--swatch", preset.bg);
         btn.title = `Background theme (${preset.label})`;
     });
 }
 
 function cycleSpeedMode() {
     speedModeIndex = (speedModeIndex + 1) % SPEED_MODES.length;
-    document.querySelectorAll(".rail-speed").forEach(btn => {
-        btn.textContent = SPEED_MODES[speedModeIndex].label;
+    document.querySelectorAll(".rail-speed-label").forEach(label => {
+        label.textContent = SPEED_MODES[speedModeIndex].label;
     });
     if (currentlyVisibleController) currentlyVisibleController.refreshStage0IfActive();
 }
@@ -982,8 +1013,8 @@ function cycleSpeedMode() {
 function cycleTraceColor() {
     colorIndex = (colorIndex + 1) % TRACE_COLORS.length;
     document.documentElement.style.setProperty("--ecg-trace-color", TRACE_COLORS[colorIndex]);
-    document.querySelectorAll(".rail-color").forEach(btn => {
-        btn.style.setProperty("--swatch", TRACE_COLORS[colorIndex]);
+    document.querySelectorAll(".rail-color .swatch-dot").forEach(dot => {
+        dot.style.setProperty("--swatch", TRACE_COLORS[colorIndex]);
     });
     if (currentlyVisibleController) currentlyVisibleController.refreshStage0IfActive();
 }
