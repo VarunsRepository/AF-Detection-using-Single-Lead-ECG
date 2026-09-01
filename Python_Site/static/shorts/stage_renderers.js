@@ -43,6 +43,12 @@ async function fetchSignal(sampleId) {
         const payload = await res.json();
         const result = { signal: payload.signal, fs: payload.fs };
         fetchedSignalCache.set(sampleId, result);
+
+        // populated HERE, centrally, regardless of which stage triggers the
+        // first fetch -- needed so "Real" speed mode works correctly even
+        // if a user reaches Stage 2 before ever viewing Stage 0 in a session
+        recordingDurationMs.set(sampleId, Math.round((result.signal.length / result.fs) * 1000));
+
         return result;
     } catch (err) {
         console.error(`Failed to load raw signal for ${sampleId}:`, err);
@@ -60,7 +66,28 @@ async function fetchSignal(sampleId) {
 // skip numeric axes in favor of a calibration pulse + known sweep speed).
 const AXIS_LABEL_STYLE = { size: 9, color: "#747d8c", family: "IBM Plex Mono, monospace" };
 
+// Picks a "nice," round grid step (0.1, 0.2, 0.5, 1, 2, 5, ...times a power
+// of ten) close to `range / targetTicks` -- the same kind of rounding real
+// chart libraries use for tick spacing. This is what turns the grid from
+// decoration into something a non-clinician can actually read: "count the
+// boxes" only works if a box represents a clean, memorable amount.
+function niceStep(range, targetTicks = 5) {
+    if (range <= 0) return 1;
+    const rawStep = range / targetTicks;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const residual = rawStep / magnitude;
+    let niceResidual;
+    if (residual < 1.5) niceResidual = 1;
+    else if (residual < 3) niceResidual = 2;
+    else if (residual < 7) niceResidual = 5;
+    else niceResidual = 10;
+    return niceResidual * magnitude;
+}
+
 function buildChartLayout(yMin, yMax, initialXRange) {
+    const yStep = niceStep(yMax - yMin, 4); // aim for ~4-5 horizontal lines
+    const xStep = 1; // 1 second per vertical line -- simple, round, legible across the 5s window
+
     return {
         margin: { t: 10, r: 10, b: 30, l: 40 },
         paper_bgcolor: "transparent",
@@ -70,7 +97,12 @@ function buildChartLayout(yMin, yMax, initialXRange) {
             visible: true,
             title: { text: "Time (s)", font: AXIS_LABEL_STYLE },
             tickfont: AXIS_LABEL_STYLE,
-            showgrid: false,
+            showgrid: true, // REAL gridlines now, calibrated to actual seconds --
+                              // not the old decorative CSS pattern, which never
+                              // corresponded to genuine time/amplitude values
+            gridcolor: "rgba(116, 125, 140, 0.18)",
+            gridwidth: 1,
+            dtick: xStep,
             zeroline: false,
             ticks: "outside",
             tickcolor: "#30363d",
@@ -80,16 +112,27 @@ function buildChartLayout(yMin, yMax, initialXRange) {
             visible: true,
             title: { text: "mV", font: AXIS_LABEL_STYLE },
             tickfont: AXIS_LABEL_STYLE,
-            showgrid: false,
+            showgrid: true,
+            gridcolor: "rgba(116, 125, 140, 0.18)",
+            gridwidth: 1,
+            dtick: yStep,
             zeroline: true, // horizontal reference line at 0 mV -- shows which
                               // way a beat deflects relative to baseline, and
                               // matters more now that Invert can flip polarity
-            zerolinecolor: "rgba(116, 125, 140, 0.4)", // subtle -- a reference, not a gridline competing with the trace
+            zerolinecolor: "rgba(116, 125, 140, 0.4)", // brighter than the grid -- 0 mV still reads as a distinct reference, not just another box edge
             zerolinewidth: 1,
             ticks: "outside",
             tickcolor: "#30363d",
             range: [yMin, yMax], // static for the whole sweep -- cheap, no per-frame recompute
         },
+        annotations: [{
+            xref: "paper", yref: "paper",
+            x: 0.02, y: 0.96,
+            xanchor: "left", yanchor: "top",
+            text: `□ = ${xStep}s / ${yStep}mV`,
+            showarrow: false,
+            font: { size: 9, color: "#747d8c", family: "IBM Plex Mono, monospace" },
+        }],
     };
 }
 
@@ -157,11 +200,6 @@ async function drawRawSignalStage(container, sampleId) {
     const t = y.map((_, i) => i / fs);
     const yMin = Math.min(...y) - 0.1;
     const yMax = Math.max(...y) + 0.1;
-
-    // real duration of this specific recording, stored BEFORE getStageDuration
-    // is called below, so a redraw triggered by the toggle (or a first draw
-    // while already in "real" mode) picks up the correct value immediately
-    recordingDurationMs.set(sampleId, Math.round((y.length / fs) * 1000));
 
     // Fixed-width scrolling window, in real ECG seconds -- NOT the whole
     // recording. Solves the "crowding" problem: a 30-90s recording no longer

@@ -22,13 +22,15 @@ const DEFAULT_STAGE_DURATION_MS = 2200; // fallback if a card has more stages th
 const recordingDurationMs = new Map();
 
 // ---------------------------------------------------------------------------
-// SPEED -- three real states, cycled via the rail's speed button. Only
-// stage 0 (the sweep) is affected right now.
+// SPEED -- three real states, cycled via the rail's speed button. Applies
+// UNIFORMLY across every stage that has real sweep animation (currently 0
+// and 2; future animated stages get this automatically too) -- this is a
+// global pace preference, not something scoped to any one stage.
 // ---------------------------------------------------------------------------
 const SPEED_MODES = [
-    { label: "1×", duration: () => STAGE_DURATIONS_MS[0] },
-    { label: "3×", duration: () => STAGE_DURATIONS_MS[0] * 3 },
-    { label: "Real", duration: (sampleId) => recordingDurationMs.get(sampleId) ?? STAGE_DURATIONS_MS[0] },
+    { label: "1×", duration: (sampleId, stageIdx) => STAGE_DURATIONS_MS[stageIdx] ?? DEFAULT_STAGE_DURATION_MS },
+    { label: "3×", duration: (sampleId, stageIdx) => (STAGE_DURATIONS_MS[stageIdx] ?? DEFAULT_STAGE_DURATION_MS) * 3 },
+    { label: "Real", duration: (sampleId, stageIdx) => recordingDurationMs.get(sampleId) ?? (STAGE_DURATIONS_MS[stageIdx] ?? DEFAULT_STAGE_DURATION_MS) },
 ];
 let speedModeIndex = 2; // default to "Real"
 
@@ -60,10 +62,7 @@ let themeIndex = 1; // default to "True Black"
 const invertedSamples = new Set();
 
 function getStageDuration(stageIdx, sampleId) {
-    if (stageIdx === 0) {
-        return SPEED_MODES[speedModeIndex].duration(sampleId);
-    }
-    return STAGE_DURATIONS_MS[stageIdx] ?? DEFAULT_STAGE_DURATION_MS;
+    return SPEED_MODES[speedModeIndex].duration(sampleId, stageIdx);
 }
 
 function cycleTheme() {

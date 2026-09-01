@@ -180,9 +180,12 @@ html, body {
     aspect-ratio: 3 / 2;
     position: relative;
     filter: drop-shadow(0 0 2px var(--ecg-trace-color, #4fd1ff)); /* was 6px -- smaller radius costs less to recompute per Plotly.update() call */
-    background-image:
-        repeating-linear-gradient(0deg, rgba(92,194,74,0.06) 0 1px, transparent 1px 24px),
-        repeating-linear-gradient(90deg, rgba(92,194,74,0.06) 0 1px, transparent 1px 24px);
+    /* No decorative background-image grid anymore -- it never corresponded
+       to real time/amplitude values, just a fixed pixel pattern behind a
+       coordinate system it had no relationship to. Plotly's own gridlines
+       (see buildChartLayout in stage_renderers.js) now do this properly:
+       calibrated to genuine seconds/mV, correctly scaling and sliding with
+       the actual plotted data. */
 }
 
 .chart-frame.loading::after {
