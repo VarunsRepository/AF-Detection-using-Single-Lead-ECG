@@ -176,8 +176,11 @@ html, body {
 
 .chart-frame {
     width: 100%;
-    max-width: 480px;
-    aspect-ratio: 3 / 2;
+    max-width: 600px; /* generous cap, mainly relevant on tablets/desktop -- rarely binding on a phone-width screen */
+    height: 58vh; /* was width-driven (aspect-ratio: 3/2, max-width: 480px), which capped the chart
+                     at a small fixed box regardless of how much vertical room the card actually had --
+                     that's the "most of the page looks blank" problem. Height-driven sizing uses the
+                     screen's actual available space instead. */
     position: relative;
     filter: drop-shadow(0 0 2px var(--ecg-trace-color, #4fd1ff)); /* was 6px -- smaller radius costs less to recompute per Plotly.update() call */
     /* No decorative background-image grid anymore -- it never corresponded
@@ -186,6 +189,16 @@ html, body {
        (see buildChartLayout in stage_renderers.js) now do this properly:
        calibrated to genuine seconds/mV, correctly scaling and sliding with
        the actual plotted data. */
+}
+
+/* Explainer mode gets a little MORE room still than the already-enlarged
+   default view -- it's a static, full-recording inspection view, not the
+   windowed sweep, so it can afford it. This is specifically what fixes
+   wide-dynamic-range steps (like Squared, after Pan-Tompkins' squaring
+   stage) looking cramped/overflowing. */
+.stage-content.explaining .chart-frame {
+    max-width: none;
+    height: 62vh;
 }
 
 .chart-frame.loading::after {

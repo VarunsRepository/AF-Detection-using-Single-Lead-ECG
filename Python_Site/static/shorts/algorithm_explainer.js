@@ -50,6 +50,16 @@ function openExplainer(sampleId, container, panel) {
     cancelSweepAnimation(sampleId);
     clearAutoAdvance(sampleId);
 
+    // The Squared step's amplitude range is nothing like the original mV
+    // scale (squaring makes everything positive and inflates the dynamic
+    // range) -- the y-axis range itself is still calculated correctly for
+    // that data, but the normal sweep view's small, fixed aspect-ratio box
+    // just doesn't give it enough physical room to read comfortably. This
+    // is a static, full-recording inspection view anyway, not the compact
+    // sweep, so it can afford to take up much more of the screen.
+    const stageContent = container.closest(".stage-content");
+    if (stageContent) stageContent.classList.add("explaining");
+
     const { steps, peakIndices, t, y } = cached;
     const allSteps = [...steps, { label: "Peaks", data: y, peaks: peakIndices }];
 
@@ -114,11 +124,15 @@ function drawFullStep(container, t, step) {
 
 function closeExplainer(sampleId, panel) {
     panel.classList.remove("open");
+
+    const card = document.querySelector(`.card[data-sample-id="${sampleId}"]`);
+    const stageContent = card && card.querySelector('.stage-content[data-stage="2"]');
+    if (stageContent) stageContent.classList.remove("explaining");
+
     // Re-enter stage 2 cleanly by reusing the EXISTING, already-correct
     // enterStage() flow -- a synthesized click on the stage's own segment
     // button does exactly that, since segment clicks already call
     // enterStage(i). No new coupling into stage_machine.js's closures needed.
-    const card = document.querySelector(`.card[data-sample-id="${sampleId}"]`);
     const segment = card && card.querySelector('.segment[data-stage="2"]');
     if (segment) segment.click();
 }
