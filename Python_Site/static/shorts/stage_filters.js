@@ -104,5 +104,19 @@ function panTompkinsDetectPeaks(rawY, fs) {
         return bestIdx;
     });
 
-    return [...new Set(refined)].sort((a, b) => a - b); // de-duplicate in case refinement collapsed two detections together
+    const peakIndices = [...new Set(refined)].sort((a, b) => a - b); // de-duplicate in case refinement collapsed two detections together
+
+    // Intermediate results kept (not discarded) so an "explain how this
+    // works" view can show the actual shape of each transformation step,
+    // across the WHOLE recording -- not just the final peak positions.
+    return {
+        peakIndices,
+        steps: [
+            { label: "Raw signal", data: rawY },
+            { label: "Bandpass filtered", data: bp },
+            { label: "Derivative", data: derivative },
+            { label: "Squared", data: squared },
+            { label: "Integrated", data: integrated },
+        ],
+    };
 }

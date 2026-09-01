@@ -23,6 +23,13 @@ const activeSweepControl = new Map(); // sampleId -> { totalDurationMs, drawFn, 
 // instantly instead of re-fetching every time.
 const fetchedSignalCache = new Map(); // sampleId -> { signal, fs }
 
+// Populated by drawPeakDetectionStage -- holds each sample's full set of
+// Pan-Tompkins intermediate results (Raw, Bandpass, Derivative, Squared,
+// Integrated) plus its peak indices, t-axis, and fs. Exists purely so an
+// optional "explain how this works" view can plot any step on demand
+// without recomputing the filter. Safe to ignore if no such view is loaded.
+const stageStepsCache = new Map(); // sampleId -> { steps, peakIndices, t, y, fs }
+
 // Shared by every stage that needs the raw signal (stage 0's sweep, stage 2's
 // peak detection, and future stages too) -- cache-aware, so only the FIRST
 // stage to touch a given sample ever actually hits the network.
@@ -277,7 +284,13 @@ async function drawPeakDetectionStage(container, sampleId) {
     const yMax = Math.max(...y) + 0.1;
 
     // FILTER runs here, once, before any animation starts
-    const peakIndices = panTompkinsDetectPeaks(y, fs);
+    const { peakIndices, steps } = panTompkinsDetectPeaks(y, fs);
+
+    // Cached so an "explain how this works" view (algorithm_explainer.js,
+    // if loaded) can plot any intermediate step without recomputing the
+    // whole filter. Deliberately NOT required -- stage_renderers.js works
+    // fine with no explainer file present at all; see the hook call below.
+    stageStepsCache.set(sampleId, { steps, peakIndices, t, y, fs });
 
     const ECG_WINDOW_SECONDS = 5;
     const windowSamples = Math.round(ECG_WINDOW_SECONDS * fs);
@@ -297,6 +310,12 @@ async function drawPeakDetectionStage(container, sampleId) {
 
     Plotly.newPlot(container, [lineTrace, peakTrace], layout, { staticPlot: true, responsive: true });
     container.classList.remove("loading");
+
+    // Optional hook -- only fires if algorithm_explainer.js happens to be
+    // loaded. stage_renderers.js has no hard dependency on that file at all.
+    if (typeof attachAlgorithmExplainer === "function") {
+        attachAlgorithmExplainer(container, sampleId);
+    }
 
     const MAX_POINTS_PER_UPDATE = 200;
     const DOWNSAMPLE_STRIDE = Math.max(1, Math.ceil(windowSamples / MAX_POINTS_PER_UPDATE));

@@ -84,6 +84,73 @@ html, body {
     opacity: 1;
 }
 
+/* ---------------------------------------------------------------------
+   Algorithm explainer -- opt-in scrub bar (Stage 2 only, currently).
+   Toggle sits top-left, clear of the rail (right) and footer (bottom).
+   Panel is a bottom-anchored overlay so it never reflows the chart itself.
+   --------------------------------------------------------------------- */
+.explain-toggle {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 42;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(22, 27, 34, 0.85);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.75rem;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.explain-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 41;
+    background: rgba(13, 17, 23, 0.92);
+    border-top: 1px solid var(--border);
+    padding: 8px 10px;
+    display: none;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.explain-panel.open {
+    display: flex;
+}
+
+.explain-step-btn {
+    background: rgba(22, 27, 34, 0.85);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.65rem;
+    padding: 4px 9px;
+    border-radius: 12px;
+    cursor: pointer;
+}
+
+.explain-step-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.explain-close-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 2px 6px;
+}
+
 .stage-label {
     font-family: "IBM Plex Mono", monospace;
     font-size: 0.8rem;
