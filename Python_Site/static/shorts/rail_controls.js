@@ -39,7 +39,19 @@ let speedModeIndex = 2; // default to "Real"
 // excludes the UI's own green (--accent) so the data trace never looks
 // like an interactive control.
 // ---------------------------------------------------------------------------
-const TRACE_COLORS = ["#4fd1ff", "#ffb84f", "#ffffff", "#ff6ec7"]; // cyan, amber, white, pink
+// ---------------------------------------------------------------------------
+// TRACE COLOR -- a cycling palette (rail's color button). Deliberately
+// excludes the UI's own semantic colors (--accent green, --danger red,
+// --warn gold) so picking a trace color never looks like a status
+// indicator turning on. Chosen for a "serious instrument," not "pick your
+// favorite crayon" feel -- muted, clinical-adjacent tones rather than
+// bright/candy hues, while staying clearly distinct from one another.
+const TRACE_COLORS = [
+    "#2dd4bf", // teal -- calm, clinical; classic monitor-trace territory without being the exact ECG-monitor cliché green
+    "#f0ede4", // ivory -- softer than stark white, easier on the eyes over a long viewing session
+    "#d9a441", // amber gold -- warm, instrument-panel feel; kept visually distinct from --warn (#c98a1f)
+    "#c96a4e", // muted terracotta -- a serious, warm red-adjacent tone; deliberately NOT bright pink, and distinct from --danger (#a32638)
+];
 let colorIndex = 0;
 
 // ---------------------------------------------------------------------------
@@ -79,7 +91,7 @@ function cycleTheme() {
         btn.title = `Background theme (${preset.label})`;
     });
 }
-
+ 
 function cycleSpeedMode() {
     speedModeIndex = (speedModeIndex + 1) % SPEED_MODES.length;
     document.querySelectorAll(".rail-speed-label").forEach(label => {
