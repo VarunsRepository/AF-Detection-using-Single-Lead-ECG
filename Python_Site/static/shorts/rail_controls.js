@@ -85,7 +85,7 @@ function cycleSpeedMode() {
     document.querySelectorAll(".rail-speed-label").forEach(label => {
         label.textContent = SPEED_MODES[speedModeIndex].label;
     });
-    if (currentlyVisibleController) currentlyVisibleController.refreshStage0IfActive();
+    if (currentlyVisibleController) currentlyVisibleController.refreshActiveStage();
 }
 
 function cycleTraceColor() {
@@ -94,7 +94,7 @@ function cycleTraceColor() {
     document.querySelectorAll(".rail-color .swatch-dot").forEach(dot => {
         dot.style.setProperty("--swatch", TRACE_COLORS[colorIndex]);
     });
-    if (currentlyVisibleController) currentlyVisibleController.refreshStage0IfActive();
+    if (currentlyVisibleController) currentlyVisibleController.refreshActiveStage();
 }
 
 function toggleInvert(sampleId) {
@@ -103,12 +103,21 @@ function toggleInvert(sampleId) {
     } else {
         invertedSamples.add(sampleId);
     }
+
+    // Flipping polarity changes Stage 0's OUTPUT -- every downstream stage
+    // (Stage 2's peak positions, and future RR/Poincaré stages) was computed
+    // from the OLD polarity and is now stale for this sample. Without this,
+    // the engine's caching would silently keep showing pre-invert peaks on
+    // the now-inverted trace -- a real correctness bug the cache introduces
+    // if this call is missing, not just a missed optimization.
+    invalidateFromStage(sampleId, 0);
+
     // only THIS sample's rail button reflects the change -- invert is
     // per-sample, unlike speed/color which are global
     document.querySelectorAll(`.card[data-sample-id="${sampleId}"] .rail-invert`).forEach(btn => {
         btn.setAttribute("aria-pressed", invertedSamples.has(sampleId));
     });
     if (currentlyVisibleController && currentlyVisibleController.sampleId === sampleId) {
-        currentlyVisibleController.refreshStage0IfActive();
+        currentlyVisibleController.refreshActiveStage();
     }
 }

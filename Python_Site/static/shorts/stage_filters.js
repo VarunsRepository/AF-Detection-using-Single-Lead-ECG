@@ -109,14 +109,20 @@ function panTompkinsDetectPeaks(rawY, fs) {
     // Intermediate results kept (not discarded) so an "explain how this
     // works" view can show the actual shape of each transformation step,
     // across the WHOLE recording -- not just the final peak positions.
+    //
+    // Plain-word labels here for the scrub panel's pill buttons (compact --
+    // no room for a secondary technical line there, unlike the main stage
+    // labels). The real technical term is kept in `tech`, surfaced as a
+    // hover/long-press tooltip by the explainer UI, so it's still there
+    // for anyone curious, just not competing with the plain label for space.
     return {
         peakIndices,
         steps: [
-            { label: "Raw signal", data: rawY },
-            { label: "Bandpass filtered", data: bp },
-            { label: "Derivative", data: derivative },
-            { label: "Squared", data: squared },
-            { label: "Integrated", data: integrated },
+            { label: "Original", tech: "Raw Signal", data: rawY },
+            { label: "Removing Noise", tech: "Bandpass Filter", data: bp },
+            { label: "Spotting Changes", tech: "Derivative", data: derivative },
+            { label: "Making Peaks Bigger", tech: "Squared", data: squared },
+            { label: "Smoothing Out", tech: "Moving Average / Integration", data: integrated },
         ],
     };
 }

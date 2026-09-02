@@ -152,12 +152,27 @@ html, body {
 }
 
 .stage-label {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    text-align: center;
+    margin-bottom: 4px;
+    /* This used to be the small, uppercase, monospace "technical readout"
+       style -- now demoted to .stage-label-small below, since the MAIN
+       line is meant to be plain-language prose a non-clinician can read
+       at a glance, not a jargon-heavy label. */
+}
+
+.stage-label-small {
+    display: block;
     font-family: "IBM Plex Mono", monospace;
-    font-size: 0.8rem;
+    font-size: 0.7rem;
     letter-spacing: 0.05em;
     color: var(--text-dim);
     text-transform: uppercase;
-    margin-bottom: 12px;
+    margin-top: 2px;
+    margin-bottom: 8px;
 }
 
 .verdict-label {
@@ -417,4 +432,4 @@ html, body {
     border-color: var(--accent);
     color: var(--accent);
     background: rgba(92, 194, 74, 0.15);
-}
+}   

@@ -24,7 +24,17 @@ let cardsViewedThisSession = 0;
 // stay empty placeholders until those renderers exist.
 // ---------------------------------------------------------------------------
 function buildCardElement(sampleId, label, stageCount = 5) {
-    const stageNames = ["Raw signal", "Corrected", "Peak detection", "HRV metrics", "Verdict"];
+    // Plain-word first, technical term kept small alongside -- never
+    // hidden, just not leading. A casual viewer reads one clear phrase and
+    // keeps scrolling; anyone curious (or who already knows the field)
+    // still sees the real term, right there, just secondary.
+    const stageNames = [
+        { main: "Your Heartbeat", small: "Raw ECG Signal" },
+        { main: "Cleaning It Up", small: "Baseline Correction" },
+        { main: "Finding Each Beat", small: "Peak Detection" },
+        { main: "Rhythm Patterns", small: "HRV Metrics" },
+        { main: "The Result", small: "Verdict" },
+    ];
 
     const card = document.createElement("section");
     card.className = "card";
@@ -53,11 +63,16 @@ function buildCardElement(sampleId, label, stageCount = 5) {
         segment.innerHTML = '<div class="fill"></div>';
         bar.appendChild(segment);
 
+        const names = stageNames[i] || { main: `Stage ${i}`, small: "" };
+
         const stageContent = document.createElement("div");
         stageContent.className = i === 0 ? "stage-content active" : "stage-content";
         stageContent.dataset.stage = i;
         stageContent.innerHTML = `
-            <div class="stage-label${i === stageCount - 1 ? " verdict-label" : ""}">${stageNames[i] || `Stage ${i}`}</div>
+            <div class="stage-label${i === stageCount - 1 ? " verdict-label" : ""}">
+                ${names.main}
+                ${names.small ? `<span class="stage-label-small">${names.small}</span>` : ""}
+            </div>
             <div class="chart-frame${i === stageCount - 1 ? " verdict-frame" : ""}" id="chart-${sampleId}-${i}"></div>
         `;
         viewport.appendChild(stageContent);

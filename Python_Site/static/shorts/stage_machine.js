@@ -4,9 +4,10 @@
 // pausing, and a card's first activation all funnel through enterStage(),
 // the single canonical entry point. No cross-visit memory anymore -- every
 // card always starts fresh at stage 0, every time it becomes visible.
-// Depends on rail_controls.js (getStageDuration) and stage_renderers.js
-// (renderedCharts, cancelSweepAnimation, renderStageChart, activeSweepControl,
-// startSweepLoop) -- both must be loaded before this file.
+// Depends on rail_controls.js (getStageDuration), stage_renderers.js
+// (cancelSweepAnimation, activeSweepControl, startSweepLoop), and
+// stage_engine.js (renderStageChart) -- all three must be loaded before
+// this file.
 // ---------------------------------------------------------------------------
 
 let activeTimers = new Map();
@@ -70,9 +71,12 @@ function initCard(cardEl) {
             }
         });
 
-        // always a genuinely fresh render -- no memory of any prior visit
-        const key = `${sampleId}-${currentStage}`;
-        renderedCharts.delete(key);
+        // always a genuinely fresh ANIMATION -- the engine may reuse cached
+        // processor output (e.g. Pan-Tompkins' peaks, if unchanged since
+        // last computed), but the renderer always restarts the sweep from
+        // elapsed=0 via startSweepLoop, so this still looks and feels fresh
+        // every time, even though the underlying computation isn't repeated
+        // unnecessarily.
         cancelSweepAnimation(sampleId);
         const activeEl = stageEls.find(el => Number(el.dataset.stage) === currentStage);
         const container = activeEl && activeEl.querySelector(".chart-frame");
@@ -178,13 +182,15 @@ function initCard(cardEl) {
         enterStage(0);
     }
 
-    // Called by the global speed toggle when its mode flips -- if this card
-    // is currently showing stage 0, restart it with the new setting applied.
-    // Cards NOT on stage 0 right now just pick up the new mode naturally the
-    // next time their stage 0 becomes active (no action needed for those).
-    function refreshStage0IfActive() {
-        if (currentStage === 0) enterStage(0);
+    // Called by any GLOBAL rail control (speed, color, theme) when it
+    // changes -- refreshes whichever stage is CURRENTLY being shown, not
+    // just stage 0. Previously this only checked stage 0, which meant
+    // changing Speed while sitting on Stage 2 (or any later stage) silently
+    // did nothing until you left and came back. Since Speed now applies
+    // uniformly across every stage, the refresh needs to too.
+    function refreshActiveStage() {
+        enterStage(currentStage); // restarts whatever stage is currently showing, with the new setting applied
     }
 
-    return { sampleId, activate, refreshStage0IfActive };
+    return { sampleId, activate, refreshActiveStage };
 }

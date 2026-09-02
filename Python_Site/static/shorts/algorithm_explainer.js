@@ -7,7 +7,7 @@
 // point here is seeing the shape of the transformation end to end, not
 // watching a monitor-style animation.
 //
-// Depends on stage_renderers.js (stageStepsCache, buildChartLayout,
+// Depends on stage_engine.js (getCachedStageOutput), stage_renderers.js (buildChartLayout,
 // cancelSweepAnimation) and stage_machine.js (clearAutoAdvance) -- both
 // must be loaded before this file. Deliberately DECOUPLED from
 // stage_renderers.js though: that file only calls attachAlgorithmExplainer()
@@ -41,7 +41,9 @@ function attachAlgorithmExplainer(container, sampleId) {
 }
 
 function openExplainer(sampleId, container, panel) {
-    const cached = stageStepsCache.get(sampleId);
+    // Reads Stage 2's already-computed output straight from the engine's
+    // own cache -- no separate cache to keep in sync anymore.
+    const cached = getCachedStageOutput(sampleId, 2);
     if (!cached) return;
 
     // freeze the normal sweep/timer while exploring -- both functions are
@@ -61,7 +63,7 @@ function openExplainer(sampleId, container, panel) {
     if (stageContent) stageContent.classList.add("explaining");
 
     const { steps, peakIndices, t, y } = cached;
-    const allSteps = [...steps, { label: "Peaks", data: y, peaks: peakIndices }];
+    const allSteps = [...steps, { label: "Heartbeats Found", tech: "Detected Peaks", data: y, peaks: peakIndices }];
 
     panel.innerHTML = "";
     panel.classList.add("open");
@@ -70,6 +72,7 @@ function openExplainer(sampleId, container, panel) {
         const btn = document.createElement("button");
         btn.className = "explain-step-btn";
         btn.textContent = step.label;
+        if (step.tech) btn.title = step.tech; // technical term, still there for anyone curious -- just a tooltip, not competing with the plain label for space
         btn.addEventListener("click", (e) => {
             e.stopPropagation();
             panel.querySelectorAll(".explain-step-btn").forEach(b => b.classList.remove("active"));

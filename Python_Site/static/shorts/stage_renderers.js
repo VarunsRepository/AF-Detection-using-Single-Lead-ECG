@@ -1,13 +1,16 @@
 // ---------------------------------------------------------------------------
 // stage_renderers.js
-// Everything that actually draws a stage's chart. Fetches (with caching),
-// builds Plotly layouts, and drives each stage's animated reveal via a
-// requestAnimationFrame sweep loop. Depends on stage_filters.js (for
-// panTompkinsDetectPeaks) and rail_controls.js (for TRACE_COLORS,
-// invertedSamples, getStageDuration) -- both must be loaded before this file.
+// Fetches (with caching), builds Plotly layouts, and drives each stage's
+// animated reveal via a requestAnimationFrame sweep loop. Registers Stage 0
+// (raw signal) and Stage 2 (peak detection) with the generic engine from
+// stage_engine.js -- see registerStage() calls at the bottom of each section.
+//
+// Depends on stage_engine.js (registerStage, invalidateFromStage), 
+// stage_filters.js (panTompkinsDetectPeaks), and rail_controls.js
+// (TRACE_COLORS, invertedSamples, getStageDuration) -- all three must be
+// loaded before this file.
 // ---------------------------------------------------------------------------
 
-const renderedCharts = new Set(); // "sampleId-stageIdx" keys already drawn, so we never re-animate a chart twice
 const sweepAnimationHandles = new Map(); // sampleId -> requestAnimationFrame handle, for cancellation
 
 // Tracks the CURRENTLY ACTIVE sweep for whichever stage is being drawn --
@@ -23,16 +26,8 @@ const activeSweepControl = new Map(); // sampleId -> { totalDurationMs, drawFn, 
 // instantly instead of re-fetching every time.
 const fetchedSignalCache = new Map(); // sampleId -> { signal, fs }
 
-// Populated by drawPeakDetectionStage -- holds each sample's full set of
-// Pan-Tompkins intermediate results (Raw, Bandpass, Derivative, Squared,
-// Integrated) plus its peak indices, t-axis, and fs. Exists purely so an
-// optional "explain how this works" view can plot any step on demand
-// without recomputing the filter. Safe to ignore if no such view is loaded.
-const stageStepsCache = new Map(); // sampleId -> { steps, peakIndices, t, y, fs }
-
-// Shared by every stage that needs the raw signal (stage 0's sweep, stage 2's
-// peak detection, and future stages too) -- cache-aware, so only the FIRST
-// stage to touch a given sample ever actually hits the network.
+// Shared by every stage that needs the raw signal -- cache-aware, so only
+// the FIRST stage to touch a given sample ever actually hits the network.
 async function fetchSignal(sampleId) {
     if (fetchedSignalCache.has(sampleId)) {
         return fetchedSignalCache.get(sampleId);
@@ -46,7 +41,7 @@ async function fetchSignal(sampleId) {
 
         // populated HERE, centrally, regardless of which stage triggers the
         // first fetch -- needed so "Real" speed mode works correctly even
-        // if a user reaches Stage 2 before ever viewing Stage 0 in a session
+        // if a user reaches a later stage before ever viewing Stage 0
         recordingDurationMs.set(sampleId, Math.round((result.signal.length / result.fs) * 1000));
 
         return result;
@@ -97,9 +92,7 @@ function buildChartLayout(yMin, yMax, initialXRange) {
             visible: true,
             title: { text: "Time (s)", font: AXIS_LABEL_STYLE },
             tickfont: AXIS_LABEL_STYLE,
-            showgrid: true, // REAL gridlines now, calibrated to actual seconds --
-                              // not the old decorative CSS pattern, which never
-                              // corresponded to genuine time/amplitude values
+            showgrid: true,
             gridcolor: "rgba(116, 125, 140, 0.18)",
             gridwidth: 1,
             dtick: xStep,
@@ -116,14 +109,12 @@ function buildChartLayout(yMin, yMax, initialXRange) {
             gridcolor: "rgba(116, 125, 140, 0.18)",
             gridwidth: 1,
             dtick: yStep,
-            zeroline: true, // horizontal reference line at 0 mV -- shows which
-                              // way a beat deflects relative to baseline, and
-                              // matters more now that Invert can flip polarity
-            zerolinecolor: "rgba(116, 125, 140, 0.4)", // brighter than the grid -- 0 mV still reads as a distinct reference, not just another box edge
+            zeroline: true,
+            zerolinecolor: "rgba(116, 125, 140, 0.4)",
             zerolinewidth: 1,
             ticks: "outside",
             tickcolor: "#30363d",
-            range: [yMin, yMax], // static for the whole sweep -- cheap, no per-frame recompute
+            range: [yMin, yMax],
         },
         annotations: [{
             xref: "paper", yref: "paper",
@@ -152,7 +143,7 @@ function startSweepLoop(sampleId, totalDurationMs, drawFn, startElapsedMs = 0) {
     function tick(now) {
         const elapsed = Math.min(now - startTime, totalDurationMs);
         const control = activeSweepControl.get(sampleId);
-        if (control) control.lastElapsedMs = elapsed; // kept current every frame, so a pause at ANY moment has an accurate value
+        if (control) control.lastElapsedMs = elapsed;
         drawFn(elapsed);
 
         if (elapsed < totalDurationMs) {
@@ -172,98 +163,70 @@ function cancelSweepAnimation(sampleId) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Stage 0 renderer: fetches the REAL raw signal for this sample from the
-// pipeline, then draws it as an animated left-to-right sweep.
-// ---------------------------------------------------------------------------
-async function drawRawSignalStage(container, sampleId) {
-    const key = `${sampleId}-0`;
-    if (renderedCharts.has(key)) return; // already drawn once, don't re-animate
-    renderedCharts.add(key);
-
-    cancelSweepAnimation(sampleId); // guard against a leftover loop from a rapid toggle
-
-    container.classList.add("loading");
-
-    const fetched = await fetchSignal(sampleId);
-    if (!fetched) {
-        renderedCharts.delete(key); // allow a retry if the user revisits this card
-        container.classList.remove("loading");
-        return;
-    }
-    const { signal, fs } = fetched;
-
-    // per-sample inversion, applied here so every downstream calculation
-    // (min/max, the sweep itself) already sees the corrected polarity
-    const rawY = signal;
-    const y = invertedSamples.has(sampleId) ? rawY.map(v => -v) : rawY;
-    const t = y.map((_, i) => i / fs);
-    const yMin = Math.min(...y) - 0.1;
-    const yMax = Math.max(...y) + 0.1;
-
-    // Fixed-width scrolling window, in real ECG seconds -- NOT the whole
-    // recording. Solves the "crowding" problem: a 30-90s recording no longer
-    // ends up with every beat overlapping on screen at once. A window this
-    // wide typically shows 4-6 beats at a time, similar to a bedside monitor.
-    const ECG_WINDOW_SECONDS = 5;
-    const windowSamples = Math.round(ECG_WINDOW_SECONDS * fs);
-
-    const trace = {
-        x: [t[0]],
-        y: [y[0]],
-        mode: "lines",
-        line: { color: TRACE_COLORS[colorIndex], width: 2, shape: "spline" },
-        hoverinfo: "skip",
-    };
-
-    const layout = buildChartLayout(yMin, yMax, [t[0], t[0] + ECG_WINDOW_SECONDS]);
-
-    Plotly.newPlot(container, [trace], layout, { staticPlot: true, responsive: true });
-    container.classList.remove("loading");
-
-    // Downsamples a window's worth of points down to a fixed maximum, via
-    // simple stride sampling. A line only needs a few hundred points to
-    // look smooth -- capping this keeps every update cheap regardless of
-    // how many raw samples fall inside the current window.
-    const MAX_POINTS_PER_UPDATE = 200;
-
-    // FIXED stride, computed ONCE from the steady-state window size -- not
-    // recomputed from the current slice length every tick. This matters:
-    // if the stride were recalculated per-tick, tiny rounding fluctuations
-    // in the slice length could occasionally flip it between two adjacent
-    // integer values, which would itself reshuffle which points get kept.
-    const DOWNSAMPLE_STRIDE = Math.max(1, Math.ceil(windowSamples / MAX_POINTS_PER_UPDATE));
-
-    // Picks points using a grid ANCHORED TO ABSOLUTE SAMPLE POSITION in the
-    // recording (index % stride === 0), not counted fresh from wherever the
-    // window currently starts. This is the actual fix for the peak-jumping
-    // artifact: with the old relative-to-window-start counting, the set of
-    // kept points subtly shifted every frame as the window slid, so a sharp
-    // peak would sometimes land exactly on a kept sample and sometimes fall
-    // into a gap between them -- rendering its height as flickering between
-    // frames. Anchoring to absolute position means the same underlying
-    // samples are chosen consistently; only the window's edges move.
-    function sampleAligned(startIdx, endIdx, stride) {
+// Shared by any sweep-style renderer -- downsamples a window's worth of
+// points to a fixed maximum via a grid ANCHORED TO ABSOLUTE SAMPLE POSITION
+// (not counted fresh from wherever the window currently starts). Anchoring
+// to absolute position is what keeps a sharp peak from flickering as the
+// window slides: the same underlying samples get chosen consistently every
+// frame, only the window's edges move.
+function makeSampleAligner(t, y, stride) {
+    return function sampleAligned(startIdx, endIdx) {
         const dsX = [], dsY = [];
         const firstAligned = Math.ceil(startIdx / stride) * stride;
         for (let absIdx = firstAligned; absIdx < endIdx; absIdx += stride) {
             dsX.push(t[absIdx]);
             dsY.push(y[absIdx]);
         }
-        // always include the true leading-edge sample, so the sweep's tip
-        // never visibly lags behind where the data actually is
         const lastAbs = endIdx - 1;
         if (dsX.length === 0 || dsX[dsX.length - 1] !== t[lastAbs]) {
             dsX.push(t[lastAbs]);
             dsY.push(y[lastAbs]);
         }
         return { x: dsX, y: dsY };
-    }
+    };
+}
 
-    // ------------------------------------------------------------------
-    // requestAnimationFrame-driven sweep: updates on every real screen
-    // refresh (~60fps) instead of a small fixed number of discrete jumps.
-    // ------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// STAGE 0 -- Raw signal.
+//
+// Processor: takes the raw {signal, fs} fetch, applies per-sample inversion,
+// builds the time axis. Very little real "processing" happens here yet --
+// this is the stand-in until Stage 1 (orientation/baseline correction)
+// exists, at which point Stage 0 stays exactly this, and Stage 1 becomes
+// the first REAL DSP step in the chain.
+// ---------------------------------------------------------------------------
+function rawSignalProcessor(input, sampleId) {
+    const rawY = input.signal;
+    const y = invertedSamples.has(sampleId) ? rawY.map(v => -v) : rawY;
+    const fs = input.fs;
+    const t = y.map((_, i) => i / fs);
+    return { t, y, fs };
+}
+
+function rawSignalRenderer(container, sampleId, output) {
+    const { t, y, fs } = output;
+    const yMin = Math.min(...y) - 0.1;
+    const yMax = Math.max(...y) + 0.1;
+
+    // Fixed-width scrolling window, in real ECG seconds -- NOT the whole
+    // recording. Solves the "crowding" problem: a 30-90s recording no
+    // longer ends up with every beat overlapping on screen at once.
+    const ECG_WINDOW_SECONDS = 5;
+    const windowSamples = Math.round(ECG_WINDOW_SECONDS * fs);
+
+    const trace = {
+        x: [t[0]], y: [y[0]], mode: "lines",
+        line: { color: TRACE_COLORS[colorIndex], width: 2, shape: "spline" },
+        hoverinfo: "skip",
+    };
+
+    const layout = buildChartLayout(yMin, yMax, [t[0], t[0] + ECG_WINDOW_SECONDS]);
+    Plotly.newPlot(container, [trace], layout, { staticPlot: true, responsive: true });
+
+    const MAX_POINTS_PER_UPDATE = 200;
+    const DOWNSAMPLE_STRIDE = Math.max(1, Math.ceil(windowSamples / MAX_POINTS_PER_UPDATE));
+    const sampleAligned = makeSampleAligner(t, y, DOWNSAMPLE_STRIDE);
+
     const totalDurationMs = getStageDuration(0, sampleId);
 
     function drawAtElapsed(elapsed) {
@@ -274,61 +237,41 @@ async function drawRawSignalStage(container, sampleId) {
         const rangeStart = startIdx === 0 ? t[0] : t[startIdx];
         const rangeEnd = startIdx === 0 ? t[0] + ECG_WINDOW_SECONDS : t[currentIndex - 1];
 
-        const { x: dsX, y: dsY } = sampleAligned(startIdx, currentIndex, DOWNSAMPLE_STRIDE);
+        const { x: dsX, y: dsY } = sampleAligned(startIdx, currentIndex);
 
         Plotly.update(container,
             { x: [dsX], y: [dsY] },
-            { "xaxis.range": [rangeStart, rangeEnd] } // dot-path patch -- only the range changes; y-axis is static and title/tick styling from buildChartLayout() is left untouched
+            { "xaxis.range": [rangeStart, rangeEnd] }
         );
     }
 
     startSweepLoop(sampleId, totalDurationMs, drawAtElapsed);
 }
 
+registerStage(0, {
+    // no dependsOn -- Stage 0 IS the raw entry point, starts fresh from the fetch
+    processor: rawSignalProcessor,
+    renderer: rawSignalRenderer,
+});
+
 // ---------------------------------------------------------------------------
-// Stage 2 renderer: peak detection. The FILTER (panTompkinsDetectPeaks, in
-// stage_filters.js) runs ONCE, eagerly, computing every peak in the whole
-// recording up front. This function's own drawAtElapsed only ever decides
-// which ALREADY-FOUND peaks fall within the current sweep window -- no
-// detection work happens per frame. Same shape as stage 0's sweep,
-// deliberately, since that shape is exactly what made pause-free,
-// always-fresh restarts trivial there too.
+// STAGE 2 -- Peak detection.
 //
-// NOTE: runs directly on the RAW signal, not a baseline-corrected one --
-// Stage 1 (Corrected) isn't built yet. Pan-Tompkins' own bandpass step
-// already does most of that work internally, so this is a reasonable stand-
-// in for now, not a hack that will need throwing away once Stage 1 exists.
+// Processor: takes STAGE 0's output {t, y, fs} as input (not a raw fetch --
+// that's the actual payoff of the engine: once a real Stage 1 exists, this
+// automatically receives ITS output instead, with zero changes here) and
+// runs the Pan-Tompkins filter once, eagerly.
 // ---------------------------------------------------------------------------
-async function drawPeakDetectionStage(container, sampleId) {
-    const key = `${sampleId}-2`;
-    if (renderedCharts.has(key)) return;
-    renderedCharts.add(key);
+function peakDetectionProcessor(input, sampleId) {
+    const { t, y, fs } = input; // previous stage's output, resolved by the engine
+    const { peakIndices, steps } = panTompkinsDetectPeaks(y, fs);
+    return { t, y, fs, peakIndices, steps };
+}
 
-    cancelSweepAnimation(sampleId);
-    container.classList.add("loading");
-
-    const fetched = await fetchSignal(sampleId);
-    if (!fetched) {
-        renderedCharts.delete(key);
-        container.classList.remove("loading");
-        return;
-    }
-    const { signal, fs } = fetched;
-
-    const rawY = signal;
-    const y = invertedSamples.has(sampleId) ? rawY.map(v => -v) : rawY;
-    const t = y.map((_, i) => i / fs);
+function peakDetectionRenderer(container, sampleId, output) {
+    const { t, y, fs, peakIndices } = output;
     const yMin = Math.min(...y) - 0.1;
     const yMax = Math.max(...y) + 0.1;
-
-    // FILTER runs here, once, before any animation starts
-    const { peakIndices, steps } = panTompkinsDetectPeaks(y, fs);
-
-    // Cached so an "explain how this works" view (algorithm_explainer.js,
-    // if loaded) can plot any intermediate step without recomputing the
-    // whole filter. Deliberately NOT required -- stage_renderers.js works
-    // fine with no explainer file present at all; see the hook call below.
-    stageStepsCache.set(sampleId, { steps, peakIndices, t, y, fs });
 
     const ECG_WINDOW_SECONDS = 5;
     const windowSamples = Math.round(ECG_WINDOW_SECONDS * fs);
@@ -345,33 +288,19 @@ async function drawPeakDetectionStage(container, sampleId) {
     };
 
     const layout = buildChartLayout(yMin, yMax, [t[0], t[0] + ECG_WINDOW_SECONDS]);
-
     Plotly.newPlot(container, [lineTrace, peakTrace], layout, { staticPlot: true, responsive: true });
-    container.classList.remove("loading");
 
     // Optional hook -- only fires if algorithm_explainer.js happens to be
-    // loaded. stage_renderers.js has no hard dependency on that file at all.
+    // loaded. This file has no hard dependency on that file at all; it
+    // reads this stage's output straight from the engine's cache
+    // (getCachedStageOutput(sampleId, 2)) rather than a separate cache.
     if (typeof attachAlgorithmExplainer === "function") {
         attachAlgorithmExplainer(container, sampleId);
     }
 
     const MAX_POINTS_PER_UPDATE = 200;
     const DOWNSAMPLE_STRIDE = Math.max(1, Math.ceil(windowSamples / MAX_POINTS_PER_UPDATE));
-
-    function sampleAligned(startIdx, endIdx, stride) {
-        const dsX = [], dsY = [];
-        const firstAligned = Math.ceil(startIdx / stride) * stride;
-        for (let absIdx = firstAligned; absIdx < endIdx; absIdx += stride) {
-            dsX.push(t[absIdx]);
-            dsY.push(y[absIdx]);
-        }
-        const lastAbs = endIdx - 1;
-        if (dsX.length === 0 || dsX[dsX.length - 1] !== t[lastAbs]) {
-            dsX.push(t[lastAbs]);
-            dsY.push(y[lastAbs]);
-        }
-        return { x: dsX, y: dsY };
-    }
+    const sampleAligned = makeSampleAligner(t, y, DOWNSAMPLE_STRIDE);
 
     const totalDurationMs = getStageDuration(2, sampleId);
 
@@ -382,10 +311,11 @@ async function drawPeakDetectionStage(container, sampleId) {
         const rangeStart = startIdx === 0 ? t[0] : t[startIdx];
         const rangeEnd = startIdx === 0 ? t[0] + ECG_WINDOW_SECONDS : t[currentIndex - 1];
 
-        const { x: dsX, y: dsY } = sampleAligned(startIdx, currentIndex, DOWNSAMPLE_STRIDE);
+        const { x: dsX, y: dsY } = sampleAligned(startIdx, currentIndex);
 
-        // RENDERER only: peaks were already fully computed above. This just
-        // filters which already-known peaks fall inside the current window.
+        // RENDERER only: peaks were already fully computed by the processor.
+        // This just filters which already-known peaks fall inside the
+        // current window -- no detection work happens per frame.
         const visiblePeaks = peakIndices.filter(idx => idx >= startIdx && idx < currentIndex);
 
         Plotly.update(container,
@@ -400,16 +330,12 @@ async function drawPeakDetectionStage(container, sampleId) {
     startSweepLoop(sampleId, totalDurationMs, drawAtElapsed);
 }
 
-function renderStageChart(sampleId, stageIdx, container) {
-    switch (stageIdx) {
-        case 0:
-            drawRawSignalStage(container, sampleId);
-            break;
-        case 2:
-            drawPeakDetectionStage(container, sampleId);
-            break;
-        // case 1, 3, 4 -- corrected signal, metrics, verdict -- still to be built.
-        default:
-            break;
-    }
-}
+registerStage(2, {
+    // Explicitly depends on Stage 0's {t, y, fs} waveform output -- not an
+    // implicit numeric guess. Once a real Stage 1 exists, updating this to
+    // dependsOn: 1 is a deliberate, visible, one-line change -- not
+    // something that happens automatically/invisibly.
+    dependsOn: 0,
+    processor: peakDetectionProcessor,
+    renderer: peakDetectionRenderer,
+});
