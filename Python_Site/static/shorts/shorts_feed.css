@@ -8,6 +8,8 @@
     --accent-dim: #2e3440;
     --danger: #a32638;
     --warn: #c98a1f;
+    --grid-color: rgba(116, 125, 140, 0.18); /* Plotly chart gridlines -- read via getComputedStyle in stage_renderers.js, since Plotly can't reference CSS vars directly */
+    --zero-line-color: rgba(116, 125, 140, 0.4); /* the 0 mV reference line, brighter than the regular grid */
 }
 
 * { box-sizing: border-box; }
@@ -432,4 +434,4 @@ html, body {
     border-color: var(--accent);
     color: var(--accent);
     background: rgba(92, 194, 74, 0.15);
-}   
+}

@@ -107,7 +107,7 @@ function drawFullStep(container, t, step) {
 
     const traces = [{
         x: t, y: data, mode: "lines",
-        line: { color: TRACE_COLORS[colorIndex], width: 1.5, shape: "spline" },
+        line: { color: THEMES[themeIndex].traceColor, width: 1.5, shape: "spline" },
         hoverinfo: "skip",
     }];
 

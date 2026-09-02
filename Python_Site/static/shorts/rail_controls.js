@@ -35,38 +35,44 @@ const SPEED_MODES = [
 let speedModeIndex = 2; // default to "Real"
 
 // ---------------------------------------------------------------------------
-// TRACE COLOR -- a cycling palette (rail's color button). Deliberately
-// excludes the UI's own green (--accent) so the data trace never looks
-// like an interactive control.
+// THEME -- one merged control now, not two separate ones. Each entry bundles
+// a background AND a trace color together as a single, coherent look,
+// rather than letting them be picked independently (which made it easy to
+// land on combinations nobody actually chose on purpose). Background stays
+// dark across all three, deliberately -- that part isn't negotiable, real
+// diagnostic monitors are near-black for a reason (contrast, eye strain in
+// a dim room). What varies is HUE and trace color, not brightness.
 // ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// TRACE COLOR -- a cycling palette (rail's color button). Deliberately
-// excludes the UI's own semantic colors (--accent green, --danger red,
-// --warn gold) so picking a trace color never looks like a status
-// indicator turning on. Chosen for a "serious instrument," not "pick your
-// favorite crayon" feel -- muted, clinical-adjacent tones rather than
-// bright/candy hues, while staying clearly distinct from one another.
-const TRACE_COLORS = [
-    "#2dd4bf", // teal -- calm, clinical; classic monitor-trace territory without being the exact ECG-monitor cliché green
-    "#f0ede4", // ivory -- softer than stark white, easier on the eyes over a long viewing session
-    "#d9a441", // amber gold -- warm, instrument-panel feel; kept visually distinct from --warn (#c98a1f)
-    "#c96a4e", // muted terracotta -- a serious, warm red-adjacent tone; deliberately NOT bright pink, and distinct from --danger (#a32638)
+const THEMES = [
+    {
+        label: "Clinical",
+        bg: "#000000",          // true black -- what an actual diagnostic monitor looks like
+        cardBg: "#0a0a0a",
+        traceColor: "#e8f4f8",  // near-white, cool cyan-white -- classic phosphor/oscilloscope trace, no-nonsense
+        gridColor: "rgba(116, 125, 140, 0.18)",     // neutral, muted -- a reference, not a statement
+        zeroLineColor: "rgba(116, 125, 140, 0.4)",
+    },
+    {
+        label: "Vivid",
+        bg: "#0d0a14",          // still dark, a hint of purple undertone -- more personality, not brighter
+        cardBg: "#171226",
+        traceColor: "#2dd4bf",  // teal -- more visually engaging than Clinical's stark white
+        gridColor: "rgba(255, 45, 175, 0.18)",      // hot magenta -- teal trace + pink grid is the classic Vice City neon duo
+        zeroLineColor: "rgba(255, 45, 175, 0.45)",
+    },
+    {
+        label: "Experimental",
+        bg: "#0a0e14",          // dark navy-black -- the deliberately-provisional slot, expect this one to change as we try things
+        cardBg: "#131a24",
+        traceColor: "#d9a441",  // amber gold
+        gridColor: "rgba(116, 125, 140, 0.18)",     // same neutral grid as Clinical for now -- easy to change later, this whole theme is the sandbox
+        zeroLineColor: "rgba(116, 125, 140, 0.4)",
+    },
 ];
-let colorIndex = 0;
+let themeIndex = 0; // default to "Clinical" -- the serious baseline
 
 // ---------------------------------------------------------------------------
-// BACKGROUND THEME -- three presets, cycled the same way as Speed/Color.
-// Purely a display preference -- reversible, visible, no manipulation.
-// ---------------------------------------------------------------------------
-const THEME_PRESETS = [
-    { label: "Charcoal", bg: "#0d1117", cardBg: "#161b22" },
-    { label: "True Black", bg: "#000000", cardBg: "#0a0a0c" },
-    { label: "Purple Black", bg: "#0e0a14", cardBg: "#1a1424" },
-];
-let themeIndex = 1; // default to "True Black"
-
-// ---------------------------------------------------------------------------
-// INVERSION -- per-sample, not global (unlike speed/color/theme). Flips the
+// INVERSION -- per-sample, not global (unlike speed/theme). Flips the
 // signal's polarity for whichever specific recordings this is toggled on
 // for. This is a manual, on-demand preview of exactly what the future
 // Stage 1 "orientation correction" filter will eventually do automatically.
@@ -78,33 +84,33 @@ function getStageDuration(stageIdx, sampleId) {
 }
 
 function cycleTheme() {
-    themeIndex = (themeIndex + 1) % THEME_PRESETS.length;
-    const preset = THEME_PRESETS[themeIndex];
-    // theme only touches CSS background variables -- no chart data is
-    // affected, so unlike speed/color/invert this never needs a redraw
-    document.documentElement.style.setProperty("--bg", preset.bg);
-    document.documentElement.style.setProperty("--card-bg", preset.cardBg);
+    themeIndex = (themeIndex + 1) % THEMES.length;
+    const theme = THEMES[themeIndex];
+
+    document.documentElement.style.setProperty("--bg", theme.bg);
+    document.documentElement.style.setProperty("--card-bg", theme.cardBg);
+    document.documentElement.style.setProperty("--ecg-trace-color", theme.traceColor);
+    document.documentElement.style.setProperty("--grid-color", theme.gridColor);
+    document.documentElement.style.setProperty("--zero-line-color", theme.zeroLineColor);
+
     document.querySelectorAll(".rail-theme .swatch-dot").forEach(dot => {
-        dot.style.setProperty("--swatch", preset.bg);
+        dot.style.setProperty("--swatch", theme.traceColor); // swatch shows the TRACE color -- the more visually distinctive half of the pair
     });
     document.querySelectorAll(".rail-theme").forEach(btn => {
-        btn.title = `Background theme (${preset.label})`;
+        btn.title = `Theme (${theme.label})`;
     });
+
+    // unlike the old background-only toggle, this NOW changes the trace
+    // color AND grid colors too -- all of which the currently visible chart
+    // needs to redraw to pick up, so (unlike the original design) this
+    // needs to trigger a refresh
+    if (currentlyVisibleController) currentlyVisibleController.refreshActiveStage();
 }
- 
+
 function cycleSpeedMode() {
     speedModeIndex = (speedModeIndex + 1) % SPEED_MODES.length;
     document.querySelectorAll(".rail-speed-label").forEach(label => {
         label.textContent = SPEED_MODES[speedModeIndex].label;
-    });
-    if (currentlyVisibleController) currentlyVisibleController.refreshActiveStage();
-}
-
-function cycleTraceColor() {
-    colorIndex = (colorIndex + 1) % TRACE_COLORS.length;
-    document.documentElement.style.setProperty("--ecg-trace-color", TRACE_COLORS[colorIndex]);
-    document.querySelectorAll(".rail-color .swatch-dot").forEach(dot => {
-        dot.style.setProperty("--swatch", TRACE_COLORS[colorIndex]);
     });
     if (currentlyVisibleController) currentlyVisibleController.refreshActiveStage();
 }

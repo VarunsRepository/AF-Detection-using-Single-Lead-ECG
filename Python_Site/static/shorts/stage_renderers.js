@@ -7,7 +7,7 @@
 //
 // Depends on stage_engine.js (registerStage, invalidateFromStage), 
 // stage_filters.js (panTompkinsDetectPeaks), and rail_controls.js
-// (TRACE_COLORS, invertedSamples, getStageDuration) -- all three must be
+// (THEMES, invertedSamples, getStageDuration) -- all three must be
 // loaded before this file.
 // ---------------------------------------------------------------------------
 
@@ -83,6 +83,15 @@ function buildChartLayout(yMin, yMax, initialXRange) {
     const yStep = niceStep(yMax - yMin, 4); // aim for ~4-5 horizontal lines
     const xStep = 1; // 1 second per vertical line -- simple, round, legible across the 5s window
 
+    // Read straight from CSS -- these two colors used to be hardcoded here,
+    // duplicating what should be a single source of truth. Plotly can't
+    // reference a CSS variable directly (it only accepts a literal string
+    // at render time), so this is the one necessary hop: read the CSS
+    // variable's live value, then hand that literal string to Plotly.
+    const rootStyle = getComputedStyle(document.documentElement);
+    const gridColor = rootStyle.getPropertyValue("--grid-color").trim();
+    const zeroLineColor = rootStyle.getPropertyValue("--zero-line-color").trim();
+
     return {
         margin: { t: 10, r: 10, b: 30, l: 40 },
         paper_bgcolor: "transparent",
@@ -93,7 +102,7 @@ function buildChartLayout(yMin, yMax, initialXRange) {
             title: { text: "Time (s)", font: AXIS_LABEL_STYLE },
             tickfont: AXIS_LABEL_STYLE,
             showgrid: true,
-            gridcolor: "rgba(116, 125, 140, 0.18)",
+            gridcolor: gridColor,
             gridwidth: 1,
             dtick: xStep,
             zeroline: false,
@@ -106,11 +115,11 @@ function buildChartLayout(yMin, yMax, initialXRange) {
             title: { text: "mV", font: AXIS_LABEL_STYLE },
             tickfont: AXIS_LABEL_STYLE,
             showgrid: true,
-            gridcolor: "rgba(116, 125, 140, 0.18)",
+            gridcolor: gridColor,
             gridwidth: 1,
             dtick: yStep,
             zeroline: true,
-            zerolinecolor: "rgba(116, 125, 140, 0.4)",
+            zerolinecolor: zeroLineColor,
             zerolinewidth: 1,
             ticks: "outside",
             tickcolor: "#30363d",
@@ -216,7 +225,7 @@ function rawSignalRenderer(container, sampleId, output) {
 
     const trace = {
         x: [t[0]], y: [y[0]], mode: "lines",
-        line: { color: TRACE_COLORS[colorIndex], width: 2, shape: "spline" },
+        line: { color: THEMES[themeIndex].traceColor, width: 2, shape: "spline" },
         hoverinfo: "skip",
     };
 
@@ -278,7 +287,7 @@ function peakDetectionRenderer(container, sampleId, output) {
 
     const lineTrace = {
         x: [t[0]], y: [y[0]], mode: "lines",
-        line: { color: TRACE_COLORS[colorIndex], width: 2, shape: "spline" },
+        line: { color: THEMES[themeIndex].traceColor, width: 2, shape: "spline" },
         hoverinfo: "skip",
     };
     const peakTrace = {

@@ -85,23 +85,14 @@ function buildCardElement(sampleId, label, stageCount = 5) {
         <span class="tap-hint">tap right to advance &middot; swipe up for next</span>
     `;
 
-    // Right-side control rail, YT Shorts-style positioning. Speed, color and
-    // theme are GLOBAL state (same across every card); invert is PER-SAMPLE,
-    // so its pressed-state reflects only THIS card's own inverted status.
+    // Right-side control rail, YT Shorts-style positioning. Speed and theme
+    // are GLOBAL state (same across every card); invert is PER-SAMPLE, so
+    // its pressed-state reflects only THIS card's own inverted status.
     const rail = document.createElement("div");
     rail.className = "stage-rail";
     rail.innerHTML = `
         <button class="rail-btn rail-speed" data-role="speed" title="Playback speed">
             <span class="rail-speed-label">${SPEED_MODES[speedModeIndex].label}</span>
-        </button>
-        <button class="rail-btn rail-color" data-role="color" title="Trace color">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.4-.3-.4-.5-.9-.5-1.4 0-1.1.9-2 2-2h2.3a3.2 3.2 0 0 0 3.2-3.2C20.5 6.7 16.7 2 12 2z"/>
-                <circle cx="7.5" cy="10.5" r="1.2" fill="currentColor"/>
-                <circle cx="12" cy="7.5" r="1.2" fill="currentColor"/>
-                <circle cx="16.5" cy="10.5" r="1.2" fill="currentColor"/>
-            </svg>
-            <span class="swatch-dot" style="--swatch:${TRACE_COLORS[colorIndex]}"></span>
         </button>
         <button class="rail-btn rail-invert" data-role="invert" title="Invert signal" aria-pressed="${invertedSamples.has(sampleId)}">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -109,12 +100,12 @@ function buildCardElement(sampleId, label, stageCount = 5) {
                 <path d="M12 21v-6M9 18l3 3 3-3"/>
             </svg>
         </button>
-        <button class="rail-btn rail-theme" data-role="theme" title="Background theme">
+        <button class="rail-btn rail-theme" data-role="theme" title="Theme (${THEMES[themeIndex].label})">
             <svg viewBox="0 0 24 24" width="20" height="20">
                 <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/>
                 <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>
             </svg>
-            <span class="swatch-dot" style="--swatch:${THEME_PRESETS[themeIndex].bg}"></span>
+            <span class="swatch-dot" style="--swatch:${THEMES[themeIndex].traceColor}"></span>
         </button>
     `;
 
@@ -258,17 +249,16 @@ function showSessionSummary() {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-    // set this FIRST, before any chart can render, so the CSS glow always
-    // matches whatever color is currently selected in the palette
-    document.documentElement.style.setProperty("--ecg-trace-color", TRACE_COLORS[colorIndex]);
-
-    // same reasoning for theme -- without this, themeIndex's default only
-    // ever affected what cycleTheme() would switch TO on the first click;
-    // the page kept rendering the CSS file's hardcoded --bg (Charcoal)
-    // until someone actually tapped the button once
-    const defaultTheme = THEME_PRESETS[themeIndex];
+    // set these FIRST, before any chart can render, so nothing ever
+    // briefly shows the CSS file's hardcoded defaults before JS catches up.
+    // Both bg and trace color now come from the SAME merged theme entry --
+    // they're one atomic choice, not two independently-defaulted ones.
+    const defaultTheme = THEMES[themeIndex];
     document.documentElement.style.setProperty("--bg", defaultTheme.bg);
     document.documentElement.style.setProperty("--card-bg", defaultTheme.cardBg);
+    document.documentElement.style.setProperty("--ecg-trace-color", defaultTheme.traceColor);
+    document.documentElement.style.setProperty("--grid-color", defaultTheme.gridColor);
+    document.documentElement.style.setProperty("--zero-line-color", defaultTheme.zeroLineColor);
 
     await loadFeedCards(); // build real cards first...
     initFeed();             // ...then wire up stage machinery + scroll watching
@@ -282,22 +272,20 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // ------------------------------------------------------------------
     // Rail controls -- ONE delegated listener on #feed, rather than
-    // wiring 3 buttons x N cards individually. Matters once pagination
+    // wiring buttons x N cards individually. Matters once pagination
     // adds many more cards later; this scales regardless of card count.
     // ------------------------------------------------------------------
     document.getElementById("feed").addEventListener("click", (e) => {
         const speedBtn = e.target.closest(".rail-speed");
-        const colorBtn = e.target.closest(".rail-color");
         const invertBtn = e.target.closest(".rail-invert");
         const themeBtn = e.target.closest(".rail-theme");
-        if (!speedBtn && !colorBtn && !invertBtn && !themeBtn) return;
+        if (!speedBtn && !invertBtn && !themeBtn) return;
 
         e.stopPropagation(); // don't let this also trigger stage tap-navigation
         const cardEl = e.target.closest(".card");
         const sampleId = cardEl?.dataset.sampleId;
 
         if (speedBtn) cycleSpeedMode();
-        if (colorBtn) cycleTraceColor();
         if (invertBtn && sampleId) toggleInvert(sampleId);
         if (themeBtn) cycleTheme();
     });
