@@ -397,7 +397,10 @@ html, body {
     border: 1px solid var(--border);
     color: var(--text);
     cursor: pointer;
-    backdrop-filter: blur(4px);
+    /* backdrop-filter: blur(4px); -- TEMP DISABLED for iOS Safari diagnostic;
+       WebKit has known bugs where blur-filtered elements become visually
+       present but stop reliably receiving touch events. If controls start
+       working again on iPhone with this off, this is the culprit. */
     display: flex;
     align-items: center;
     justify-content: center;
