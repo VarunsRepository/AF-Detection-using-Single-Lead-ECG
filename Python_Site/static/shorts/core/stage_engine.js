@@ -18,7 +18,7 @@ const STAGE_DEFINITIONS = {}; // stageIdx -> { processor, renderer }
 const stageOutputCache = new Map(); // sampleId -> Map(stageIdx -> output)
 
 function registerStage(stageIdx, definition) {
-    // definition: { processor, renderer, dependsOn }
+    // definition: { processor, renderer, dependsOn, label }
     // dependsOn: the STAGE INDEX this stage explicitly depends on for its
     // input (e.g. 0 to mean "I need Stage 0's output"). Omit it entirely
     // if this stage should start fresh from the raw fetch instead (this is
@@ -34,7 +34,25 @@ function registerStage(stageIdx, definition) {
     // Declaring the dependency explicitly makes the pipeline's real shape
     // a visible, deliberate choice by whoever writes the stage, rather than
     // something the engine guesses at.
+    //
+    // label: { main, small, blurb } -- descriptive metadata, co-located
+    // HERE with each stage's own processor/renderer rather than living in
+    // a separate hand-authored array elsewhere. This is what stage-bar
+    // labels (shorts_feed.js) AND onboarding (onboarding.js) both read
+    // from -- one source of truth, so a future Stage 5 can't have its
+    // label forgotten or drift out of sync the way onboarding's old
+    // standalone slide array already had (4 slides for 5 real stages,
+    // discovered only once someone actually counted them).
     STAGE_DEFINITIONS[stageIdx] = definition;
+}
+
+function getStageLabel(stageIdx) {
+    const def = STAGE_DEFINITIONS[stageIdx];
+    return def && def.label; // { main, small, blurb } or undefined if this stage isn't registered yet
+}
+
+function getRegisteredStageCount() {
+    return Object.keys(STAGE_DEFINITIONS).length;
 }
 
 function getCachedStageOutput(sampleId, stageIdx) {
@@ -59,6 +77,17 @@ function invalidateFromStage(sampleId, fromStageIdx) {
     Array.from(sampleCache.keys()).forEach(idx => {
         if (idx >= fromStageIdx) sampleCache.delete(idx);
     });
+}
+
+// Same idea as invalidateFromStage, but for a GLOBAL change (e.g. switching
+// which peak-detection algorithm is active) rather than a per-sample one
+// (e.g. Invert). Every sample's cache gets walked, since a global setting
+// change makes every cached sample's downstream results stale at once, not
+// just whichever one the user happens to be looking at right now.
+function invalidateFromStageForAllSamples(fromStageIdx) {
+    for (const sampleId of stageOutputCache.keys()) {
+        invalidateFromStage(sampleId, fromStageIdx);
+    }
 }
 
 // Resolves what a stage's processor should receive as input, by following
