@@ -31,14 +31,17 @@
 </div>
 
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
-<script src="{{ url_for('static', filename='shorts/pan_tompkins_filter.js') }}"></script>
-<script src="{{ url_for('static', filename='shorts/baseline_correction_filter.js') }}"></script>
-<script src="{{ url_for('static', filename='shorts/hrv_metrics_filter.js') }}"></script>
-<script src="{{ url_for('static', filename='shorts/stage_engine.js') }}"></script>
-<script src="{{ url_for('static', filename='shorts/rail_controls.js') }}"></script>
-<script src="{{ url_for('static', filename='shorts/stage_renderers.js') }}"></script>
-<script src="{{ url_for('static', filename='shorts/stage_machine.js') }}"></script>
-<script src="{{ url_for('static', filename='shorts/algorithm_explainer.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/filters/pan_tompkins_filter.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/filters/hamilton_tompkins_filter.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/peak_detector_registry.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/filters/baseline_correction_filter.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/filters/hrv_metrics_filter.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/stage_engine.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/rail_controls.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/stage_renderers.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/stage_machine.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/features/algorithm_explainer.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/features/onboarding.js') }}"></script>
 <script src="{{ url_for('static', filename='shorts/shorts_feed.js') }}"></script>
 </body>
 </html>
