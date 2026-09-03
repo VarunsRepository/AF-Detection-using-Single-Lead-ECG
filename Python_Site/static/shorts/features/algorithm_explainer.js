@@ -26,17 +26,57 @@ function attachAlgorithmExplainer(container, sampleId) {
     const toggle = document.createElement("button");
     toggle.className = "explain-toggle";
     toggle.textContent = "?";
-    toggle.title = "See how this works, step by step";
+    toggle.title = "What does this mean?";
+
+    // NEW: a plain-English first layer -- one friendly sentence, before
+    // the technical scrub bar. Someone who just wants the gist reads one
+    // line and moves on; someone curious can tap through to the existing
+    // step-by-step panel (unchanged below).
+    const simplePanel = document.createElement("div");
+    simplePanel.className = "explain-simple-panel";
 
     const panel = document.createElement("div");
     panel.className = "explain-panel";
 
     stageContent.appendChild(toggle);
+    stageContent.appendChild(simplePanel);
     stageContent.appendChild(panel);
 
     toggle.addEventListener("click", (e) => {
         e.stopPropagation(); // don't let this also trigger the stage tap-zones underneath
+        openSimpleExplainer(sampleId, container, simplePanel, panel);
+    });
+}
+
+// The plain-English layer: one sentence, a "see how it works" button that
+// drops into the existing technical panel, and a close button.
+function openSimpleExplainer(sampleId, container, simplePanel, panel) {
+    // freeze the sweep here too -- same reasoning as openExplainer below,
+    // this is the FIRST thing the user sees, so the card needs to be
+    // paused the moment the ? is tapped, not only once they go deeper
+    cancelSweepAnimation(sampleId);
+    clearAutoAdvance(sampleId);
+
+    simplePanel.innerHTML = `
+        <p class="explain-simple-text">
+            This automatically finds each heartbeat in the signal --
+            the red dots mark exactly where a beat was detected.
+        </p>
+        <div class="explain-simple-actions">
+            <button class="explain-simple-deeper">See how it works &rarr;</button>
+            <button class="explain-close-btn" title="Close and resume">&#10005;</button>
+        </div>
+    `;
+    simplePanel.classList.add("open");
+
+    simplePanel.querySelector(".explain-simple-deeper").addEventListener("click", (e) => {
+        e.stopPropagation();
+        simplePanel.classList.remove("open"); // hand off to the technical panel -- only one shown at a time
         openExplainer(sampleId, container, panel);
+    });
+    simplePanel.querySelector(".explain-close-btn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeExplainer(sampleId, simplePanel);
     });
 }
 
