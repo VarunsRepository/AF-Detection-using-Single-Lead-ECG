@@ -123,6 +123,51 @@ html, body {
     align-items: center;
 }
 
+/* Plain-English layer, shown BEFORE the technical panel above -- same
+   bottom-anchored positioning convention, simpler content (one sentence,
+   two buttons instead of a pill row). Only one of the two panels is ever
+   visible at a time. */
+.explain-simple-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 41;
+    background: rgba(13, 17, 23, 0.92);
+    border-top: 1px solid var(--border);
+    padding: 14px 16px;
+    display: none;
+}
+
+.explain-simple-panel.open {
+    display: block;
+}
+
+.explain-simple-text {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: var(--text);
+    margin: 0 0 12px;
+}
+
+.explain-simple-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.explain-simple-deeper {
+    background: none;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    padding: 6px 12px;
+    border-radius: 14px;
+    cursor: pointer;
+}
+
 .explain-panel.open {
     display: flex;
 }
@@ -342,9 +387,13 @@ html, body {
     cursor: pointer;
 }
 
-.verdict-frame {
-    height: auto;
-}
+/* .verdict-frame no longer overrides height -- it used to set height:auto,
+   a leftover from before chart-frame's sizing was overhauled to be
+   height-driven. With the verdict badge living inside .plain-content-overlay
+   (position:absolute, contributing nothing to parent height), that auto
+   override collapsed this one stage's container to ~0 height, causing the
+   badge to spill upward and visually overlap the stage label above it.
+   Now it correctly inherits the same 58vh every other stage already uses. */
 
 .early-exit-frame {
     height: 120px;
@@ -495,4 +544,104 @@ html, body {
     border-color: var(--accent);
     color: var(--accent);
     background: rgba(92, 194, 74, 0.15);
+}
+
+/* ---------------------------------------------------------------------
+   Onboarding -- one-time, shown before the feed ever plays. Full-screen,
+   sits above everything (higher z-index than any in-feed overlay), and
+   is removed from the DOM entirely once dismissed -- nothing lingers.
+   --------------------------------------------------------------------- */
+.onboarding-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.onboarding-card {
+    max-width: 380px;
+    width: 100%;
+    text-align: center;
+}
+
+.onboarding-dots {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 32px;
+}
+
+.onboarding-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background 0.2s ease;
+}
+
+.onboarding-dot.active {
+    background: var(--accent);
+}
+
+.onboarding-title {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0 0 14px;
+}
+
+.onboarding-body {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: var(--text-dim);
+    margin: 0 0 36px;
+}
+
+.onboarding-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.onboarding-skip {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 10px;
+}
+
+.onboarding-next {
+    background: var(--accent);
+    color: #111;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------
+   Algorithm picker -- a plain cycle button now, same interaction as
+   Speed/Theme (tap advances to the next option, no popup menu). Hidden by
+   default; only shown when the card is actually on Stage 2 (Peak
+   Detection), since it has no meaning on any other stage. Driven purely by
+   the data-current-stage attribute stage_machine.js's enterStage() keeps
+   accurate -- no JS needed here to decide visibility per stage.
+   --------------------------------------------------------------------- */
+.rail-algo {
+    display: none;
+}
+
+.card[data-current-stage="2"] .rail-algo {
+    display: flex;
 }
