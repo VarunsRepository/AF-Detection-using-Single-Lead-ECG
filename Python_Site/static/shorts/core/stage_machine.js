@@ -45,6 +45,13 @@ function initCard(cardEl) {
         stageEnteredAt = performance.now();
         isPaused = false; // entering (or re-entering) a stage always starts unpaused
 
+        // Lets stage-specific rail controls (e.g. the peak-detection
+        // algorithm picker) show/hide purely via CSS, without any JS
+        // needing to know which controls belong to which stage -- a
+        // control just declares "only visible when data-current-stage
+        // equals N" and this one line keeps that attribute accurate.
+        cardEl.dataset.currentStage = currentStage;
+
         stageEls.forEach(el => {
             el.classList.toggle("active", Number(el.dataset.stage) === currentStage);
         });
