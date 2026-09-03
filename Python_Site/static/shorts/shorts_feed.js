@@ -32,18 +32,6 @@ const sampleLabels = new Map();
 // the full pipeline is now real, end to end.
 // ---------------------------------------------------------------------------
 function buildCardElement(sampleId, label, stageCount = 5) {
-    // Plain-word first, technical term kept small alongside -- never
-    // hidden, just not leading. A casual viewer reads one clear phrase and
-    // keeps scrolling; anyone curious (or who already knows the field)
-    // still sees the real term, right there, just secondary.
-    const stageNames = [
-        { main: "Your Heartbeat", small: "Raw ECG Signal" },
-        { main: "Cleaning It Up", small: "Baseline Correction" },
-        { main: "Finding Each Beat", small: "Peak Detection" },
-        { main: "Rhythm Patterns", small: "HRV Metrics" },
-        { main: "The Result", small: "Verdict" },
-    ];
-
     sampleLabels.set(sampleId, label);
 
     const card = document.createElement("section");
@@ -73,15 +61,21 @@ function buildCardElement(sampleId, label, stageCount = 5) {
         segment.innerHTML = '<div class="fill"></div>';
         bar.appendChild(segment);
 
-        const names = stageNames[i] || { main: `Stage ${i}`, small: "" };
+        // Reads label metadata straight from THIS stage's own registration
+        // (stage_renderers.js's registerStage() calls) -- not a separate,
+        // independently-maintained array. Plain-word first, technical term
+        // kept small alongside: a casual viewer reads one clear phrase and
+        // keeps scrolling; anyone curious still sees the real term, right
+        // there, just secondary.
+        const stageLabel = (typeof getStageLabel === "function" && getStageLabel(i)) || { main: `Stage ${i}`, small: "" };
 
         const stageContent = document.createElement("div");
         stageContent.className = i === 0 ? "stage-content active" : "stage-content";
         stageContent.dataset.stage = i;
         stageContent.innerHTML = `
             <div class="stage-label${i === stageCount - 1 ? " verdict-label" : ""}">
-                ${names.main}
-                ${names.small ? `<span class="stage-label-small">${names.small}</span>` : ""}
+                ${stageLabel.main}
+                ${stageLabel.small ? `<span class="stage-label-small">${stageLabel.small}</span>` : ""}
             </div>
             <div class="chart-frame${i === stageCount - 1 ? " verdict-frame" : ""}" id="chart-${sampleId}-${i}"></div>
         `;
@@ -116,6 +110,9 @@ function buildCardElement(sampleId, label, stageCount = 5) {
                 <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>
             </svg>
             <span class="swatch-dot" style="--swatch:${THEMES[themeIndex].traceColor}"></span>
+        </button>
+        <button class="rail-btn rail-algo" data-role="algo" title="Peak detection algorithm">
+            <span class="rail-algo-label">${(typeof getSelectedDetector === "function" ? getSelectedDetector().label : "PT")}</span>
         </button>
     `;
 
@@ -263,6 +260,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     // briefly shows the CSS file's hardcoded defaults before JS catches up.
     // Both bg and trace color now come from the SAME merged theme entry --
     // they're one atomic choice, not two independently-defaulted ones.
+    // Done regardless of onboarding, so the onboarding overlay ITSELF
+    // renders against the correct theme too, not a flash of wrong colors.
     const defaultTheme = THEMES[themeIndex];
     document.documentElement.style.setProperty("--bg", defaultTheme.bg);
     document.documentElement.style.setProperty("--card-bg", defaultTheme.cardBg);
@@ -270,33 +269,47 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.documentElement.style.setProperty("--grid-color", defaultTheme.gridColor);
     document.documentElement.style.setProperty("--zero-line-color", defaultTheme.zeroLineColor);
 
-    await loadFeedCards(); // build real cards first...
-    initFeed();             // ...then wire up stage machinery + scroll watching
+    async function startFeed() {
+        await loadFeedCards(); // build real cards first...
+        initFeed();             // ...then wire up stage machinery + scroll watching
 
-    const dismissBtn = document.getElementById("summary-dismiss");
-    if (dismissBtn) {
-        dismissBtn.addEventListener("click", () => {
-            document.getElementById("session-summary").classList.add("hidden");
+        const dismissBtn = document.getElementById("summary-dismiss");
+        if (dismissBtn) {
+            dismissBtn.addEventListener("click", () => {
+                document.getElementById("session-summary").classList.add("hidden");
+            });
+        }
+
+        // ------------------------------------------------------------------
+        // Rail controls -- ONE delegated listener on #feed, rather than
+        // wiring buttons x N cards individually. Matters once pagination
+        // adds many more cards later; this scales regardless of card count.
+        // ------------------------------------------------------------------
+        document.getElementById("feed").addEventListener("click", (e) => {
+            const speedBtn = e.target.closest(".rail-speed");
+            const invertBtn = e.target.closest(".rail-invert");
+            const themeBtn = e.target.closest(".rail-theme");
+            const algoBtn = e.target.closest(".rail-algo");
+            if (!speedBtn && !invertBtn && !themeBtn && !algoBtn) return;
+
+            e.stopPropagation(); // don't let this also trigger stage tap-navigation
+            const cardEl = e.target.closest(".card");
+            const sampleId = cardEl?.dataset.sampleId;
+
+            if (speedBtn) cycleSpeedMode();
+            if (invertBtn && sampleId) toggleInvert(sampleId);
+            if (themeBtn) cycleTheme();
+            if (algoBtn) cyclePeakDetector();
         });
     }
 
-    // ------------------------------------------------------------------
-    // Rail controls -- ONE delegated listener on #feed, rather than
-    // wiring buttons x N cards individually. Matters once pagination
-    // adds many more cards later; this scales regardless of card count.
-    // ------------------------------------------------------------------
-    document.getElementById("feed").addEventListener("click", (e) => {
-        const speedBtn = e.target.closest(".rail-speed");
-        const invertBtn = e.target.closest(".rail-invert");
-        const themeBtn = e.target.closest(".rail-theme");
-        if (!speedBtn && !invertBtn && !themeBtn) return;
-
-        e.stopPropagation(); // don't let this also trigger stage tap-navigation
-        const cardEl = e.target.closest(".card");
-        const sampleId = cardEl?.dataset.sampleId;
-
-        if (speedBtn) cycleSpeedMode();
-        if (invertBtn && sampleId) toggleInvert(sampleId);
-        if (themeBtn) cycleTheme();
-    });
+    // Onboarding is optional -- if onboarding.js isn't loaded, or the
+    // visitor has already seen it, the feed just starts immediately, same
+    // as before onboarding existed at all.
+    const shouldShowOnboarding = typeof hasSeenOnboarding === "function" && !hasSeenOnboarding();
+    if (shouldShowOnboarding) {
+        showOnboarding(startFeed); // feed only starts once onboarding finishes or is skipped
+    } else {
+        startFeed();
+    }
 });
