@@ -4,7 +4,8 @@
 // the user scrolls, wires each card into the shared visibility observer,
 // and handles session-level bookkeeping (the "nice session" summary).
 //
-// Depends on ALL of: stage_filters.js, rail_controls.js, stage_renderers.js,
+// Depends on ALL of: pan_tompkins_filter.js, baseline_correction_filter.js,
+// hrv_metrics_filter.js, stage_engine.js, rail_controls.js, stage_renderers.js,
 // stage_machine.js -- load this one LAST.
 // ---------------------------------------------------------------------------
 
@@ -16,12 +17,19 @@ const SESSION_SUMMARY_EVERY = 10; // show the "nice session" card every N cards 
 // entire category of state (and the bugs that came with keeping it in sync).
 let cardsViewedThisSession = 0;
 
+// Each sample's TRUE class label (N/A/O/~), keyed by sampleId. Populated
+// below when each card is built, from the real label the backend already
+// sent us -- this is what Stage 4 (Verdict) reads from, via its processor
+// in stage_renderers.js. Deliberately a plain lookup map, not something a
+// processor reads off the DOM -- keeps that concern out of stage_renderers.js
+// entirely, and stays correct even if the card markup ever changes shape.
+const sampleLabels = new Map();
+
 // ---------------------------------------------------------------------------
 // Dynamic card construction. Builds the same DOM structure the static demo
 // cards used to have, but from a real sample_id fetched from the backend.
-// stageCount defaults to 5 (raw -> corrected -> peaks -> metrics -> verdict);
-// only stages 0 and 2 actually render anything real right now -- the rest
-// stay empty placeholders until those renderers exist.
+// stageCount defaults to 5 (raw -> corrected -> peaks -> metrics -> verdict) --
+// the full pipeline is now real, end to end.
 // ---------------------------------------------------------------------------
 function buildCardElement(sampleId, label, stageCount = 5) {
     // Plain-word first, technical term kept small alongside -- never
@@ -36,12 +44,14 @@ function buildCardElement(sampleId, label, stageCount = 5) {
         { main: "The Result", small: "Verdict" },
     ];
 
+    sampleLabels.set(sampleId, label);
+
     const card = document.createElement("section");
     card.className = "card";
     card.dataset.sampleId = sampleId;
-    card.dataset.trueLabel = label ?? ""; // stored for later use -- rarity framing,
-                                            // guess-before-reveal, verdict stage.
-                                            // Not displayed anywhere yet.
+    card.dataset.trueLabel = label ?? ""; // kept for any DOM-level/CSS use;
+                                            // sampleLabels above is the real
+                                            // source of truth for JS logic
 
     // shown/hidden purely via the .paused class on the card itself (see
     // togglePause() in stage_machine.js) -- no JS-driven show/hide logic needed here

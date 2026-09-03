@@ -191,6 +191,64 @@ html, body {
     line-height: 1.4;
 }
 
+/* Wraps any PLAIN (non-Plotly) content injected into a .chart-frame --
+   the early-exit message and the verdict badge, currently. Without this,
+   injected HTML just sits at the top-left of the tall chart box instead
+   of centered, since chart-frame itself is sized for Plotly's own
+   full-fill behavior, not flex-centered by default. */
+.plain-content-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+.verdict-badge {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    padding: 14px 28px;
+    border: 2px solid;
+    border-radius: 8px;
+    text-align: center;
+    /* starts scaled-down and invisible; JS adds .revealed one frame after
+       insertion, so the browser registers this starting state before
+       transitioning -- without that delay, it'd just snap straight to the
+       end state with no visible "slam in" at all */
+    opacity: 0;
+    transform: scale(0.6);
+    transition: opacity 0.25s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.verdict-badge.revealed {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.verdict-support {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+.hrv-readout {
+    position: absolute;
+    bottom: 8px;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    padding: 0 10px;
+}
+
 .chart-frame {
     width: 100%;
     max-width: 600px; /* generous cap, mainly relevant on tablets/desktop -- rarely binding on a phone-width screen */

@@ -2,13 +2,15 @@
 // stage_renderers.js
 // Fetches (with caching), builds Plotly layouts, and drives each stage's
 // animated reveal via a requestAnimationFrame sweep loop. Registers Stage 0
-// (raw signal) and Stage 2 (peak detection) with the generic engine from
-// stage_engine.js -- see registerStage() calls at the bottom of each section.
+// (raw signal), Stage 1 (baseline correction), and Stage 2 (peak detection)
+// with the generic engine from stage_engine.js -- see registerStage() calls
+// at the bottom of each section.
 //
-// Depends on stage_engine.js (registerStage, invalidateFromStage), 
-// stage_filters.js (panTompkinsDetectPeaks), and rail_controls.js
-// (THEMES, invertedSamples, getStageDuration) -- all three must be
-// loaded before this file.
+// Depends on stage_engine.js (registerStage, invalidateFromStage),
+// baseline_correction_filter.js (removeBaselineWander),
+// pan_tompkins_filter.js (panTompkinsDetectPeaks), and rail_controls.js
+// (THEMES, invertedSamples, getStageDuration) -- all four must be loaded
+// before this file.
 // ---------------------------------------------------------------------------
 
 const sweepAnimationHandles = new Map(); // sampleId -> requestAnimationFrame handle, for cancellation
@@ -195,31 +197,18 @@ function makeSampleAligner(t, y, stride) {
     };
 }
 
-// ---------------------------------------------------------------------------
-// STAGE 0 -- Raw signal.
-//
-// Processor: takes the raw {signal, fs} fetch, applies per-sample inversion,
-// builds the time axis. Very little real "processing" happens here yet --
-// this is the stand-in until Stage 1 (orientation/baseline correction)
-// exists, at which point Stage 0 stays exactly this, and Stage 1 becomes
-// the first REAL DSP step in the chain.
-// ---------------------------------------------------------------------------
-function rawSignalProcessor(input, sampleId) {
-    const rawY = input.signal;
-    const y = invertedSamples.has(sampleId) ? rawY.map(v => -v) : rawY;
-    const fs = input.fs;
-    const t = y.map((_, i) => i / fs);
-    return { t, y, fs };
-}
-
-function rawSignalRenderer(container, sampleId, output) {
-    const { t, y, fs } = output;
+// Shared by any stage that's "just a waveform sweep" -- Stage 0's raw
+// signal, Stage 1's corrected signal, and any future simple waveform stage.
+// Extracted here specifically because Stage 0 and Stage 1 would otherwise
+// be near-identical ~40-line renderers differing only in which array gets
+// plotted -- exactly the kind of duplication worth catching on the SECOND
+// occurrence, not after a third or fourth stage copies it again. Stage 2
+// still writes its own renderer, since it needs an extra peak-marker trace,
+// but reuses the same window/downsample helpers below either way.
+function renderWaveformSweep(container, sampleId, stageIdx, t, y, fs) {
     const yMin = Math.min(...y) - 0.1;
     const yMax = Math.max(...y) + 0.1;
 
-    // Fixed-width scrolling window, in real ECG seconds -- NOT the whole
-    // recording. Solves the "crowding" problem: a 30-90s recording no
-    // longer ends up with every beat overlapping on screen at once.
     const ECG_WINDOW_SECONDS = 5;
     const windowSamples = Math.round(ECG_WINDOW_SECONDS * fs);
 
@@ -236,7 +225,7 @@ function rawSignalRenderer(container, sampleId, output) {
     const DOWNSAMPLE_STRIDE = Math.max(1, Math.ceil(windowSamples / MAX_POINTS_PER_UPDATE));
     const sampleAligned = makeSampleAligner(t, y, DOWNSAMPLE_STRIDE);
 
-    const totalDurationMs = getStageDuration(0, sampleId);
+    const totalDurationMs = getStageDuration(stageIdx, sampleId);
 
     function drawAtElapsed(elapsed) {
         const progress = Math.min(1, elapsed / totalDurationMs);
@@ -257,6 +246,25 @@ function rawSignalRenderer(container, sampleId, output) {
     startSweepLoop(sampleId, totalDurationMs, drawAtElapsed);
 }
 
+// ---------------------------------------------------------------------------
+// STAGE 0 -- Raw signal.
+//
+// Processor: takes the raw {signal, fs} fetch, applies per-sample inversion,
+// builds the time axis. Very little real "processing" happens here -- this
+// is the true entry point, not a DSP step itself.
+// ---------------------------------------------------------------------------
+function rawSignalProcessor(input, sampleId) {
+    const rawY = input.signal;
+    const y = invertedSamples.has(sampleId) ? rawY.map(v => -v) : rawY;
+    const fs = input.fs;
+    const t = y.map((_, i) => i / fs);
+    return { t, y, fs };
+}
+
+function rawSignalRenderer(container, sampleId, output) {
+    renderWaveformSweep(container, sampleId, 0, output.t, output.y, output.fs);
+}
+
 registerStage(0, {
     // no dependsOn -- Stage 0 IS the raw entry point, starts fresh from the fetch
     processor: rawSignalProcessor,
@@ -264,12 +272,37 @@ registerStage(0, {
 });
 
 // ---------------------------------------------------------------------------
+// STAGE 1 -- Corrected signal (baseline wander removal).
+//
+// Processor: takes Stage 0's output {t, y, fs} and removes baseline wander
+// via a high-pass filter (baseline_correction_filter.js). This is the FIRST
+// real DSP step in the chain -- Stage 0 is just the entry point, Stage 1 is
+// where actual signal processing begins.
+// ---------------------------------------------------------------------------
+function baselineCorrectionProcessor(input, sampleId) {
+    const { t, y, fs } = input; // Stage 0's output, resolved by the engine
+    const corrected = removeBaselineWander(y, fs);
+    return { t, y: corrected, fs };
+}
+
+function baselineCorrectionRenderer(container, sampleId, output) {
+    renderWaveformSweep(container, sampleId, 1, output.t, output.y, output.fs);
+}
+
+registerStage(1, {
+    dependsOn: 0, // Stage 0's {t, y, fs} raw waveform
+    processor: baselineCorrectionProcessor,
+    renderer: baselineCorrectionRenderer,
+});
+
+// ---------------------------------------------------------------------------
 // STAGE 2 -- Peak detection.
 //
-// Processor: takes STAGE 0's output {t, y, fs} as input (not a raw fetch --
-// that's the actual payoff of the engine: once a real Stage 1 exists, this
-// automatically receives ITS output instead, with zero changes here) and
-// runs the Pan-Tompkins filter once, eagerly.
+// Processor: takes STAGE 1's output (not Stage 0's directly anymore) and
+// runs the Pan-Tompkins filter once, eagerly. This dependsOn change is the
+// actual payoff of the engine: updating ONE line here is all it took to
+// wire Stage 2 onto the newly-real Stage 1, with zero changes to Stage 2's
+// own processor/renderer code below.
 // ---------------------------------------------------------------------------
 function peakDetectionProcessor(input, sampleId) {
     const { t, y, fs } = input; // previous stage's output, resolved by the engine
@@ -340,11 +373,198 @@ function peakDetectionRenderer(container, sampleId, output) {
 }
 
 registerStage(2, {
-    // Explicitly depends on Stage 0's {t, y, fs} waveform output -- not an
-    // implicit numeric guess. Once a real Stage 1 exists, updating this to
-    // dependsOn: 1 is a deliberate, visible, one-line change -- not
-    // something that happens automatically/invisibly.
-    dependsOn: 0,
+    // Was dependsOn: 0 -- now correctly points at Stage 1's cleaned output
+    // instead of Stage 0's raw one. This one-line change is the entire
+    // retrofit Stage 2 needed; its processor and renderer are untouched.
+    dependsOn: 1,
     processor: peakDetectionProcessor,
     renderer: peakDetectionRenderer,
+});
+
+// ---------------------------------------------------------------------------
+// STAGE 3 -- HRV metrics (RR intervals, SDNN/RMSSD/pNN50, Poincaré SD1/SD2).
+//
+// Processor: takes Stage 2's peak indices, runs the pure HRV math from
+// hrv_metrics_filter.js. Can genuinely fail to produce a meaningful result
+// (too few beats detected) -- that's signaled by returning null from the
+// FILTER, then explicitly re-wrapped here as {insufficient: true} so the
+// RENDERER can show an honest "not enough data" state instead of either
+// crashing or rendering a blank chart with no explanation.
+//
+// Renderer: NOT a sweep -- this is a scatter plot (Poincaré), a genuinely
+// different chart shape than Stages 0-2's sweeping line. The engine never
+// required renderers to be sweeps; this is the proof of that.
+// ---------------------------------------------------------------------------
+function hrvMetricsProcessor(input, sampleId) {
+    const { peakIndices, fs } = input; // Stage 2's output
+    const metrics = computeHRVMetrics(peakIndices, fs);
+    if (!metrics) {
+        return { insufficient: true, peakCount: peakIndices.length };
+    }
+    return { ...metrics, insufficient: false };
+}
+
+function buildPoincareLayout(axisMax) {
+    const rootStyle = getComputedStyle(document.documentElement);
+    const gridColor = rootStyle.getPropertyValue("--grid-color").trim();
+
+    return {
+        margin: { t: 10, r: 10, b: 40, l: 50 },
+        paper_bgcolor: "transparent",
+        plot_bgcolor: "transparent",
+        showlegend: false,
+        xaxis: {
+            visible: true,
+            title: { text: "RR[n] (ms)", font: AXIS_LABEL_STYLE },
+            tickfont: AXIS_LABEL_STYLE,
+            showgrid: true,
+            gridcolor: gridColor,
+            gridwidth: 1,
+            zeroline: false,
+            ticks: "outside",
+            tickcolor: "#30363d",
+            range: [0, axisMax],
+        },
+        yaxis: {
+            visible: true,
+            title: { text: "RR[n+1] (ms)", font: AXIS_LABEL_STYLE },
+            tickfont: AXIS_LABEL_STYLE,
+            showgrid: true,
+            gridcolor: gridColor,
+            gridwidth: 1,
+            zeroline: false,
+            ticks: "outside",
+            tickcolor: "#30363d",
+            range: [0, axisMax],
+            scaleanchor: "x", // keeps the plot visually square -- SD1/SD2's
+                                // ellipse shape only reads correctly if one
+                                // ms on x equals one ms on y
+        },
+    };
+}
+
+function hrvMetricsRenderer(container, sampleId, output) {
+    if (output.insufficient) {
+        // Reuses .early-exit-label, defined long ago for exactly this kind
+        // of honest "couldn't complete" state, never actually wired up
+        // until now.
+        container.innerHTML = `
+            <div class="plain-content-overlay">
+                <div class="early-exit-label">
+                    Only ${output.peakCount} heartbeat${output.peakCount === 1 ? "" : "s"} detected --
+                    not enough for reliable rhythm analysis.
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    const { rrN, rrN1, meanHR, sdnn, rmssd, pnn50, sd1, sd2 } = output;
+
+    const axisMax = Math.max(...rrN, ...rrN1) * 1.15; // headroom so points near the edge aren't clipped
+
+    const identityLine = {
+        x: [0, axisMax], y: [0, axisMax], mode: "lines",
+        line: { color: "rgba(116, 125, 140, 0.5)", width: 1, dash: "dash" },
+        hoverinfo: "skip", showlegend: false,
+    };
+    const pointsTrace = {
+        x: [], y: [], mode: "markers",
+        marker: { color: THEMES[themeIndex].traceColor, size: 8, opacity: 0.75 },
+        hoverinfo: "skip", showlegend: false,
+    };
+
+    const layout = buildPoincareLayout(axisMax);
+    Plotly.newPlot(container, [identityLine, pointsTrace], layout, { staticPlot: true, responsive: true });
+
+    // Small numeric readout, tallied alongside the scatter -- the discrete-
+    // point equivalent of the sweep views' axis calibration label.
+    const readout = document.createElement("div");
+    readout.className = "hrv-readout";
+    readout.innerHTML = `
+        <span>HR ${meanHR.toFixed(0)} bpm</span>
+        <span>SDNN ${sdnn.toFixed(0)}ms</span>
+        <span>RMSSD ${rmssd.toFixed(0)}ms</span>
+        <span>pNN50 ${pnn50.toFixed(0)}%</span>
+        <span>SD1 ${sd1.toFixed(0)}ms</span>
+        <span>SD2 ${sd2.toFixed(0)}ms</span>
+    `;
+    container.appendChild(readout);
+
+    // Points reveal progressively over the stage duration, same "watch it
+    // build" feel as the sweeping stages -- just revealing discrete points
+    // instead of sliding a continuous window. No downsampling needed here;
+    // there are far fewer peaks than raw samples.
+    const totalDurationMs = getStageDuration(3, sampleId);
+
+    function drawAtElapsed(elapsed) {
+        const progress = Math.min(1, elapsed / totalDurationMs);
+        const visibleCount = Math.max(1, Math.round(progress * rrN.length));
+
+        Plotly.update(container,
+            { x: [null, rrN.slice(0, visibleCount)], y: [null, rrN1.slice(0, visibleCount)] },
+            {}
+        );
+    }
+
+    startSweepLoop(sampleId, totalDurationMs, drawAtElapsed);
+}
+
+registerStage(3, {
+    dependsOn: 2, // Stage 2's peak indices
+    processor: hrvMetricsProcessor,
+    renderer: hrvMetricsRenderer,
+});
+
+// ---------------------------------------------------------------------------
+// STAGE 4 -- Verdict.
+//
+// Processor: mostly a pass-through of Stage 3's metrics, with the sample's
+// TRUE label attached -- looked up from sampleLabels (populated in
+// shorts_feed.js when each card is built from real backend data), not by
+// reading the DOM from inside a processor, which would mix concerns and be
+// fragile if the card element ever changed shape.
+//
+// Renderer: not a sweep, not a scatter -- a single categorical reveal. The
+// payoff the whole feed was built around.
+// ---------------------------------------------------------------------------
+const VERDICT_DISPLAY = {
+    N: { name: "Normal", color: "var(--accent)" },
+    A: { name: "Atrial Fibrillation", color: "var(--danger)" },
+    O: { name: "Other", color: "var(--warn)" },
+    "~": { name: "Noisy", color: "var(--text-dim)" },
+};
+
+function verdictProcessor(input, sampleId) {
+    const trueLabel = typeof sampleLabels !== "undefined" ? sampleLabels.get(sampleId) : undefined;
+    return { ...input, trueLabel };
+}
+
+function verdictRenderer(container, sampleId, output) {
+    const display = VERDICT_DISPLAY[output.trueLabel] || { name: "Unknown", color: "var(--text-dim)" };
+
+    const supportingLine = output.insufficient
+        ? ""
+        : `<div class="verdict-support">Mean HR ${output.meanHR.toFixed(0)} bpm</div>`;
+
+    container.innerHTML = `
+        <div class="plain-content-overlay">
+            <div class="verdict-badge" style="border-color:${display.color}; color:${display.color};">
+                ${display.name}
+            </div>
+            ${supportingLine}
+        </div>
+    `;
+
+    // "slam in" -- add the reveal class one frame after insertion, so the
+    // browser registers the initial (scaled-down, transparent) state before
+    // transitioning, rather than skipping straight to the end state
+    const badge = container.querySelector(".verdict-badge");
+    requestAnimationFrame(() => badge.classList.add("revealed"));
+}
+
+registerStage(4, {
+    dependsOn: 3, // Stage 3's HRV metrics, passed through plus the true label
+    processor: verdictProcessor,
+    renderer: verdictRenderer,
 });
