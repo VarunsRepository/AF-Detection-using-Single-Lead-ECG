@@ -269,6 +269,11 @@ registerStage(0, {
     // no dependsOn -- Stage 0 IS the raw entry point, starts fresh from the fetch
     processor: rawSignalProcessor,
     renderer: rawSignalRenderer,
+    label: {
+        main: "Your Heartbeat",
+        small: "Raw ECG Signal",
+        blurb: "Every recording here is a real electrical signal from someone's heart -- the same kind of trace a hospital monitor shows.",
+    },
 });
 
 // ---------------------------------------------------------------------------
@@ -293,6 +298,11 @@ registerStage(1, {
     dependsOn: 0, // Stage 0's {t, y, fs} raw waveform
     processor: baselineCorrectionProcessor,
     renderer: baselineCorrectionRenderer,
+    label: {
+        main: "Cleaning It Up",
+        small: "Baseline Correction",
+        blurb: "Breathing and movement can make the signal drift. We flatten that out first, so nothing gets mistaken for a heartbeat.",
+    },
 });
 
 // ---------------------------------------------------------------------------
@@ -306,7 +316,15 @@ registerStage(1, {
 // ---------------------------------------------------------------------------
 function peakDetectionProcessor(input, sampleId) {
     const { t, y, fs } = input; // previous stage's output, resolved by the engine
-    const { peakIndices, steps } = panTompkinsDetectPeaks(y, fs);
+
+    // Whichever detector is currently selected in the registry runs here --
+    // this line is the entire "plug and play" mechanism. Nothing else in
+    // this file needs to change to add a third algorithm later.
+    const detector = typeof getSelectedDetector === "function"
+        ? getSelectedDetector()
+        : { detect: panTompkinsDetectPeaks }; // safe fallback if the registry file somehow isn't loaded
+
+    const { peakIndices, steps } = detector.detect(y, fs);
     return { t, y, fs, peakIndices, steps };
 }
 
@@ -379,6 +397,11 @@ registerStage(2, {
     dependsOn: 1,
     processor: peakDetectionProcessor,
     renderer: peakDetectionRenderer,
+    label: {
+        main: "Finding Each Beat",
+        small: "Peak Detection",
+        blurb: "A filter automatically spots each beat in the signal, the same way a nurse would count pulses on a monitor.",
+    },
 });
 
 // ---------------------------------------------------------------------------
@@ -514,6 +537,11 @@ registerStage(3, {
     dependsOn: 2, // Stage 2's peak indices
     processor: hrvMetricsProcessor,
     renderer: hrvMetricsRenderer,
+    label: {
+        main: "Rhythm Patterns",
+        small: "HRV Metrics",
+        blurb: "The timing between beats tells a story -- steady and even, or scattered and irregular.",
+    },
 });
 
 // ---------------------------------------------------------------------------
@@ -567,4 +595,9 @@ registerStage(4, {
     dependsOn: 3, // Stage 3's HRV metrics, passed through plus the true label
     processor: verdictProcessor,
     renderer: verdictRenderer,
+    label: {
+        main: "The Result",
+        small: "Verdict",
+        blurb: "Each card ends with what the pattern suggests. Tap the ? on any step to see how it actually works.",
+    },
 });
