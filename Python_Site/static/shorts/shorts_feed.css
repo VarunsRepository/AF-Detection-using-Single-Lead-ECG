@@ -658,9 +658,14 @@ html, body {
    --------------------------------------------------------------------- */
 .stage-caption {
     position: absolute;
-    top: 46px;
-    left: 50px;
-    right: 12px;
+    bottom: 24px; /* was top:46px, which sat right on top of the stage label --
+                     moved to the bottom of the chart area instead, clear of it entirely */
+    left: 16px;
+    right: 60px; /* narrower on the right than before -- the rail is positioned
+                    relative to the CARD, not stage-content, so their coordinate
+                    systems differ and an exact vertical gap can't be computed
+                    without live-measuring. Staying out of the rail's horizontal
+                    column sidesteps needing to guess that vertical math at all. */
     text-align: center;
     font-family: "IBM Plex Sans", sans-serif;
     font-size: 0.8rem;
