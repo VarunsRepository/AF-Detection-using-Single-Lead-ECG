@@ -645,3 +645,36 @@ html, body {
 .card[data-current-stage="2"] .rail-algo {
     display: flex;
 }
+
+/* ---------------------------------------------------------------------
+   Stage caption -- brief, non-blocking, fades in/out automatically on
+   EVERY stage entry (not just first-time; that's the separate, still-
+   deferred "first-time-only callout" idea). pointer-events:none means it
+   can NEVER intercept a tap, no matter how it's positioned -- purely
+   informational, never functional. Positioned near the top since it's
+   describing what's about to happen, reading naturally top-down; kept
+   left of the explain-toggle's corner and below it in z-index so the two
+   never truly compete if a stage happens to show both.
+   --------------------------------------------------------------------- */
+.stage-caption {
+    position: absolute;
+    top: 46px;
+    left: 50px;
+    right: 12px;
+    text-align: center;
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--text);
+    background: rgba(13, 17, 23, 0.75);
+    padding: 8px 14px;
+    border-radius: 8px;
+    z-index: 35;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+}
+
+.stage-caption.visible {
+    opacity: 1;
+}
