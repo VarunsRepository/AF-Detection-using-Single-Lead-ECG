@@ -35,6 +35,7 @@ function initCard(cardEl) {
     let currentStage = 0; // always -- no cross-visit memory anymore
     let stageEnteredAt = performance.now(); // live, in-the-moment only; not persisted
     let isPaused = false; // live pause state -- reset fresh every enterStage(), never survives leaving the card
+    let captionTimeout = null; // tracks THIS card's pending caption fade-out, so rapid restarts never stack timers
 
     // THE canonical entry point. Advancing, restarting, going to a previous
     // stage, and a card's very first activation all funnel through here --
@@ -88,9 +89,52 @@ function initCard(cardEl) {
         const activeEl = stageEls.find(el => Number(el.dataset.stage) === currentStage);
         const container = activeEl && activeEl.querySelector(".chart-frame");
         if (container) renderStageChart(sampleId, currentStage, container);
+        if (activeEl) showStageCaption(activeEl, currentStage);
 
         cardEl.classList.remove("paused");
         startAutoAdvance();
+    }
+
+    // Brief, non-blocking caption -- fades in the moment a stage starts,
+    // fades out on its own after a couple seconds. Never requires a tap,
+    // never blocks navigation (pointer-events:none in CSS), and fires on
+    // EVERY stage entry, not just the first time -- a genuine experiment,
+    // not the same thing as the deferred "first-time-only" callout idea.
+    // Reuses label.blurb -- the SAME sentence already used by onboarding
+    // and the explainer's plain-English first tap. One source of truth,
+    // a third consumer now, still can't drift apart.
+    function showStageCaption(stageContentEl, stageIdx) {
+        const label = typeof getStageLabel === "function" ? getStageLabel(stageIdx) : null;
+        if (!label || !label.blurb) return; // nothing to show for a stage with no blurb defined
+
+        let caption = stageContentEl.querySelector(".stage-caption");
+        if (!caption) {
+            caption = document.createElement("div");
+            caption.className = "stage-caption";
+            stageContentEl.appendChild(caption);
+        }
+        caption.textContent = label.blurb;
+
+        // cancel any pending fade-out from a previous caption still in
+        // flight (e.g. a rapid restart) so timers never stack or fire
+        // out of order
+        if (captionTimeout) {
+            clearTimeout(captionTimeout);
+            captionTimeout = null;
+        }
+
+        // force a reflow between removing and re-adding "visible" -- same
+        // trick used elsewhere in this file for reliably restarting a CSS
+        // transition, rather than risking the browser coalescing a
+        // same-frame class change into a no-op
+        caption.classList.remove("visible");
+        void caption.offsetWidth;
+        caption.classList.add("visible");
+
+        captionTimeout = setTimeout(() => {
+            caption.classList.remove("visible");
+            captionTimeout = null;
+        }, 2600);
     }
 
     function startAutoAdvance(overrideDurationMs = null) {
@@ -200,4 +244,4 @@ function initCard(cardEl) {
     }
 
     return { sampleId, activate, refreshActiveStage };
-}
+} 
