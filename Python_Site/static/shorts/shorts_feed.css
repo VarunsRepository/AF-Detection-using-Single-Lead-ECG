@@ -631,18 +631,28 @@ html, body {
 }
 
 /* ---------------------------------------------------------------------
-   Algorithm picker -- a plain cycle button now, same interaction as
-   Speed/Theme (tap advances to the next option, no popup menu). Hidden by
-   default; only shown when the card is actually on Stage 2 (Peak
-   Detection), since it has no meaning on any other stage. Driven purely by
-   the data-current-stage attribute stage_machine.js's enterStage() keeps
-   accurate -- no JS needed here to decide visibility per stage.
+   Stage-scoped rail controls -- Algorithm picker, Pre-Filter picker, and
+   any future ones. Hidden by default; shown only via the generic
+   .rail-stage-active class, which stage_machine.js's enterStage() applies
+   or removes based ENTIRELY on each stage's own railControls declaration
+   (see registerStage() in stage_renderers.js).
+
+   Worth being precise about what this DOES and DOESN'T eliminate: this
+   CSS still needs to know WHICH buttons are capable of being stage-scoped
+   at all (.rail-algo, .rail-prefilter, below) -- a stable fact that rarely
+   changes. What it no longer needs to know is WHICH STAGE NUMBER activates
+   each one -- that was the actual risky, frequently-changing duplication
+   (a hand-written "stage 2" here, separately from registerStage's own
+   stage-2 definition, with nothing keeping the two in sync). That mapping
+   now lives in exactly one place: each stage's own railControls array.
    --------------------------------------------------------------------- */
-.rail-algo {
+.rail-algo,
+.rail-prefilter {
     display: none;
 }
 
-.card[data-current-stage="2"] .rail-algo {
+.rail-algo.rail-stage-active,
+.rail-prefilter.rail-stage-active {
     display: flex;
 }
 
