@@ -79,7 +79,12 @@ def list_samples():
         "offset": offset,
     })
  
- 
+
+
+#@shorts_bp.route('/dwt-demo')
+#def dwt_demo():
+#    return render_template('shorts/dwt_demo.html')
+
 #@shorts_bp.route("/api/sample/<sample_id>/raw")
 #def get_raw_signal(sample_id):
 #    try:
