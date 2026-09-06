@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, abort
 from Services.Journey_Store import JourneyStore
 
-journey_store = JourneyStore(cache_dir="data_cache")
+journey_store = JourneyStore(cache_dir="data_cache/JourneyStore")
 
 # Safe to call every time the app starts -- register_journey() skips
 # silently if the journey already exists (loaded from a previous run),
