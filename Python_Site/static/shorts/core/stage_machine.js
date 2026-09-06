@@ -4,7 +4,15 @@
 // pausing, and a card's first activation all funnel through enterStage(),
 // the single canonical entry point. No cross-visit memory anymore -- every
 // card always starts fresh at stage 0, every time it becomes visible.
-// Depends on rail_controls.js (getStageDuration), stage_renderers.js
+//
+// Journey-aware now: each card reads WHICH journey it belongs to from
+// cardEl.dataset.journey (defaulting to "ecg" if unset, for backward
+// compatibility), and passes that through to every engine call. This is
+// what lets the SAME stage machine drive the ECG feed and a completely
+// separate journey (e.g. DWT) without either needing its own bespoke
+// navigator.
+//
+// Depends on rail_controls.js (getStageDuration), shared_signal_utils.js
 // (cancelSweepAnimation, activeSweepControl, startSweepLoop), and
 // stage_engine.js (renderStageChart) -- all three must be loaded before
 // this file.
@@ -27,6 +35,10 @@ const RESTART_THRESHOLD_MS = 400; // left-tap within this window of entering a
 
 function initCard(cardEl) {
     const sampleId = cardEl.dataset.sampleId;
+    // Which journey this card belongs to -- defaults to "ecg" so any card
+    // built before this attribute existed (or a card that simply doesn't
+    // set it) keeps working exactly as before, unchanged.
+    const journeyName = cardEl.dataset.journey || "ecg";
     const bar = cardEl.querySelector(".stage-bar");
     const segments = Array.from(bar.querySelectorAll(".segment"));
     const stageEls = Array.from(cardEl.querySelectorAll(".stage-content"));
@@ -35,7 +47,6 @@ function initCard(cardEl) {
     let currentStage = 0; // always -- no cross-visit memory anymore
     let stageEnteredAt = performance.now(); // live, in-the-moment only; not persisted
     let isPaused = false; // live pause state -- reset fresh every enterStage(), never survives leaving the card
-    let captionTimeout = null; // tracks THIS card's pending caption fade-out, so rapid restarts never stack timers
 
     // THE canonical entry point. Advancing, restarting, going to a previous
     // stage, and a card's very first activation all funnel through here --
@@ -46,11 +57,11 @@ function initCard(cardEl) {
         stageEnteredAt = performance.now();
         isPaused = false; // entering (or re-entering) a stage always starts unpaused
 
-        // Lets stage-specific rail controls (e.g. the peak-detection
-        // algorithm picker) show/hide purely via CSS, without any JS
-        // needing to know which controls belong to which stage -- a
-        // control just declares "only visible when data-current-stage
-        // equals N" and this one line keeps that attribute accurate.
+        // Rail-control visibility no longer reads this attribute -- that's
+        // now driven directly by each stage's own railControls declaration
+        // (see below). Kept anyway as a plain, harmless DOM/devtools
+        // convenience: inspecting a card in the browser immediately shows
+        // which stage it's currently on, without digging through JS state.
         cardEl.dataset.currentStage = currentStage;
 
         stageEls.forEach(el => {
@@ -88,54 +99,32 @@ function initCard(cardEl) {
         cancelSweepAnimation(sampleId);
         const activeEl = stageEls.find(el => Number(el.dataset.stage) === currentStage);
         const container = activeEl && activeEl.querySelector(".chart-frame");
-        if (container) renderStageChart(sampleId, currentStage, container);
-        if (activeEl) showStageCaption(activeEl, currentStage);
+        if (container) renderStageChart(journeyName, sampleId, currentStage, container);
+        if (activeEl && typeof showStageCaption === "function") showStageCaption(activeEl, journeyName, currentStage);
+
+        // Rail control visibility -- driven ENTIRELY by this stage's own
+        // railControls declaration (see registerStage in stage_renderers.js),
+        // not a separate hand-written CSS rule that could drift out of sync.
+        // A rail button is "stage-scoped" purely by virtue of appearing in
+        // SOME stage's railControls somewhere in this journey; anything
+        // never mentioned (Speed, Invert, Theme) is left completely alone,
+        // always visible, exactly as before.
+        if (typeof getAllStageScopedRailRoles === "function" && typeof getStageRailControls === "function") {
+            const allScopedRoles = getAllStageScopedRailRoles(journeyName);
+            const activeRoles = getStageRailControls(journeyName, currentStage);
+            allScopedRoles.forEach(role => {
+                const btn = cardEl.querySelector(`.rail-btn[data-role="${role}"]`);
+                if (btn) btn.classList.toggle("rail-stage-active", activeRoles.includes(role));
+            });
+        }
 
         cardEl.classList.remove("paused");
         startAutoAdvance();
     }
 
-    // Brief, non-blocking caption -- fades in the moment a stage starts,
-    // fades out on its own after a couple seconds. Never requires a tap,
-    // never blocks navigation (pointer-events:none in CSS), and fires on
-    // EVERY stage entry, not just the first time -- a genuine experiment,
-    // not the same thing as the deferred "first-time-only" callout idea.
-    // Reuses label.blurb -- the SAME sentence already used by onboarding
-    // and the explainer's plain-English first tap. One source of truth,
-    // a third consumer now, still can't drift apart.
-    function showStageCaption(stageContentEl, stageIdx) {
-        const label = typeof getStageLabel === "function" ? getStageLabel(stageIdx) : null;
-        if (!label || !label.blurb) return; // nothing to show for a stage with no blurb defined
-
-        let caption = stageContentEl.querySelector(".stage-caption");
-        if (!caption) {
-            caption = document.createElement("div");
-            caption.className = "stage-caption";
-            stageContentEl.appendChild(caption);
-        }
-        caption.textContent = label.blurb;
-
-        // cancel any pending fade-out from a previous caption still in
-        // flight (e.g. a rapid restart) so timers never stack or fire
-        // out of order
-        if (captionTimeout) {
-            clearTimeout(captionTimeout);
-            captionTimeout = null;
-        }
-
-        // force a reflow between removing and re-adding "visible" -- same
-        // trick used elsewhere in this file for reliably restarting a CSS
-        // transition, rather than risking the browser coalescing a
-        // same-frame class change into a no-op
-        caption.classList.remove("visible");
-        void caption.offsetWidth;
-        caption.classList.add("visible");
-
-        captionTimeout = setTimeout(() => {
-            caption.classList.remove("visible");
-            captionTimeout = null;
-        }, 2600);
-    }
+    // Stage caption is now owned by features/stage_caption.js, not defined
+    // here -- showStageCaption() is called below but lives externally,
+    // same decoupled pattern as attachAlgorithmExplainer.
 
     function startAutoAdvance(overrideDurationMs = null) {
         clearAutoAdvance(sampleId); // never let two timers stack for the same card
@@ -243,5 +232,10 @@ function initCard(cardEl) {
         enterStage(currentStage); // restarts whatever stage is currently showing, with the new setting applied
     }
 
-    return { sampleId, activate, refreshActiveStage };
-} 
+    // onTapLeft/onTapRight/togglePause exposed here too -- not just for the
+    // tap zones internally, but so anything ELSE (keyboard controls, for
+    // instance) can trigger the EXACT same navigation logic, rather than
+    // needing its own separate implementation of "what does advancing
+    // actually mean."
+    return { sampleId, activate, refreshActiveStage, onTapLeft, onTapRight, togglePause };
+}

@@ -128,7 +128,7 @@ function toggleInvert(sampleId) {
     // the engine's caching would silently keep showing pre-invert peaks on
     // the now-inverted trace -- a real correctness bug the cache introduces
     // if this call is missing, not just a missed optimization.
-    invalidateFromStage(sampleId, 0);
+    invalidateFromStage("ecg", sampleId, 0);
 
     // only THIS sample's rail button reflects the change -- invert is
     // per-sample, unlike speed/color which are global

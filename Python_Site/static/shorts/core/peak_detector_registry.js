@@ -39,7 +39,7 @@ function cyclePeakDetector() {
     // is a GLOBAL choice (like Speed/Theme), not per-sample (like Invert),
     // so every cached sample needs invalidating, not just one.
     if (typeof invalidateFromStageForAllSamples === "function") {
-        invalidateFromStageForAllSamples(2);
+        invalidateFromStageForAllSamples("ecg", 2);
     }
 
     document.querySelectorAll(".rail-algo-label").forEach(el => {

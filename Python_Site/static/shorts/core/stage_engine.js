@@ -1,141 +1,185 @@
 // ---------------------------------------------------------------------------
 // stage_engine.js
-// The generic "pipe and filter" engine every stage plugs into. Each stage
-// registers a PROCESSOR (pure computation -- takes the PREVIOUS stage's
-// output as input, returns its own output) and a RENDERER (draws/animates
-// that output). A new stage never touches this file, or any other stage's
-// code -- it just calls registerStage(stageIdx, {processor, renderer}) from
-// its own file. That's what makes stages genuinely plug-and-play: jumping
-// straight to Stage 3 automatically runs Stages 0-2 first if needed, and
-// once a real Stage 1 exists, Stage 2 will receive ITS output instead of
-// Stage 0's directly, with zero changes to Stage 2's own code.
+// The generic "pipe and filter" engine, now supporting MULTIPLE independent
+// journeys at once -- each journey (a stable string name, e.g. "ecg",
+// "dwt") owns its OWN set of registered stages and its OWN output cache,
+// namespaced so two journeys can each register a "stage 0" without
+// colliding.
+//
+// This replaces an earlier version where STAGE_DEFINITIONS was a single
+// FLAT table keyed by bare stageIdx -- meaning a second journey's stage 0
+// would have silently overwritten the ECG pipeline's. Every function below
+// now takes journeyName as its first argument. A new stage never touches
+// this file, or any other stage's code -- it just calls
+// registerStage(journeyName, stageIdx, {processor, renderer}) from its own
+// file. That's what makes stages genuinely plug-and-play, now across
+// multiple journeys, not just within one.
 //
 // Must load before any file that calls registerStage() or renderStageChart()
-// -- i.e. before stage_renderers.js and stage_machine.js.
+// -- i.e. before any journey's stage-registration file and stage_machine.js.
 // ---------------------------------------------------------------------------
 
-const STAGE_DEFINITIONS = {}; // stageIdx -> { processor, renderer }
-const stageOutputCache = new Map(); // sampleId -> Map(stageIdx -> output)
+const STAGE_DEFINITIONS = {}; // journeyName -> { stageIdx -> { processor, renderer, dependsOn, label } }
+const stageOutputCache = new Map(); // journeyName -> Map(sampleId -> Map(stageIdx -> output))
 
-function registerStage(stageIdx, definition) {
-    // definition: { processor, renderer, dependsOn, label }
-    // dependsOn: the STAGE INDEX this stage explicitly depends on for its
-    // input (e.g. 0 to mean "I need Stage 0's output"). Omit it entirely
-    // if this stage should start fresh from the raw fetch instead (this is
-    // how Stage 0 itself works, and how any future alternate BRANCH --
-    // e.g. an FFT-based stage that also starts from raw, rather than
-    // building on the waveform stages -- would declare itself too).
+function registerStage(journeyName, stageIdx, definition) {
+    // definition: { processor, renderer, dependsOn, label, railControls }
+    // dependsOn: the STAGE INDEX (WITHIN THIS SAME JOURNEY) this stage
+    // explicitly depends on for its input. Omit it entirely if this stage
+    // should start fresh from the raw fetch instead (this is how each
+    // journey's own entry-point stage works).
     //
-    // This is deliberately explicit, not inferred from stageIdx - 1. An
-    // earlier version searched backward for "the nearest registered stage"
-    // and blindly trusted its output -- which works only by coincidence in
-    // a single linear chain, and breaks the moment two stages produce
-    // genuinely different shapes (e.g. FFT bins vs. a {t,y,fs} waveform).
-    // Declaring the dependency explicitly makes the pipeline's real shape
-    // a visible, deliberate choice by whoever writes the stage, rather than
-    // something the engine guesses at.
+    // This is deliberately explicit, not inferred from stageIdx - 1 --
+    // see the original single-journey design notes for why guessing based
+    // on numeric adjacency is unsafe once stages can produce genuinely
+    // different shapes.
     //
     // label: { main, small, blurb } -- descriptive metadata, co-located
-    // HERE with each stage's own processor/renderer rather than living in
-    // a separate hand-authored array elsewhere. This is what stage-bar
-    // labels (shorts_feed.js) AND onboarding (onboarding.js) both read
-    // from -- one source of truth, so a future Stage 5 can't have its
-    // label forgotten or drift out of sync the way onboarding's old
-    // standalone slide array already had (4 slides for 5 real stages,
-    // discovered only once someone actually counted them).
-    STAGE_DEFINITIONS[stageIdx] = definition;
+    // HERE with each stage's own processor/renderer. Stage-bar labels and
+    // onboarding both read from this, per journey.
+    //
+    // railControls: an array of rail-button data-role strings that only
+    // make sense while THIS stage is active (e.g. ["algo"] for a peak-
+    // detection stage). Omit entirely for a stage with no stage-specific
+    // controls. See getStageRailControls/getAllStageScopedRailRoles above
+    // for how this gets turned into actual show/hide behavior.
+    if (!STAGE_DEFINITIONS[journeyName]) STAGE_DEFINITIONS[journeyName] = {};
+    STAGE_DEFINITIONS[journeyName][stageIdx] = definition;
 }
 
-function getStageLabel(stageIdx) {
-    const def = STAGE_DEFINITIONS[stageIdx];
+function getStageLabel(journeyName, stageIdx) {
+    const journeyStages = STAGE_DEFINITIONS[journeyName];
+    const def = journeyStages && journeyStages[stageIdx];
     return def && def.label; // { main, small, blurb } or undefined if this stage isn't registered yet
 }
 
-function getRegisteredStageCount() {
-    return Object.keys(STAGE_DEFINITIONS).length;
+// railControls: an array of rail-button data-role strings this stage wants
+// shown ONLY while it's active (e.g. ["prefilter"] for Stage 1, ["algo"]
+// for Stage 2). Declared alongside processor/renderer/label in the SAME
+// registerStage() call -- the whole point being that a stage's own
+// definition is the ONE place that says which controls belong to it,
+// rather than a hand-written CSS rule elsewhere that could silently drift
+// out of sync (exactly what happened before this existed: the CSS
+// visibility rules and the actual stage registrations were two separate
+// sources of truth with nothing keeping them consistent).
+function getStageRailControls(journeyName, stageIdx) {
+    const journeyStages = STAGE_DEFINITIONS[journeyName];
+    const def = journeyStages && journeyStages[stageIdx];
+    return (def && def.railControls) || [];
 }
 
-function getCachedStageOutput(sampleId, stageIdx) {
-    const sampleCache = stageOutputCache.get(sampleId);
+// The union of every railControls entry across EVERY stage in a journey.
+// This is what lets stage_machine.js tell "stage-scoped" controls (only
+// meaningful for specific stages) apart from "global" ones (Speed, Invert,
+// Theme -- visible everywhere, never mentioned in any railControls) --
+// WITHOUT needing a separate marker on the buttons themselves. A control's
+// global-vs-scoped status is derived entirely from whether any stage ever
+// claims it, not declared twice.
+function getAllStageScopedRailRoles(journeyName) {
+    const journeyStages = STAGE_DEFINITIONS[journeyName];
+    if (!journeyStages) return [];
+    const allRoles = new Set();
+    Object.values(journeyStages).forEach(def => {
+        (def.railControls || []).forEach(role => allRoles.add(role));
+    });
+    return Array.from(allRoles);
+}
+
+function getRegisteredStageCount(journeyName) {
+    const journeyStages = STAGE_DEFINITIONS[journeyName];
+    return journeyStages ? Object.keys(journeyStages).length : 0;
+}
+
+function getJourneyCache(journeyName) {
+    if (!stageOutputCache.has(journeyName)) stageOutputCache.set(journeyName, new Map());
+    return stageOutputCache.get(journeyName);
+}
+
+function getCachedStageOutput(journeyName, sampleId, stageIdx) {
+    const journeyCache = stageOutputCache.get(journeyName);
+    if (!journeyCache) return undefined;
+    const sampleCache = journeyCache.get(sampleId);
     return sampleCache ? sampleCache.get(stageIdx) : undefined;
 }
 
-function setCachedStageOutput(sampleId, stageIdx, output) {
-    if (!stageOutputCache.has(sampleId)) stageOutputCache.set(sampleId, new Map());
-    stageOutputCache.get(sampleId).set(stageIdx, output);
+function setCachedStageOutput(journeyName, sampleId, stageIdx, output) {
+    const journeyCache = getJourneyCache(journeyName);
+    if (!journeyCache.has(sampleId)) journeyCache.set(sampleId, new Map());
+    journeyCache.get(sampleId).set(stageIdx, output);
 }
 
 // Call when something changes a stage's OUTPUT (e.g. Invert flips Stage 0's
-// polarity) -- every stage from fromStageIdx onward is now stale for that
-// sample and must be recomputed next time it's needed. Purely cosmetic
-// global changes (Speed, Color, Theme) do NOT need this -- they don't
-// change the DATA, only how it's animated or colored, so cached processor
-// output stays valid and only the renderer needs to run again.
-function invalidateFromStage(sampleId, fromStageIdx) {
-    const sampleCache = stageOutputCache.get(sampleId);
+// polarity) -- every stage from fromStageIdx onward, WITHIN THAT JOURNEY,
+// is now stale for that sample. Purely cosmetic global changes (Speed,
+// Theme) do NOT need this.
+function invalidateFromStage(journeyName, sampleId, fromStageIdx) {
+    const journeyCache = stageOutputCache.get(journeyName);
+    if (!journeyCache) return;
+    const sampleCache = journeyCache.get(sampleId);
     if (!sampleCache) return;
     Array.from(sampleCache.keys()).forEach(idx => {
         if (idx >= fromStageIdx) sampleCache.delete(idx);
     });
 }
 
-// Same idea as invalidateFromStage, but for a GLOBAL change (e.g. switching
-// which peak-detection algorithm is active) rather than a per-sample one
-// (e.g. Invert). Every sample's cache gets walked, since a global setting
-// change makes every cached sample's downstream results stale at once, not
-// just whichever one the user happens to be looking at right now.
-function invalidateFromStageForAllSamples(fromStageIdx) {
-    for (const sampleId of stageOutputCache.keys()) {
-        invalidateFromStage(sampleId, fromStageIdx);
+// Same idea, but for a GLOBAL change WITHIN one journey (e.g. switching
+// which peak-detection algorithm is active) -- every sample cached under
+// THAT journey gets walked, not samples belonging to a different journey.
+function invalidateFromStageForAllSamples(journeyName, fromStageIdx) {
+    const journeyCache = stageOutputCache.get(journeyName);
+    if (!journeyCache) return;
+    for (const sampleId of journeyCache.keys()) {
+        invalidateFromStage(journeyName, sampleId, fromStageIdx);
     }
 }
 
 // Resolves what a stage's processor should receive as input, by following
-// its EXPLICIT dependsOn declaration (see registerStage above) -- not by
-// guessing based on stageIdx - 1. A stage with no dependsOn starts fresh
-// from the raw fetch; otherwise its declared dependency is run first (if
-// not already cached) and its output is handed over directly.
-async function resolveStageInput(stageIdx, sampleId) {
-    const def = STAGE_DEFINITIONS[stageIdx];
+// its EXPLICIT dependsOn declaration WITHIN THE SAME JOURNEY.
+async function resolveStageInput(journeyName, stageIdx, sampleId) {
+    const journeyStages = STAGE_DEFINITIONS[journeyName];
+    const def = journeyStages && journeyStages[stageIdx];
     if (!def) return null;
 
     const dependsOn = def.dependsOn;
     if (dependsOn === undefined || dependsOn === null) {
-        return await fetchSignal(sampleId); // no dependency declared -- this stage starts fresh from the raw signal
+        // No dependency declared -- this stage starts fresh from the raw
+        // signal fetch. Shared across every journey today (both "ecg" and
+        // "dwt" operate on the same underlying ECG recordings); a future
+        // journey needing a genuinely different data source would need
+        // this single line revisited, not the rest of the engine.
+        return await fetchSignal(sampleId);
     }
 
-    const cachedPrev = getCachedStageOutput(sampleId, dependsOn);
+    const cachedPrev = getCachedStageOutput(journeyName, sampleId, dependsOn);
     if (cachedPrev !== undefined) return cachedPrev;
-    return await runStageProcessor(dependsOn, sampleId);
+    return await runStageProcessor(journeyName, dependsOn, sampleId);
 }
 
-// Runs (or reuses the cached result of) a stage's processor -- pure
-// computation, no rendering. Safe to call repeatedly; only actually
-// recomputes if nothing valid is cached (a fresh sample, or something
-// called invalidateFromStage on it).
-async function runStageProcessor(stageIdx, sampleId) {
-    const cached = getCachedStageOutput(sampleId, stageIdx);
+// Runs (or reuses the cached result of) a stage's processor, WITHIN ONE
+// JOURNEY. Safe to call repeatedly; only recomputes if nothing valid is
+// cached for that journey+sample+stage combination.
+async function runStageProcessor(journeyName, stageIdx, sampleId) {
+    const cached = getCachedStageOutput(journeyName, sampleId, stageIdx);
     if (cached !== undefined) return cached;
 
-    const def = STAGE_DEFINITIONS[stageIdx];
-    if (!def) return null; // no processor registered yet -- an unbuilt placeholder stage
+    const journeyStages = STAGE_DEFINITIONS[journeyName];
+    const def = journeyStages && journeyStages[stageIdx];
+    if (!def) return null; // no processor registered for this journey+stage combination
 
-    const input = await resolveStageInput(stageIdx, sampleId);
-    if (input == null) return null; // upstream failed (e.g. a fetch error) -- nothing to process
+    const input = await resolveStageInput(journeyName, stageIdx, sampleId);
+    if (input == null) return null; // upstream failed -- nothing to process
 
-    // Even with an explicit dependsOn, a genuinely wrong declaration is
-    // still possible (e.g. a new stage mistakenly wired to a stage that
-    // produces a different shape than it expects). Without this try/catch,
-    // that shows up as either silent garbage (destructuring a missing key
-    // just gives undefined) or a confusing crash deep inside the processor's
-    // own math. Catching it HERE, at the one place every stage's processor
-    // gets invoked, turns that into one clear, attributable error instead.
+    // Even with an explicit dependsOn, a wrong declaration is still
+    // possible. Catching HERE turns a shape-mismatch crash into one
+    // clear, attributable error naming the JOURNEY too, not just the
+    // stage -- important now that the same stageIdx number can exist
+    // simultaneously in multiple journeys.
     let output;
     try {
         output = await def.processor(input, sampleId);
     } catch (err) {
         console.error(
-            `Stage ${stageIdx}'s processor threw for sample ${sampleId} -- ` +
+            `[${journeyName}] Stage ${stageIdx}'s processor threw for sample ${sampleId} -- ` +
             `likely an input shape mismatch (check that dependsOn: ${def.dependsOn} ` +
             `actually produces what this stage's processor expects):`,
             err
@@ -143,25 +187,29 @@ async function runStageProcessor(stageIdx, sampleId) {
         return null;
     }
 
-    if (output != null) setCachedStageOutput(sampleId, stageIdx, output);
+    if (output != null) setCachedStageOutput(journeyName, sampleId, stageIdx, output);
     return output;
 }
 
-// The public entry point stage_machine.js calls. Resolves/caches the
-// processor's output, then hands it to that stage's renderer. Every stage
-// automatically gets input resolution from the previous stage, output
-// caching, and a loading-state toggle on the container -- none of that
-// needs to be rewritten per stage, which is the actual test of whether this
-// is genuinely plug-and-play rather than just organized-looking.
-async function renderStageChart(sampleId, stageIdx, container) {
-    const def = STAGE_DEFINITIONS[stageIdx];
-    if (!def) return; // no renderer registered for this stage yet -- placeholder, nothing to do
+// The public entry point stage_machine.js calls, now naming WHICH journey
+// it's navigating. Everything else about this function is unchanged from
+// the single-journey version -- input resolution, caching, the loading
+// toggle, and the generic explainer hook all still "just work," now
+// correctly scoped per journey.
+async function renderStageChart(journeyName, sampleId, stageIdx, container) {
+    const journeyStages = STAGE_DEFINITIONS[journeyName];
+    const def = journeyStages && journeyStages[stageIdx];
+    if (!def) return; // no renderer registered for this journey+stage -- placeholder, nothing to do
 
     container.classList.add("loading");
-    const output = await runStageProcessor(stageIdx, sampleId);
+    const output = await runStageProcessor(journeyName, stageIdx, sampleId);
     container.classList.remove("loading");
 
-    if (output == null) return; // processor/upstream failed -- nothing to render; will retry next time this stage is entered
+    if (output == null) return;
 
     def.renderer(container, sampleId, output);
+
+    if (typeof attachAlgorithmExplainer === "function") {
+        attachAlgorithmExplainer(container, sampleId, journeyName, stageIdx, output);
+    }
 }
