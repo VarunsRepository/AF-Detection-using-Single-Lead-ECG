@@ -9,7 +9,10 @@ from flask import Flask, Blueprint, jsonify, request, send_from_directory, redir
       
 from Blueprints.statistical_analytics_bp import statistical_analytics_bp 
 from Blueprints.shorts_bp import shorts_bp
+from Blueprints.dwt_bp import dwt_bp
+from Blueprints.journey_bp import journey_bp
 
+ 
 
 # to get of pre-computed Statistical RR-analytics features 
 from Services.ECG_Feature_Manager import ECG_Signal_Feature_Manager 
@@ -94,7 +97,7 @@ physionet_mgr.initialize_registry()
 
 
 # ECG FEATURE MANAGER TO FETCH THE FEATURES LIKE HRV, VIX DIRECTLY FROM THE LOCAL FILE
-ECG_Features = ECG_Signal_Feature_Manager(cache_dir="data_cache")
+ECG_Features = ECG_Signal_Feature_Manager(cache_dir="data_cache/FeatureStore")
 
 
 #CLASS_NAMES = {"N": "Normal", "A": "Atrial Fibrillation", "O": "Other", "~": "Noisy"}
@@ -383,6 +386,9 @@ app.register_blueprint(statistical_analytics_bp, url_prefix='/statistical_analyt
 
 app.register_blueprint(shorts_bp, url_prefix='/shorts')
 
+app.register_blueprint(dwt_bp)
+
+app.register_blueprint(journey_bp)
 
 # think of it as the main() function of this web-sites programs  
 if __name__ == '__main__':
