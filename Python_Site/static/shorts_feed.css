@@ -1,0 +1,695 @@
+:root {
+    --bg: #0d1117;
+    --card-bg: #161b22;
+    --border: #30363d;
+    --text: #d8dee9;
+    --text-dim: #747d8c;
+    --accent: #5cc24a;
+    --accent-dim: #2e3440;
+    --danger: #a32638;
+    --warn: #c98a1f;
+    --grid-color: rgba(116, 125, 140, 0.18); /* Plotly chart gridlines -- read via getComputedStyle in stage_renderers.js, since Plotly can't reference CSS vars directly */
+    --zero-line-color: rgba(116, 125, 140, 0.4); /* the 0 mV reference line, brighter than the regular grid */
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "IBM Plex Sans", sans-serif;
+    overflow: hidden; /* prevent the page itself from scrolling -- only #feed scrolls */
+}
+
+/* ---------------------------------------------------------------------
+   VERTICAL AXIS -- native scroll-snap. This is the ONLY axis that
+   responds to touch/wheel scrolling directly.
+   --------------------------------------------------------------------- */
+.feed {
+    height: 100vh;
+    height: 100dvh; /* dvh accounts for mobile browser toolbars showing/hiding;
+                        100vh alone causes content to jump or get clipped as
+                        Safari/Chrome's address bar collapses on scroll */
+    overflow-y: scroll;
+    scroll-snap-type: y mandatory;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch; /* smoother momentum scrolling on iOS */
+}
+
+.card {
+    height: 100vh;
+    height: 100dvh;
+    width: 100%;
+    scroll-snap-align: start;
+    scroll-snap-stop: always; /* prevents flicking past multiple cards at once */
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border);
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom); /* keeps content clear of the
+                                                     notch and home-indicator area */
+}
+
+/* ---------------------------------------------------------------------
+   HORIZONTAL AXIS -- deliberately NOT scrollable. No overflow-x, no
+   touch-action. Stage changes only happen via JS toggling .active on
+   .stage-content elements and updating .stage-bar fills. A user cannot
+   drag/flick between stages -- only tap the bar or tap left/right zones
+   (wired in shorts_feed.js).
+   --------------------------------------------------------------------- */
+.stage-viewport {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    touch-action: pan-y; /* explicitly allow vertical gestures to pass through
+                              to the parent .feed, but not horizontal ones */
+}
+
+.stage-content {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+.stage-content.active {
+    display: flex;
+    opacity: 1;
+}
+
+/* ---------------------------------------------------------------------
+   Algorithm explainer -- opt-in scrub bar (Stage 2 only, currently).
+   Toggle sits top-left, clear of the rail (right) and footer (bottom).
+   Panel is a bottom-anchored overlay so it never reflows the chart itself.
+   --------------------------------------------------------------------- */
+.explain-toggle {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 42;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(22, 27, 34, 0.85);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.75rem;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.explain-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 41;
+    background: rgba(13, 17, 23, 0.92);
+    border-top: 1px solid var(--border);
+    padding: 8px 10px;
+    display: none;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+/* Plain-English layer, shown BEFORE the technical panel above -- same
+   bottom-anchored positioning convention, simpler content (one sentence,
+   two buttons instead of a pill row). Only one of the two panels is ever
+   visible at a time. */
+.explain-simple-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 41;
+    background: rgba(13, 17, 23, 0.92);
+    border-top: 1px solid var(--border);
+    padding: 14px 16px;
+    display: none;
+}
+
+.explain-simple-panel.open {
+    display: block;
+}
+
+.explain-simple-text {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: var(--text);
+    margin: 0 0 12px;
+}
+
+.explain-simple-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.explain-simple-deeper {
+    background: none;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    padding: 6px 12px;
+    border-radius: 14px;
+    cursor: pointer;
+}
+
+.explain-panel.open {
+    display: flex;
+}
+
+.explain-step-btn {
+    background: rgba(22, 27, 34, 0.85);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.65rem;
+    padding: 4px 9px;
+    border-radius: 12px;
+    cursor: pointer;
+}
+
+.explain-step-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.explain-close-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 2px 6px;
+}
+
+.stage-label {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    text-align: center;
+    margin-bottom: 4px;
+    /* This used to be the small, uppercase, monospace "technical readout"
+       style -- now demoted to .stage-label-small below, since the MAIN
+       line is meant to be plain-language prose a non-clinician can read
+       at a glance, not a jargon-heavy label. */
+}
+
+.stage-label-small {
+    display: block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-top: 2px;
+    margin-bottom: 8px;
+}
+
+.verdict-label {
+    color: var(--accent);
+    font-size: 1rem;
+    font-weight: bold;
+}
+
+.early-exit-label {
+    color: var(--warn);
+    font-size: 0.95rem;
+    max-width: 70%;
+    text-align: center;
+    line-height: 1.4;
+}
+
+/* Wraps any PLAIN (non-Plotly) content injected into a .chart-frame --
+   the early-exit message and the verdict badge, currently. Without this,
+   injected HTML just sits at the top-left of the tall chart box instead
+   of centered, since chart-frame itself is sized for Plotly's own
+   full-fill behavior, not flex-centered by default. */
+.plain-content-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+.verdict-badge {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    padding: 14px 28px;
+    border: 2px solid;
+    border-radius: 8px;
+    text-align: center;
+    /* starts scaled-down and invisible; JS adds .revealed one frame after
+       insertion, so the browser registers this starting state before
+       transitioning -- without that delay, it'd just snap straight to the
+       end state with no visible "slam in" at all */
+    opacity: 0;
+    transform: scale(0.6);
+    transition: opacity 0.25s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.verdict-badge.revealed {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.verdict-support {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+.hrv-readout {
+    position: absolute;
+    bottom: 8px;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    padding: 0 10px;
+}
+
+.chart-frame {
+    width: 100%;
+    max-width: 600px; /* generous cap, mainly relevant on tablets/desktop -- rarely binding on a phone-width screen */
+    height: 58vh; /* was width-driven (aspect-ratio: 3/2, max-width: 480px), which capped the chart
+                     at a small fixed box regardless of how much vertical room the card actually had --
+                     that's the "most of the page looks blank" problem. Height-driven sizing uses the
+                     screen's actual available space instead. */
+    position: relative;
+    filter: drop-shadow(0 0 2px var(--ecg-trace-color, #4fd1ff)); /* was 6px -- smaller radius costs less to recompute per Plotly.update() call */
+    /* No decorative background-image grid anymore -- it never corresponded
+       to real time/amplitude values, just a fixed pixel pattern behind a
+       coordinate system it had no relationship to. Plotly's own gridlines
+       (see buildChartLayout in stage_renderers.js) now do this properly:
+       calibrated to genuine seconds/mV, correctly scaling and sliding with
+       the actual plotted data. */
+}
+
+/* Explainer mode gets a little MORE room still than the already-enlarged
+   default view -- it's a static, full-recording inspection view, not the
+   windowed sweep, so it can afford it. This is specifically what fixes
+   wide-dynamic-range steps (like Squared, after Pan-Tompkins' squaring
+   stage) looking cramped/overflowing. */
+.stage-content.explaining .chart-frame {
+    max-width: none;
+    height: 62vh;
+}
+
+.chart-frame.loading::after {
+    content: "loading signal…";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+}
+
+/* ---------------------------------------------------------------------
+   Session summary overlay -- the honest stopping cue, see chat discussion
+   --------------------------------------------------------------------- */
+.session-summary {
+    position: fixed;
+    inset: 0;
+    background: rgba(13, 17, 23, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    transition: opacity 0.3s ease;
+}
+
+.session-summary.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.summary-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 28px 32px;
+    text-align: center;
+    max-width: 320px;
+}
+
+.summary-title {
+    font-family: "IBM Plex Mono", monospace;
+    color: var(--accent);
+    font-size: 1.1rem;
+    margin-bottom: 10px;
+}
+
+.summary-body {
+    color: var(--text);
+    font-size: 0.9rem;
+    margin-bottom: 18px;
+}
+
+.summary-dismiss {
+    background: var(--accent);
+    color: #111;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+}
+
+/* .verdict-frame no longer overrides height -- it used to set height:auto,
+   a leftover from before chart-frame's sizing was overhauled to be
+   height-driven. With the verdict badge living inside .plain-content-overlay
+   (position:absolute, contributing nothing to parent height), that auto
+   override collapsed this one stage's container to ~0 height, causing the
+   badge to spill upward and visually overlap the stage label above it.
+   Now it correctly inherits the same 58vh every other stage already uses. */
+
+.early-exit-frame {
+    height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ---------------------------------------------------------------------
+   Segmented progress bar -- the ONLY part of the horizontal axis that's
+   directly interactive (tappable to jump to a stage).
+   --------------------------------------------------------------------- */
+.stage-bar {
+    display: flex;
+    gap: 4px;
+    padding: 12px 16px 8px;
+}
+
+.segment {
+    flex: 1;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.segment .fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+}
+
+.segment.completed .fill {
+    width: 100%;
+}
+
+.segment.current .fill {
+    animation-name: fillBar;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+    /* Duration is set inline, per-stage, by JS (see getStageDuration() and
+       showStage() in shorts_feed.js) -- no fixed value here on purpose,
+       since different stages now run for different lengths of time. */
+}
+
+@keyframes fillBar {
+    from { width: 0%; }
+    to { width: 100%; }
+}
+
+.card-footer {
+    padding: 10px 16px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+}
+
+.sample-id { color: var(--text); }
+
+/* ---------------------------------------------------------------------
+   Right-side control rail -- YT Shorts-style vertical icon stack, one per
+   card. Positioned as an absolute overlay on the .card itself (a DOM
+   sibling of .stage-viewport, NOT a descendant of it), so its clicks never
+   reach the viewport's own tap-to-advance/rewind listener.
+   --------------------------------------------------------------------- */
+.pause-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 45;
+    font-size: 2rem;
+    color: rgba(255, 255, 255, 0.85);
+    text-shadow: 0 0 12px rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    pointer-events: none; /* never intercepts taps -- purely visual */
+    transition: opacity 0.15s ease;
+}
+
+.card.paused .pause-indicator {
+    opacity: 1;
+}
+
+.stage-rail {
+    position: absolute;
+    right: 12px;
+    bottom: 100px; /* anchored from the bottom, not vertically centered --
+                       center-screen is where the sweep's leading edge sits,
+                       the most important part of the plot; the rail shouldn't
+                       compete with it, same reasoning Shorts/Reels use for
+                       placing their own icon rail low-right rather than centered */
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    align-items: center;
+}
+
+.rail-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(22, 27, 34, 0.85);
+    border: 1px solid var(--border);
+    color: var(--text);
+    cursor: pointer;
+    /* backdrop-filter: blur(4px); -- TEMP DISABLED for iOS Safari diagnostic;
+       WebKit has known bugs where blur-filtered elements become visually
+       present but stop reliably receiving touch events. If controls start
+       working again on iPhone with this off, this is the culprit. */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative; /* anchors the swatch-dot badge, see below */
+}
+
+.rail-btn svg {
+    display: block; /* removes the few stray pixels of inline-baseline spacing SVGs get by default */
+}
+
+.rail-speed-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    font-weight: bold;
+}
+
+/* Small live-color indicator, sitting in the corner of the Color and Theme
+   buttons -- replaces the OLD approach of filling the entire button
+   background with the swatch, which broke once an icon needed to sit on
+   top (a light icon vanishes against a light swatch). Icon stays neutral
+   and legible; the dot alone carries the "what's currently selected" info. */
+.swatch-dot {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--swatch, #4fd1ff);
+    border: 1.5px solid rgba(13, 17, 23, 0.9); /* separates the dot from whatever's behind the button */
+}
+
+.rail-invert[aria-pressed="true"] {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(92, 194, 74, 0.15);
+}
+
+/* ---------------------------------------------------------------------
+   Onboarding -- one-time, shown before the feed ever plays. Full-screen,
+   sits above everything (higher z-index than any in-feed overlay), and
+   is removed from the DOM entirely once dismissed -- nothing lingers.
+   --------------------------------------------------------------------- */
+.onboarding-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.onboarding-card {
+    max-width: 380px;
+    width: 100%;
+    text-align: center;
+}
+
+.onboarding-dots {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 32px;
+}
+
+.onboarding-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background 0.2s ease;
+}
+
+.onboarding-dot.active {
+    background: var(--accent);
+}
+
+.onboarding-title {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0 0 14px;
+}
+
+.onboarding-body {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: var(--text-dim);
+    margin: 0 0 36px;
+}
+
+.onboarding-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.onboarding-skip {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 10px;
+}
+
+.onboarding-next {
+    background: var(--accent);
+    color: #111;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------
+   Stage-scoped rail controls -- Algorithm picker, Pre-Filter picker, and
+   any future ones. Hidden by default; shown only via the generic
+   .rail-stage-active class, which stage_machine.js's enterStage() applies
+   or removes based ENTIRELY on each stage's own railControls declaration
+   (see registerStage() in stage_renderers.js).
+
+   Worth being precise about what this DOES and DOESN'T eliminate: this
+   CSS still needs to know WHICH buttons are capable of being stage-scoped
+   at all (.rail-algo, .rail-prefilter, below) -- a stable fact that rarely
+   changes. What it no longer needs to know is WHICH STAGE NUMBER activates
+   each one -- that was the actual risky, frequently-changing duplication
+   (a hand-written "stage 2" here, separately from registerStage's own
+   stage-2 definition, with nothing keeping the two in sync). That mapping
+   now lives in exactly one place: each stage's own railControls array.
+   --------------------------------------------------------------------- */
+.rail-algo,
+.rail-prefilter {
+    display: none;
+}
+
+.rail-algo.rail-stage-active,
+.rail-prefilter.rail-stage-active {
+    display: flex;
+}
+
+/* ---------------------------------------------------------------------
+   Stage caption -- brief, non-blocking, fades in/out automatically on
+   EVERY stage entry (not just first-time; that's the separate, still-
+   deferred "first-time-only callout" idea). pointer-events:none means it
+   can NEVER intercept a tap, no matter how it's positioned -- purely
+   informational, never functional. Positioned near the top since it's
+   describing what's about to happen, reading naturally top-down; kept
+   left of the explain-toggle's corner and below it in z-index so the two
+   never truly compete if a stage happens to show both.
+   --------------------------------------------------------------------- */
+.stage-caption {
+    position: absolute;
+    bottom: 24px; /* was top:46px, which sat right on top of the stage label --
+                     moved to the bottom of the chart area instead, clear of it entirely */
+    left: 16px;
+    right: 60px; /* narrower on the right than before -- the rail is positioned
+                    relative to the CARD, not stage-content, so their coordinate
+                    systems differ and an exact vertical gap can't be computed
+                    without live-measuring. Staying out of the rail's horizontal
+                    column sidesteps needing to guess that vertical math at all. */
+    text-align: center;
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--text);
+    background: rgba(13, 17, 23, 0.75);
+    padding: 8px 14px;
+    border-radius: 8px;
+    z-index: 35;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+}
+
+.stage-caption.visible {
+    opacity: 1;
+}
