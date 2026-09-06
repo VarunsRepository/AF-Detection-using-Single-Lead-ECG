@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>DWT Demo (Experimental)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Reuses the SAME dark-theme CSS variables as the main pipeline (--bg,
+         --card-bg, --text, --grid-color, etc) for visual consistency, even
+         though this page is otherwise completely standalone. -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='shorts/shorts_feed.css') }}">
+    <style>
+        /* Demo-only styling -- deliberately NOT added to shorts_feed.css,
+           since this page isn't part of the main pipeline at all. */
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: "IBM Plex Sans", sans-serif;
+            padding: 20px;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .dwt-subtitle {
+            color: var(--text-dim);
+            font-size: 0.8rem;
+            line-height: 1.4;
+            margin-bottom: 20px;
+        }
+        #dwt-sample-form {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        #dwt-sample-input {
+            flex: 1;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: "IBM Plex Mono", monospace;
+        }
+        #dwt-sample-form button {
+            background: var(--accent);
+            color: #111;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 6px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        #dwt-status {
+            color: var(--text-dim);
+            font-size: 0.8rem;
+            font-family: "IBM Plex Mono", monospace;
+            margin-bottom: 16px;
+            min-height: 1.2em;
+        }
+        #dwt-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 16px;
+        }
+        .dwt-tab-btn {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            font-family: "IBM Plex Mono", monospace;
+            font-size: 0.7rem;
+            padding: 6px 12px;
+            border-radius: 14px;
+            cursor: pointer;
+        }
+        .dwt-tab-btn.active {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+        #dwt-chart {
+            width: 100%;
+            height: 400px;
+            background: var(--card-bg);
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>DWT Decomposition — Experimental Demo</h1>
+    <p class="dwt-subtitle">
+        Standalone, separate from the main ECG pipeline (see dwt_demo.js's header comment for why).
+        Real multi-level Haar wavelet decomposition, run against actual signal data via the existing
+        /shorts/api/sample/&lt;id&gt;/raw endpoint.
+    </p>
+
+    <form id="dwt-sample-form">
+        <input type="text" id="dwt-sample-input" placeholder="Sample ID (e.g. A00001)" value="A00001">
+        <button type="submit">Run</button>
+    </form>
+
+    <div id="dwt-status"></div>
+    <div id="dwt-tabs"></div>
+    <div id="dwt-chart"></div>
+
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <script src="{{ url_for('static', filename='shorts/filters/dwt_filter.js') }}"></script>
+    <script src="{{ url_for('static', filename='shorts/dwt_demo/dwt_demo.js') }}"></script>
+</body>
+</html>

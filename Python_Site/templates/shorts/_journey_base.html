@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{% block title %}Shorts{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='shorts/shorts_feed.css') }}">
+</head>
+<body>
+
+<!-- VERTICAL AXIS: scroll-snap container. Cards are generated dynamically
+     by journey_feed.js, populated with real record IDs fetched from
+     whichever apiEndpoint the specific journey's bootstrap passes in. -->
+<main id="feed" class="feed"></main>
+
+<div id="session-summary" class="session-summary hidden">
+    <div class="summary-card">
+        <div class="summary-title">Nice session</div>
+        <div class="summary-body" id="summary-body">You've explored <span id="summary-count">0</span> records.</div>
+        <button id="summary-dismiss" class="summary-dismiss">Keep scrolling</button>
+    </div>
+</div>
+
+<!-- ===================================================================
+     EVERYTHING BELOW is genuinely shared across ANY journey -- this is
+     the actual fix for the original problem: previously, each journey's
+     own template hand-duplicated this ENTIRE list independently (19
+     tags in shorts_feed.html, a different 5 in dwt_journey.html), with
+     nothing keeping them consistent if a new shared feature was added
+     later. Now there is exactly ONE place that knows "these files are
+     core, every journey needs them" -- this base template. A journey's
+     own template extends this file and adds ONLY what's genuinely its
+     own (that journey's specific filters/registries/stage-registration
+     file), never re-declaring the shared list at all.
+     =================================================================== -->
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<script src="{{ url_for('static', filename='shorts/core/stage_engine.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/stage_block_library.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/journey_loader.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/rail_controls.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/shared_signal_utils.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/stage_machine.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/features/algorithm_explainer.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/features/stage_caption.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/features/onboarding.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/features/keyboard_controls.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/journey_feed.js') }}"></script>
+
+<!-- Journey-specific scripts go here -- ONLY this journey's own filters,
+     registries, and its stage-registration file. A future "heart attack
+     detection" journey needing ST-elevation analysis would list ITS OWN
+     filter files here and NOTHING from the ECG journey's block -- the
+     server decides which set gets sent by choosing which template to
+     render, per the actual concern this whole split exists to solve. -->
+{% block journey_scripts %}{% endblock %}
+
+<!-- The journey's own bootstrap -- the one call that actually starts
+     the feed, naming which journey and which API endpoint to use. -->
+{% block journey_bootstrap %}{% endblock %}
+
+</body>
+</html>
