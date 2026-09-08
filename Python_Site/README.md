@@ -881,3 +881,768 @@ This is particularly useful for investigating signal characteristics such as:
 ```
 
 **In short:** the **repository is the core of the implementation**, the **Flask application provides access to it**, `Engine.py` orchestrates the main ECG-processing pipeline, the **DSP modules perform signal analysis**, and the frontend provides interactive access to the results. **ECG Shorts adds a modular, browser-side stage pipeline that progressively transforms and explains real ECG recordings through signal correction, peak detection, HRV analysis and a final verdict.**
+
+
+
+
+Journey flow as on 08-09-2026
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+BROWSER URL HIT TO FIRST SHORT RENDERED
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+┌─ USER TYPES: http://localhost:5000/journey/ecg
+│
+├─ FLASK ROUTE HANDLER
+│  FILE: backend/journey_bp.py
+│  FUNCTION: @journey_bp.route('/journey/<journey_name>')
+│  LINE: 162
+│
+│  STEP 1: Look up recipe
+│  ─────────────────────
+│    • journey_name = "ecg" (from URL)
+│    • CALL: journey_store.get_journey_config("ecg")
+│    • FILE: backend/journey_store.py
+│    • CLASS: JourneyStore (instantiated as Services.Journey_Store)
+│    • BACKEND STORAGE: journeystore.json (on disk, cached in RAM)
+│    •
+│    • RETURNS: package = {
+│        "globalThemes": {...},
+│        "journeyRules": {...},
+│        "uiShell": {...},
+│        "playbackConfig": {...},
+│        "layout": {...},
+│        "stages": [...],  ← journey's stage sequence
+│        "api_endpoint": "/shorts/api/samples"
+│      }
+│
+│  STEP 2: Render template
+│  ──────────────────────
+│    • FILE: templates/shorts/journey_page.html
+│    • CALL: render_template("journey_page.html", 
+│               journey_themes=package["globalThemes"],
+│               journey_rules=package["journeyRules"],
+│               journey_stages=package["stages"],
+│               journey_ui_shell=package["uiShell"],
+│               journey_playback_config=package["playbackConfig"],
+│               journey_layout=package["layout"],
+│               journey_api_endpoint=package["api_endpoint"]
+│           )
+│    •
+│    • HTML RECEIVES (as inline <script> variables):
+│      const journeyJson = {
+│        globalThemes: {activeTheme: "Clinical", themes: [...]},
+│        journeyRules: {allowStageNavigation: true, autoAdvance: true, preloadNextStage: true},
+│        uiShell: {showProgressBar: true, ...},
+│        playbackConfig: {isPaused: false},
+│        layout: {title: "bottom", description: "bottom", plot: "center", caption: "bottom"},
+│        stages: [
+│          {
+│            stageId: "ecg_stage_1",
+│            dataSource: {mode: "HTTP_REST"},
+│            dspEngine: {algorithm: "pan_tompkins", invertSignal: false},
+│            renderingEngine: {renderer: "chart_v1"},
+│            uiFillers: {title: "Finding Each Beat", caption: "...", description: "..."},
+│            railControls: [...]
+│          },
+│          {stageId: "ecg_stage_2", ...},
+│        ]
+│      };
+│
+├─ HTML LOADS & EXECUTES
+│  FILE: templates/shorts/journey_page.html
+│  
+│  STEP 3: Load static assets
+│  ──────────────────────────
+│    <link> CSS: static/shorts/shorts_feed.css
+│    <script> src: static/shorts/core/rail_controls.js
+│    <script> src: static/shorts/core/dispatcher.js
+│    <script> src: static/shorts/core/dsp_registry.js
+│    <script> src: static/shorts/core/rendering_registry.js
+│    <script> src: static/shorts/core/shared_signal_utils.js
+│    <script> src: static/shorts/core/journey_interpreter.js
+│    <script> src: static/shorts/core/journey_scroll_feed.js
+│    <script> src: static/shorts/filters/pan_tompkins_filter.js
+│    <script> src: static/shorts/filters/hamilton_tompkins_filter.js
+│    <script> src: static/shorts/filters/db4_filter.js
+│    
+│  STEP 4: Initialize theme
+│  ────────────────────────
+│    FUNCTION: applyCurrentTheme()
+│    FILE: core/rail_controls.js
+│    LINE: ~70
+│    •
+│    • READS: THEMES[themeIndex] (module-level, defaults to 0 = "Clinical")
+│    • SETS CSS variables:
+│      --bg: "#000000"
+│      --grid-color: "rgba(116, 125, 140, 0.18)"
+│      --zero-line-color: "rgba(116, 125, 140, 0.4)"
+│      --ecg-glow-color: "rgba(232, 244, 248, 0.7)"
+│
+│  STEP 5: Start the scroll feed
+│  ────────────────────────────
+│    FUNCTION: startJourneyScrollFeed({
+│      apiEndpoint: "/shorts/api/samples",
+│      journeyJson: journeyJson,
+│      feedContainer: document.getElementById("feed")
+│    })
+│    FILE: core/journey_scroll_feed.js
+│    LINE: 32
+│    •
+│    • SETUP: IntersectionObserver to detect when cards enter viewport
+│    • PAGINATION: offset=0, limit=PAGE_SIZE (20)
+│    • FIRST FETCH: /shorts/api/samples?limit=20&offset=0
+│    •
+│    • RETURNS: array of sample objects:
+│      [
+│        {sampleId: "ecg_001", data: {...}},
+│        {sampleId: "ecg_002", data: {...}},
+│        ...
+│      ]
+│
+├─ BUILD FIRST CARD
+│  FUNCTION: buildCard(sample)
+│  FILE: core/journey_scroll_feed.js
+│  LINE: ~60
+│  •
+│  • CREATES DOM structure:
+│    <div class="journey-card">
+│      <div class="layout-zone" data-zone="bottom">
+│        <div class="stage-title"></div>
+│        <div class="stage-caption"></div>
+│        <div class="stage-description"></div>
+│      </div>
+│      <div class="layout-zone" data-zone="center">
+│        <div class="chart"></div>
+│      </div>
+│      <div class="stage-rail"></div>
+│      <div class="stage-bar"></div>
+│    </div>
+│
+│  STEP 6: Interpret journey (create state machine)
+│  ────────────────────────────────────────────────
+│    FUNCTION: interpretJourney(
+│      journeyJson,
+│      sampleId="ecg_001",
+│      chartContainer,
+│      railContainer,
+│      titleEl,
+│      captionEl,
+│      progressBarEl,
+│      descriptionEl
+│    )
+│    FILE: core/journey_interpreter.js
+│    LINE: 77
+│    •
+│    • CREATES: instance-level state
+│      • currentStageIndex = 0
+│      • isPaused = false
+│      • dspOutputCache = Map()
+│      • stageOutputs = {}
+│      • globalSpeedIndex (module-level, shared across ALL cards)
+│      • GLOBAL_SPEED_OPTIONS = [0.5, 1.0, 1.5, 2.0]
+│      •
+│    • RETURNS: controller object {
+│        start: async () → loads & renders Stage 0,
+│        next: () → goToStage(1),
+│        prev: () → goToStage(0),
+│        togglePause: () → pause/resume,
+│        restart: () → goToStage(currentStageIndex),
+│        cycleSpeed: () → speed++,
+│        cycleTheme: () → theme++,
+│        getSpeed: () → GLOBAL_SPEED_OPTIONS[globalSpeedIndex]
+│      }
+│
+│  STEP 7: Build rail controls
+│  ───────────────────────────
+│    FUNCTION: (inside interpretJourney)
+│    FILE: core/journey_interpreter.js
+│    LINE: ~290
+│    •
+│    • FOR EACH rail control in journeyJson.stages[0].railControls:
+│      •
+│      • Creates <button> for:
+│        - "Invert" (icon: flip arrows)
+│        - "Algorithm" (icon: cycle/refresh)
+│        - "Speed" (icon: N chevrons, dynamic)
+│        - "Theme" (icon: half-circle)
+│      •
+│      • ON CLICK:
+│        dispatch(
+│          {target: "journey", method: "cycleSpeed", payload: {}},
+│          {journey, dspEngine, renderingEngine}
+│        )
+│        FILE: core/dispatcher.js
+│        LINE: 10
+│        • CALL: journey.cycleSpeed()
+│        • CALL: runAndRender() (re-render current stage with new speed)
+│
+│  STEP 8: Load & render Stage 0
+│  ─────────────────────────────
+│    FUNCTION: buildStage(0)
+│    FILE: core/journey_interpreter.js
+│    LINE: ~246
+│    •
+│    • GET: stageJson = journeyJson.stages[0]
+│      {
+│        stageId: "ecg_stage_1",
+│        dataSource: {mode: "HTTP_REST"},
+│        dspEngine: {algorithm: "pan_tompkins", invertSignal: false},
+│        renderingEngine: {renderer: "chart_v1"},
+│        uiFillers: {title: "Finding Each Beat", ...},
+│        baseDurationMs: 3000 (fallback, if not in recipe)
+│      }
+│    •
+│    • CALL: resolveDataSource(stageJson)
+│      FILE: core/journey_interpreter.js
+│      LINE: 195
+│      •
+│      • CHECK: stageJson.dataSource.mode === "HTTP_REST"
+│      • CALL: fetchSignal(sampleId="ecg_001")
+│        FILE: core/shared_signal_utils.js
+│        LINE: 42
+│        •
+│        • FETCH: /shorts/api/sample/ecg_001/raw
+│        • RESPONSE: {
+│            signal: [0.001, 0.002, -0.001, ...],  ← actual ECG samples
+│            fs: 500  ← sample rate in Hz
+│          }
+│        •
+│        • CACHE: fetchedSignalCache.set("ecg_001", result)
+│        • RETURN: {signal: [...], fs: 500}
+│      •
+│      • TRANSFORM: {
+│          t: [0/500, 1/500, 2/500, ...],  ← time in seconds
+│          y: [0.001, 0.002, -0.001, ...],  ← signal
+│          fs: 500
+│        }
+│    •
+│    • CALL: createDspEngine(stageJson.dspEngine)
+│      FILE: core/dsp_registry.js
+│      LINE: 95
+│      •
+│      • RETURNS: {
+│          process: (data) → runs Pan-Tompkins peak detection
+│          setParameter: (key, value) → toggle invert, etc.
+│          getActiveAlgorithm: () → "pan_tompkins"
+│          switchAlgorithm: (name) → switch to hamilton_tompkins
+│        }
+│    •
+│    • CALL: dspEngine.process({t, y, fs})
+│      FILE: core/dsp_registry.js (delegates to filters/pan_tompkins_filter.js)
+│      •
+│      • RUNS: Pan-Tompkins peak detection
+│        INPUT: y = [0.001, 0.002, -0.001, ...]
+│        OUTPUT: {
+│          finalOutput: {
+│            peaks: [12, 45, 78, ...],  ← indices of detected peaks
+│            filtered_signal: [...]
+│          }
+│        }
+│    •
+│    • CACHE: dspOutputCache.set(0, {dspOutput, data})
+│    •
+│    • SET TEXT CONTENT:
+│      titleEl.textContent = "Finding Each Beat"
+│      captionEl.textContent = "Peaks are the topmost points..."
+│      descriptionEl.textContent = "Uses whichever algorithm..."
+│    •
+│    • CALL: createRenderingEngine(stageJson.renderingEngine)
+│      FILE: core/rendering_registry.js
+│      LINE: 158
+│      •
+│      • RETURNS: {
+│          render: (container, dspOutput, sampleId, fs, durationMs) → Plotly chart
+│          applyTheme: (theme) → theme-specific colors
+│        }
+│    •
+│    • CALL: renderingEngine.render(
+│        chartContainer,
+│        dspOutput,
+│        sampleId="ecg_001",
+│        fs=500,
+│        durationMs=5000 (actualDuration = baseDurationMs / speed)
+│      )
+│      FILE: core/rendering_registry.js
+│      •
+│      • CALL: renderWaveformSweep(
+│          container,
+│          sampleId="ecg_001",
+│          totalDurationMs=5000,
+│          t=[0, 0.002, 0.004, ...],
+│          y=[0.001, 0.002, -0.001, ...],
+│          fs=500
+│        )
+│        FILE: core/shared_signal_utils.js
+│        LINE: 231
+│        •
+│        • CALCULATE: yMin/yMax for axis scaling
+│        • CALL: buildChartLayout(yMin, yMax, [t[0], t[0]+5])
+│          FILE: core/shared_signal_utils.js
+│          LINE: 88
+│          •
+│          • CALL: niceStep(yRange, 4)
+│            FILE: core/shared_signal_utils.js
+│            LINE: 75
+│            •
+│            • RETURNS: nice round grid step (0.1, 0.2, 0.5, 1, 2, ...)
+│          •
+│          • RETURNS: Plotly layout object {
+│              xaxis: {title: "Time (s)", range: [...], tickfont: {...}},
+│              yaxis: {title: "ECG (mV)", ...},
+│              paper_bgcolor: "transparent",
+│              plot_bgcolor: "transparent",
+│              annotations: [{text: "□ = 1s / 0.1mV", ...}]
+│            }
+│        •
+│        • CALL: Plotly.newPlot(
+│            container,
+│            [{x: [t[0]], y: [y[0]], mode: "lines", line: {...}}],
+│            layout,
+│            {staticPlot: true, responsive: true}
+│          )
+│          • RENDERS: Empty plot with just the first point
+│        •
+│        • CALL: startSweepLoop(
+│            sampleId="ecg_001",
+│            totalDurationMs=5000,
+│            drawAtElapsed,  ← callback
+│            startElapsedMs=0
+│          )
+│          FILE: core/shared_signal_utils.js
+│          LINE: 148
+│          •
+│          • SETUP: activeSweepControl.set("ecg_001", {...})
+│          • SCHEDULE: requestAnimationFrame(tick)
+│          •
+│          • LOOP:
+│            • TICK every ~16.67ms (60fps browser cadence)
+│            • THROTTLE: only call drawFn every 33ms (~30fps, avoiding jank)
+│            • UPDATE: control.lastElapsedMs = elapsed
+│            • CALL: drawAtElapsed(elapsed)
+│              •
+│              • CALCULATE: which samples to show (time-window sweep)
+│              • CALL: sampleAligned(startIdx, endIdx)
+│                FILE: core/shared_signal_utils.js
+│                LINE: 219
+│                •
+│                • RETURNS: downsampled [x, y] slice for plotting
+│              •
+│              • CALL: Plotly.update(
+│                  container,
+│                  {x: [dsX], y: [dsY]},  ← streaming data
+│                  {"xaxis.range": [...]}  ← scroll window
+│                )
+│              •
+│              • UPDATE progress bar fill animation
+│              •
+│            • WHEN elapsed >= totalDurationMs:
+│              • STOP loop
+│              • AUTO-ADVANCE to Stage 1 (if autoAdvance=true)
+│
+│  STEP 9: Apply CSS & show card
+│  ──────────────────────────────
+│    FILE: shorts_feed.css + journey_page.html inline styles
+│    •
+│    • Card renders at 100vh height (full screen)
+│    • Plot fills flex: 1 (remaining space)
+│    • Text at bottom (title, caption, description, zone="bottom")
+│    • Scroll snap: scroll-snap-align: start
+│    • Progress bar: animates from 0-100% over baseDurationMs
+│    • Opacity: 1 (was stuck at 0 in old system, fixed)
+│    • Font: Roboto, left-aligned, bold title, regular description
+│
+└─ CARD VISIBLE, SWEEP ANIMATION RUNNING
+   User sees: ECG waveform sweeping left→right, peaks marked, text at bottom
+   Audio: sweep loop runs for 5 seconds at 1.0x speed
+   User can: pause/resume, click Speed/Algorithm/Invert/Theme, tap zones to navigate
+
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+USER SCROLLS DOWN (swipes up on mobile)
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+┌─ SCROLL EVENT
+│  FILE: core/journey_scroll_feed.js
+│  LISTENER: IntersectionObserver (set up at line ~110)
+│
+│  STEP 1: Detect card entering viewport
+│  ─────────────────────────────────────
+│    • OBSERVE: every .journey-card's visibility
+│    • TRIGGER: when a card's visibility ≥ 50%
+│    • GET: sample object for that card
+│      {sampleId: "ecg_002", data: {...}}
+│
+│  STEP 2: Lazy-start journey for this card
+│  ─────────────────────────────────────────
+│    • CALL: journey.start() (the controller returned from interpretJourney)
+│    • EXECUTES: buildStage(0) for Stage 0 of this journey
+│    • SAME FLOW AS ABOVE (Steps 7-9)
+│    •
+│    • NEW sampleId="ecg_002" (from pagination API)
+│    • All else identical: Stage 0, ECG data, Pan-Tompkins, same rendering
+│
+│  STEP 3: Check if pagination needed
+│  ──────────────────────────────────
+│    • CONDITION: if (loadedCards.length < threshold)
+│    • CALL: FETCH /shorts/api/samples?limit=20&offset=20
+│    • RETURNS: next 20 samples
+│    • APPEND: to DOM (cards 21-40)
+│    •
+│    • ALL NEW CARDS:
+│      • buildCard() for each
+│      • interpretJourney() for each (lazy, not yet started)
+│      • IntersectionObserver watches them
+│      • When user scrolls to each, journey.start() fires
+│
+├─ ACTUAL DATA FLOW (What's really moving):
+│  ───────────────────────────────────────
+│
+│  Step A: Browser GET /shorts/api/samples?limit=20&offset=0
+│  ┌─────────────────────────────────────────────────────────────────┐
+│  │ (HAPPENS INSIDE journey_scroll_feed.js)                         │
+│  │                                                                   │
+│  │ NETWORK REQUEST: GET /shorts/api/samples?limit=20&offset=0      │
+│  │ (This endpoint is NOT in the 14-file system; it lives elsewhere  │
+│  │  in the broader Flask app. It queries the ECG database/files.)   │
+│  │                                                                   │
+│  │ RESPONSE (JSON):                                                 │
+│  │ [                                                                │
+│  │   {                                                              │
+│  │     "sampleId": "ecg_001",                                       │
+│  │     "metadata": {"recordingName": "Patient A", ...}              │
+│  │   },                                                             │
+│  │   {                                                              │
+│  │     "sampleId": "ecg_002",                                       │
+│  │     "metadata": {"recordingName": "Patient B", ...}              │
+│  │   },                                                             │
+│  │   ...                                                            │
+│  │ ]                                                                │
+│  │                                                                   │
+│  │ These sampleIds are KEYS. The actual data comes later, on-demand.
+│  └─────────────────────────────────────────────────────────────────┘
+│
+│  Step B: When card enters viewport & journey.start() is called
+│  ┌─────────────────────────────────────────────────────────────────┐
+│  │ (HAPPENS INSIDE buildStage → resolveDataSource)                 │
+│  │                                                                   │
+│  │ NETWORK REQUEST: GET /shorts/api/sample/ecg_001/raw             │
+│  │ (Different endpoint! Fetches the ACTUAL signal data for this ID.)
+│  │                                                                   │
+│  │ RESPONSE (JSON):                                                 │
+│  │ {                                                                │
+│  │   "signal": [                                                    │
+│  │     0.00123,                  ← sample 0 (time 0.000s)           │
+│  │     0.00145,                  ← sample 1 (time 0.002s)           │
+│  │     0.00089,                  ← sample 2 (time 0.004s)           │
+│  │     -0.00067,                 ← sample 3 (time 0.006s)           │
+│  │     ...                                                          │
+│  │     0.00234,                  ← sample 2499 (time 4.998s)        │
+│  │   ],                                                             │
+│  │   "fs": 500                   ← sample rate: 500 Hz = 2ms/sample│
+│  │ }                                                                │
+│  │                                                                   │
+│  │ PARSING (in fetchSignal):                                        │
+│  │   const raw = {signal: [...], fs: 500};                          │
+│  │   return {                                                       │
+│  │     t: [0, 0.002, 0.004, 0.006, ..., 4.998],  ← time vector     │
+│  │     y: [0.00123, 0.00145, 0.00089, ..., 0.00234],  ← signal     │
+│  │     fs: 500                                                      │
+│  │   }                                                              │
+│  └─────────────────────────────────────────────────────────────────┘
+│
+│  Step C: DSP Processing
+│  ┌─────────────────────────────────────────────────────────────────┐
+│  │ INPUT to dspEngine.process():                                    │
+│  │   {t: [...2500 samples...], y: [...], fs: 500}                   │
+│  │                                                                   │
+│  │ PROCESSING (Pan-Tompkins algorithm):                             │
+│  │   FILE: filters/pan_tompkins_filter.js                           │
+│  │   • Bandpass filter (5-15 Hz) → removes low-freq drift, noise    │
+│  │   • Derivative → peak sharpening                                 │
+│  │   • Squared signal → emphasize peaks                             │
+│  │   • Moving window integration → detect peak regions              │
+│  │   • Adaptive threshold → find exact peak indices                 │
+│  │                                                                   │
+│  │ OUTPUT:                                                          │
+│  │   {                                                              │
+│  │     finalOutput: {                                               │
+│  │       peaks: [123, 245, 367, 489, ...],  ← sample indices        │
+│  │       filtered_signal: [0.0001, 0.0002, ...],  ← processed data  │
+│  │       rr_intervals: [122, 122, 122, 120, ...],  ← beat intervals │
+│  │       hr_estimate: [74, 74, 74, 75, ...]  ← heart rate bpm       │
+│  │     }                                                            │
+│  │   }                                                              │
+│  │                                                                   │
+│  │ CACHE:                                                           │
+│  │   dspOutputCache.set(0, {dspOutput, data})                       │
+│  └─────────────────────────────────────────────────────────────────┘
+│
+│  Step D: Rendering
+│  ┌─────────────────────────────────────────────────────────────────┐
+│  │ INPUT to renderWaveformSweep():                                  │
+│  │   container: <div class="chart">                                 │
+│  │   sampleId: "ecg_001"                                            │
+│  │   totalDurationMs: 5000  (3000ms base / 1.0x speed)              │
+│  │   t: [0, 0.002, 0.004, ...]  ← time vector                       │
+│  │   y: [0.00123, 0.00145, ...]  ← signal                           │
+│  │   fs: 500                                                        │
+│  │                                                                   │
+│  │ PLOTLY CHART (SVG):                                              │
+│  │   Plotly.newPlot():                                              │
+│  │     • Creates <svg> with axes, grid                              │
+│  │     • Grid at 1-second intervals (per niceStep)                  │
+│  │     • Y-axis mV, X-axis seconds                                  │
+│  │                                                                   │
+│  │ SWEEP ANIMATION (requestAnimationFrame loop):                    │
+│  │   • Frame 0 (t=0ms): shows sample[0]                             │
+│  │   • Frame 1 (t=~33ms): shows samples[0..33] (throttled to 30fps) │
+│  │   • Frame 2 (t=~66ms): shows samples[0..66]                      │
+│  │   • ...continues showing increasingly wider window...            │
+│  │   • Frame ~150 (t=5000ms): shows all samples[0..2500]            │
+│  │     → animation completes                                        │
+│  │     → auto-advance to Stage 1 (if enabled)                       │
+│  │                                                                   │
+│  │ PEAK MARKERS (overlay on sweep):                                 │
+│  │   • Plotly addTraces() adds a scatter layer                      │
+│  │   • Points at (t[peaks[i]], y[peaks[i]]) colored differently      │
+│  │   • Also updates in real-time with sweep                         │
+│  │                                                                   │
+│  │ PROGRESS BAR (CSS animation):                                    │
+│  │   FILE: shorts_feed.css + journey_page.html                      │
+│  │   • <div class="stage-bar"><div class="fill"></div></div>       │
+│  │   • fill animates width 0% → 100% over 5000ms (or speed-scaled)  │
+│  │   • @keyframes: width 0% { 0 } 100% { 100% }                    │
+│  │   • animation-duration: 5000ms (updated per stage + speed)       │
+│  │                                                                   │
+│  │ TEXT:                                                            │
+│  │   • titleEl.textContent = "Finding Each Beat" (bold, Roboto 700) │
+│  │   • captionEl.textContent = "Peaks are..." (regular, Roboto 400)│
+│  │   • descriptionEl.textContent = "Uses whichever..." (Roboto 400) │
+│  │   • All positioned in layout-zone[data-zone="bottom"]            │
+│  │                                                                   │
+│  │ STYLING:                                                         │
+│  │   • Background: var(--bg) = #000000 (set by applyCurrentTheme()) │
+│  │   • Glow: filter drop-shadow(0 0 3px var(--ecg-glow-color))      │
+│  │   • Grid color: var(--grid-color) (read by buildChartLayout)     │
+│  └─────────────────────────────────────────────────────────────────┘
+│
+│  Step E: User interactions during sweep
+│  ┌─────────────────────────────────────────────────────────────────┐
+│  │ TAP SPEED BUTTON:                                                │
+│  │   • Click listener: dispatch({target: "journey", method: ...})   │
+│  │   • CALL: journey.cycleSpeed()                                   │
+│  │   • globalSpeedIndex++  (module-level, GLOBAL across all cards!) │
+│  │   • newSpeed = GLOBAL_SPEED_OPTIONS[globalSpeedIndex]            │
+│  │   • CALL: runAndRender()                                         │
+│  │     • CALL: cancelSweepAnimation(sampleId)                       │
+│  │     • CALL: renderingEngine.render(..., newDurationMs)           │
+│  │       (where newDurationMs = baseDurationMs / newSpeed)          │
+│  │     • CALL: startSweepLoop(..., newDurationMs, ...)              │
+│  │       → restart sweep at faster/slower rate                      │
+│  │   • Button icon updates: buildSpeedIcon(newSpeed)                │
+│  │     • 0.5x = 1 chevron, 1.0x = 2, 1.5x = 3, 2.0x = 4 chevrons   │
+│  │                                                                   │
+│  │ TAP PAUSE (center of card):                                      │
+│  │   • CALL: journey.togglePause()                                  │
+│  │   • isPaused = !isPaused                                         │
+│  │   IF now paused:                                                 │
+│  │     • CALL: cancelSweepAnimation()  → stops rAF loop             │
+│  │     • Store elapsed time in activeSweepControl                   │
+│  │     • AUTO-ADVANCE TIMER: cleared                                │
+│  │     • PROGRESS BAR: animationPlayState = "paused"                │
+│  │   IF now resuming:                                               │
+│  │     • CALL: startSweepLoop(..., elapsed)  → resume from position │
+│  │     • AUTO-ADVANCE TIMER: restarted (remaining duration)         │
+│  │     • PROGRESS BAR: animationPlayState = "running"               │
+│  │                                                                   │
+│  │ TAP LEFT (restart vs prev):                                      │
+│  │   • DOUBLE_TAP_THRESHOLD = 350ms                                 │
+│  │   • First tap (or slow): journey.restart()                       │
+│  │     • CALL: goToStage(currentStageIndex)  → re-render same stage │
+│  │     • Clears isPaused = false                                    │
+│  │     • Rebuilds progress bar from 0%                              │
+│  │   • Second tap within 350ms: journey.prev()                      │
+│  │     • CALL: goToStage(currentStageIndex - 1)  → actually go back  │
+│  │                                                                   │
+│  │ TAP RIGHT (advance):                                             │
+│  │   • CALL: journey.next()  → goToStage(currentStageIndex + 1)     │
+│  │   • If still more stages, render Stage 1, Stage 2, etc.         │
+│  │   • If past last stage, stay put (onJourneyComplete not wired)   │
+│  │                                                                   │
+│  │ TAP ALGORITHM BUTTON:                                            │
+│  │   • dispatch({target: "dspEngine", method: "switchAlgorithm"})   │
+│  │   • CALL: dspEngine.switchAlgorithm("hamilton_tompkins")         │
+│  │   • CALL: runAndRender()                                         │
+│  │     • Reprocess current stage's data with new algorithm          │
+│  │     • Restart sweep with new peaks                               │
+│  │     • Also resets isPaused = false (fixed bug)                   │
+│  │                                                                   │
+│  │ TAP THEME BUTTON:                                                │
+│  │   • dispatch({target: "journey", method: "cycleTheme"})          │
+│  │   • CALL: cycleTheme()  (in rail_controls.js)                    │
+│  │   • themeIndex++  (module-level)                                 │
+│  │   • CALL: applyThemeVariables(THEMES[themeIndex])                │
+│  │   • Sets CSS variables (--bg, --grid-color, --ecg-glow-color)    │
+│  │   • CALL: runAndRender()                                         │
+│  │     • Plotly re-renders with new colors (read from CSS vars)     │
+│  │     • Glow filter updates (reads --ecg-glow-color)               │
+│  │   • Button icon updates (theme label text)                       │
+│  └─────────────────────────────────────────────────────────────────┘
+
+└─ NEXT CARD LOADS & ANIMATES SEAMLESSLY
+   Repeat from Step 2 for the new sampleId
+
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+KEY DATA STRUCTURES
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+journeyJson (recipe, from backend/journey_bp.py, stored in backend/journey_store.py's journeystore.json)
+├─ globalThemes: {activeTheme, themes: [{label, bg, traceColor, gridColor, ...}]}
+├─ journeyRules: {allowStageNavigation, autoAdvance, preloadNextStage}
+├─ uiShell: {showProgressBar, progressBar: {position, activeColor, inactiveColor}}
+├─ playbackConfig: {isPaused}
+├─ layout: {title, description, plot, caption, railControls}  ← where elements go
+└─ stages: [
+    {
+      stageId,
+      dataSource: {mode: "HTTP_REST" | "PREVIOUS_STAGE_PIPELINE"},
+      dspEngine: {algorithm: "pan_tompkins" | "hamilton_tompkins", invertSignal},
+      renderingEngine: {renderer: "chart_v1" | "scatter_density" | "dwt_comparison_view"},
+      uiFillers: {title, caption, description},
+      railControls: [{ui: {label, icon}, action: {target, method, payload}}],
+      baseDurationMs: (optional, fallback to STAGE_DURATION_MS=5000),
+      stageOutput: {exportKey, exportedFields: [...]}  ← for pipeline stages
+    },
+    ...
+  ]
+
+THEME (from rail_controls.js, module-level)
+├─ label: "Clinical" | "Vivid" | "Experimental"
+├─ bg: "#000000" | "#0d0a14" | "#0a0e14"
+├─ traceColor: "#e8f4f8" | "#2dd4bf" | "#d9a441"
+├─ gridColor: "rgba(...)"
+└─ zeroLineColor: "rgba(...)"
+
+DSP OUTPUT (after dspEngine.process())
+├─ finalOutput: {
+│   peaks: [123, 245, 367, ...],  ← indices in the signal array
+│   filtered_signal: [...],
+│   (algorithm-specific: rr_intervals, hr_estimate, sd1, sd2, ...)
+│ }
+└─ (for PREVIOUS_STAGE_PIPELINE: exported fields matching stageOutput.exportedFields)
+
+SIGNAL DATA (from /shorts/api/sample/{sampleId}/raw)
+├─ signal: [0.00123, 0.00145, 0.00089, ...]  ← 2500 samples @ 500Hz = 5 seconds
+└─ fs: 500  ← sample rate in Hz
+
+SWEEP STATE (per card, in activeSweepControl Map)
+├─ sampleId (key)
+└─ {
+    totalDurationMs: 5000,
+    drawFn: (elapsed) → {...},
+    lastElapsedMs: 0  ← updated on every rAF tick, not throttled (pause/resume critical)
+  }
+
+JOURNEY CONTROLLER (returned from interpretJourney)
+├─ currentStageIndex: 0
+├─ isPaused: false
+├─ dspOutputCache: Map(0 → {dspOutput, data})
+├─ stageOutputs: {exportKey → exported fields}  ← for PREVIOUS_STAGE_PIPELINE
+└─ Methods: {start(), next(), prev(), goToStage(), togglePause(), restart(), cycleSpeed(), cycleTheme(), getSpeed(), getActiveTheme()}
+
+CSS VARIABLES (set by applyCurrentTheme, read by buildChartLayout and glow filter)
+├─ --bg: "#000000" (Plotly paper isn't; this is the card background)
+├─ --grid-color: "rgba(116, 125, 140, 0.18)"
+├─ --zero-line-color: "rgba(116, 125, 140, 0.4)"
+└─ --ecg-glow-color: "rgba(232, 244, 248, 0.7)"  ← updates per theme
+
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+FILES INVOLVED (in order of execution)
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+BACKEND (Python)
+  backend/journey_bp.py                    ← Flask route handler, renders template, passes journeyJson
+  backend/journey_store.py                 ← JourneyStore class, recipe registry, disk persistence (journeystore.json)
+
+FRONTEND (HTML/CSS/JS)
+  templates/shorts/journey_page.html       ← HTML structure, inline <script> with journeyJson, CSS variables, calls startJourneyScrollFeed
+
+  STATIC/CSS
+    static/shorts/shorts_feed.css          ← card layout, progress bar, rail buttons, animations, opacity fix
+
+  STATIC/JS (executed in load order)
+    static/shorts/core/rail_controls.js               ← THEMES array, cycleTheme(), getActiveThemeLabel(), applyCurrentTheme(), hexToRgbTriplet()
+    static/shorts/core/dispatcher.js                  ← dispatch() function, routes actions to targets
+    static/shorts/core/dsp_registry.js                ← createDspEngine(), delegates to filters
+    static/shorts/core/rendering_registry.js          ← createRenderingEngine(), delegates to shared_signal_utils
+    static/shorts/core/shared_signal_utils.js         ← fetchSignal(), niceStep(), buildChartLayout(), startSweepLoop(), cancelSweepAnimation(), makeSampleAligner(), renderWaveformSweep()
+    static/shorts/core/journey_interpreter.js         ← interpretJourney(), buildSpeedIcon(), buildStage(), resolveDataSource(), runAndRender(), rail button setup
+    static/shorts/core/journey_scroll_feed.js         ← startJourneyScrollFeed(), buildCard(), pagination, IntersectionObserver, lazy-start
+
+  STATIC/JS/FILTERS (called by dsp_registry.js on demand)
+    static/shorts/filters/pan_tompkins_filter.js      ← Pan-Tompkins peak detection algorithm
+    static/shorts/filters/hamilton_tompkins_filter.js ← Hamilton-Tompkins peak detection algorithm
+    static/shorts/filters/db4_filter.js               ← Daubechies-4 wavelet transform (for DWT journey)
+
+STORAGE/CONFIG
+  backend/data_cache/journeystore.json     ← persisted recipes, keyed by journey name ("ecg", "dwt")
+  (user's disk, not in repo)
+
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+NETWORK REQUESTS (in rough order of occurrence)
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+1. GET /journey/ecg
+   → Flask route, renders journey_page.html with journeyJson inline
+
+2. GET /shorts/api/samples?limit=20&offset=0
+   → Core pagination API (NOT in 14-file system)
+   ← [{sampleId: "ecg_001", ...}, ...]
+
+3. GET /shorts/api/sample/ecg_001/raw  (when card enters viewport)
+   → Fetch actual ECG signal data
+   ← {signal: [...2500 samples...], fs: 500}
+
+4. GET /shorts/api/samples?limit=20&offset=20  (when user scrolls & threshold hit)
+   → Fetch next batch of sample IDs
+   ← [{sampleId: "ecg_021", ...}, ...]
+
+(Repeats #3 for each card as it enters viewport)
+
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+GLOBAL STATE (shared across ALL cards)
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+In rail_controls.js:
+  • THEMES[]: array of theme objects
+  • themeIndex: 0  ← incremented by cycleTheme(), shared GLOBAL, affects ALL cards on screen
+
+In journey_interpreter.js:
+  • GLOBAL_SPEED_OPTIONS: [0.5, 1.0, 1.5, 2.0]
+  • globalSpeedIndex: 0  ← incremented by cycleSpeed(), shared GLOBAL, affects ALL cards on screen
+
+⚠️  These two globals are INTENTIONALLY shared. Speed/theme changes apply to all visible cards at once.
+
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+INSTANCE STATE (per card, independent)
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+Per journey controller (one per card):
+  • currentStageIndex
+  • isPaused
+  • dspOutputCache
+  • stageOutputs
+
+Per sweep loop (one per card's active animation):
+  • activeSweepControl[sampleId] = {totalDurationMs, drawFn, lastElapsedMs}
+  • sweepAnimationHandles[sampleId] = requestAnimationFrame ID
+
+⚠️  Pausing card A does NOT pause card B. Speed changes card A affects B (global). Theme changes affect ALL.
+
+
+
