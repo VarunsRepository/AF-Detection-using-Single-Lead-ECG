@@ -2,7 +2,7 @@
     "name": "ECG Shorts",
     "short_name": "ECG",
     "description": "ECG signal processing journeys in a Shorts-style feed",
-    "start_url": "/shorts",
+    "start_url": "/journey/ecg",
     "display": "standalone",
     "orientation": "portrait",
     "background_color": "#000000",
