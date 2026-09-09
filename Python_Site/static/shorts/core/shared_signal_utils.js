@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // shared_signal_utils.js
 // Genuinely generic signal-fetching AND charting/sweep-animation utilities
-// -- extracted OUT of stage_renderers.js specifically so they can be reused
+// -- extracted OUT of journeys/ecg/ecg_stage_blocks.js specifically so they can be reused
 // WITHOUT dragging in that file's entire ECG-specific dependency tree
 // (Pan-Tompkins, HRV metrics, both algorithm registries) just to get a
 // handful of utility functions. Two genuinely different concerns
@@ -16,10 +16,10 @@
 // sweep-animation machinery without silently inheriting pacing tuned for
 // an unrelated ECG stage.
 //
-// Depends on rail_controls.js (THEMES, themeIndex, recordingDurationMs)
+// Depends on rail_controls.js (THEMES, themeIndex)
 // for the trace color and Real-speed-mode bookkeeping -- must be loaded
 // before this file. Does NOT depend on stage_engine.js or
-// stage_renderers.js at all.
+// journeys/ecg/ecg_stage_blocks.js at all.
 // ---------------------------------------------------------------------------
 
 const sweepAnimationHandles = new Map(); // sampleId -> requestAnimationFrame handle, for cancellation
@@ -39,21 +39,20 @@ const fetchedSignalCache = new Map(); // sampleId -> { signal, fs }
 
 // Shared by every stage that needs the raw signal -- cache-aware, so only
 // the FIRST stage to touch a given sample ever actually hits the network.
+// GLOBAL endpoint base for fetching raw signal data. Defaults to ECG endpoints.
+// Fitness/other journeys can override this to "/api/fitness/samples" etc.
+let globalSampleEndpointBase = "/shorts/api/sample";
+
 async function fetchSignal(sampleId) {
     if (fetchedSignalCache.has(sampleId)) {
         return fetchedSignalCache.get(sampleId);
     }
     try {
-        const res = await fetch(`/shorts/api/sample/${sampleId}/raw`);
+        const res = await fetch(`${globalSampleEndpointBase}/${sampleId}/raw`);
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
         const payload = await res.json();
         const result = { signal: payload.signal, fs: payload.fs };
         fetchedSignalCache.set(sampleId, result);
-
-        // populated HERE, centrally, regardless of which stage triggers the
-        // first fetch -- needed so "Real" speed mode works correctly even
-        // if a user reaches a later stage before ever viewing Stage 0
-        recordingDurationMs.set(sampleId, Math.round((result.signal.length / result.fs) * 1000));
 
         return result;
     } catch (err) {
@@ -70,7 +69,7 @@ async function fetchSignal(sampleId) {
 // does cost a bit of per-frame tick recomputation -- a deliberate trade-off
 // for legible units over strict monitor-authenticity (real monitors mostly
 // skip numeric axes in favor of a calibration pulse + known sweep speed).
-const AXIS_LABEL_STYLE = { size: 9, color: "#747d8c", family: "IBM Plex Mono, monospace" };
+const AXIS_LABEL_STYLE = { size: 13, color: "#9aa1ab", family: "IBM Plex Mono, monospace" };
 
 // Picks a "nice," round grid step (0.1, 0.2, 0.5, 1, 2, 5, ...times a power
 // of ten) close to `range / targetTicks` -- the same kind of rounding real
@@ -151,6 +150,18 @@ function buildChartLayout(yMin, yMax, initialXRange) {
 // ever passed when resuming from a live pause (see stage_machine.js's
 // togglePause()).
 function startSweepLoop(sampleId, totalDurationMs, drawFn, startElapsedMs = 0) {
+    // Without this, calling startSweepLoop() again for the same sampleId
+    // (e.g. rapidly clicking a rail button several times) does NOT stop
+    // the PREVIOUS call's tick() loop -- each one keeps re-scheduling
+    // itself independently via requestAnimationFrame, since overwriting
+    // sweepAnimationHandles only replaces which handle is TRACKED, not
+    // which ones are actually still pending. Multiple loops end up
+    // running simultaneously, all writing to the same
+    // activeSweepControl entry. This cancels whatever loop was
+    // previously running for this card FIRST, guaranteeing at most one
+    // active loop per card at any time, regardless of call frequency.
+    cancelSweepAnimation(sampleId);
+
     activeSweepControl.set(sampleId, { totalDurationMs, drawFn, lastElapsedMs: startElapsedMs });
 
     if (startElapsedMs >= totalDurationMs) {
@@ -160,11 +171,33 @@ function startSweepLoop(sampleId, totalDurationMs, drawFn, startElapsedMs = 0) {
 
     const startTime = performance.now() - startElapsedMs;
 
+    // ~30fps target for the actual expensive drawFn/Plotly.update() calls
+    // -- NOT the requestAnimationFrame loop's own cadence, which keeps
+    // running at the display's native rate purely to track elapsed time
+    // accurately. Plotly.update() does a real SVG re-render on every call;
+    // if the browser can't sustain that 60 times/second, frames get
+    // dropped unevenly, which looks like judder. A steady, achievable
+    // 30fps for the actual redraw looks smoother than an inconsistent,
+    // stuttering attempt at 60fps.
+    const DRAW_THROTTLE_MS = 33;
+    let lastDrawTime = -Infinity; // guarantees the very first tick always draws immediately, no initial delay
+
     function tick(now) {
         const elapsed = Math.min(now - startTime, totalDurationMs);
         const control = activeSweepControl.get(sampleId);
-        if (control) control.lastElapsedMs = elapsed;
-        drawFn(elapsed);
+        if (control) control.lastElapsedMs = elapsed; // ALWAYS kept accurate regardless of draw throttling below -- pause/resume must never be thrown off by this
+
+        const isFinalFrame = elapsed >= totalDurationMs;
+        if (isFinalFrame || now - lastDrawTime >= DRAW_THROTTLE_MS) {
+            // Call via control.drawFn rather than the closure drawFn --
+            // this allows renderers (e.g. chart_v1) to wrap/replace drawFn
+            // on the control object from outside startSweepLoop, and have
+            // the replacement actually execute. The closure drawFn would
+            // always call the original regardless of any external wrapping.
+            const fn = control ? control.drawFn : drawFn;
+            fn(elapsed);
+            lastDrawTime = now;
+        }
 
         if (elapsed < totalDurationMs) {
             sweepAnimationHandles.set(sampleId, requestAnimationFrame(tick));
@@ -225,7 +258,7 @@ function renderWaveformSweep(container, sampleId, totalDurationMs, t, y, fs) {
     const yMin = Math.min(...y) - 0.1;
     const yMax = Math.max(...y) + 0.1;
 
-    const ECG_WINDOW_SECONDS = 5;
+    const ECG_WINDOW_SECONDS = 3; // was 5 -- 3s shows ~3-4 beats at once rather than 5-6, leading edge moves more slowly. Closer to real diagnostic monitor feel.
     const windowSamples = Math.round(ECG_WINDOW_SECONDS * fs);
 
     const trace = {
