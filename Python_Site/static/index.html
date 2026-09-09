@@ -2552,39 +2552,12 @@ async function updateStackedWaveletChart(
 
                 //***************** TILL THIS POINT WE HAVE SENT THE REQEUST, RECEIVED THE RESPONSE AND CONVERTED THE PAYLOAD INTO JSON *****************
 
-
+ 
 
                 //***************** WE'RE CHECKING THE RUBBER STAMPING STATUS FOR THE CURRENT CONFIGURATION FOR THE CURRENT SIGNAL    *****************
 
-
                 checkRecordStampStatus(payload.record_id, true);
-                //                window.removeEventListener('tuldLockRequested', handleTuldEventTrigger);   // first clearing any stale handlers if present
-
-
-                //                async function handleTuldEventTrigger(e) {
-                //                    // Gather your active checkbox and slider configuration states on the spot
-                //                    const currentScale    = document.getElementById("scale-selector").value;
-                //                    const useFilter       = document.getElementById('toggle-filter').checked;
-                //                    const useCancel       = document.getElementById('toggle-cancel').checked;
-                //                    const orientation     = document.getElementById('orientation-status-badge');
-                //                    const activeRecordId  = document.getElementById('record-selector')
-                //                                
-                //                    // Compile your unique hyphenated signature string
-                //                    const configKey = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${orientation}`;
-                //                                
-                //                    console.log(`📡 [EVENT CAPTURED] Lock request verified for ${activeRecordId}. Launching save...`);
-                //                                
-                //                    // Pass the parameters straight down to the execution script!
-                //                    await executeTuldRubberStamp(activeRecordId, configKey);
-                //                }
-
-                //                // Bind the listener to watch the browser window for the button's event dispatch
-                //                window.addEventListener('tuldLockRequested', handleTuldEventTrigger);
-
-
-
-
-
+  
                 //***************** BELOW THIS POINT, EVERYTHING HAPPENS IN THE BROWSER ON THE CLIENT SIDE  *****************
                 const badge = document.getElementById('orientation-status-badge');
                 if (badge && payload.orientation_status) {
