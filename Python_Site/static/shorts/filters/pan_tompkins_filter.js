@@ -126,3 +126,21 @@ function panTompkinsDetectPeaks(rawY, fs) {
         ],
     };
 }
+
+// Self-register into DSP_ALGORITHMS (defined in dsp_registry.js, which
+// must load before this file). The server (dsp_store.py) only sends this
+// file to the browser if a journey's recipe actually needs it.
+registerDspAlgorithm("pan_tompkins", {
+    process(data, parameters) {
+        const y = parameters.invertSignal ? data.y.map(v => -v) : data.y;
+        const { peakIndices, steps } = panTompkinsDetectPeaks(y, data.fs);
+        const rrIntervalsMs = [];
+        for (let i = 1; i < peakIndices.length; i++) {
+            rrIntervalsMs.push(((peakIndices[i] - peakIndices[i - 1]) / data.fs) * 1000);
+        }
+        return {
+            interimOutputs: steps,
+            finalOutput: { filteredSignal: y, peakIndices, rrIntervalsMs },
+        };
+    },
+});
