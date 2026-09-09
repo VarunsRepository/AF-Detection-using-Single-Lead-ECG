@@ -30,7 +30,7 @@ import threading
 class JourneyStore:
 
     # default constructor to manage initialization
-    def __init__(self, cache_dir: str = "data_cache/JourneyStore"):
+    def __init__(self, cache_dir: str = "data_cache"):
         self.cache_dir = cache_dir
         self.json_path = os.path.join(self.cache_dir, "journeystore.json")
 
@@ -81,21 +81,62 @@ class JourneyStore:
             "name": journey_name,
             "template": config["template"],
             "api_endpoint": config["api_endpoint"],
-            "recipe": config.get("stages"),
+            "globalThemes": config.get("globalThemes"),
+            "journeyRules": config.get("journeyRules"),
+            "stages": config.get("stages"),
+            "uiShell": config.get("uiShell"),
+            "playbackConfig": config.get("playbackConfig"),
+            "layout": config.get("layout"),
         }
 
     def _validate_recipe(self, stages) -> list:
-        """Every stage's dependsOn must reference an EARLIER stage index -- never itself, never a later one, never out of range."""
+        """
+        Validates the CURRENT schema (dataSource/dspEngine/renderingEngine),
+        not the old dependsOn-based one this used to check -- that
+        validation had become a silent no-op, since "dependsOn" doesn't
+        exist in this shape at all, meaning a genuinely broken recipe
+        would never have been caught.
+        """
         errors = []
         if stages is None:
             return errors
 
+        stage_ids_seen = set()
+        export_keys_available = {}  # exportKey -> set of exportedFields, populated as we walk forward
+
         for idx, stage in enumerate(stages):
-            depends_on = stage.get("dependsOn")
-            if depends_on is None:
+            stage_id = stage.get("stageId")
+            if not stage_id:
+                errors.append(f"stage {idx} is missing \"stageId\"")
                 continue
-            if not isinstance(depends_on, int) or depends_on < 0 or depends_on >= idx:
-                errors.append(f"stage {idx} (\"{stage.get('block')}\") has invalid dependsOn={depends_on!r}")
+            stage_ids_seen.add(stage_id)
+
+            for required in ("dataSource", "dspEngine", "renderingEngine", "uiFillers"):
+                if required not in stage:
+                    errors.append(f"stage \"{stage_id}\" is missing \"{required}\"")
+
+            ds = stage.get("dataSource", {})
+            mode = ds.get("mode")
+
+            if mode == "PREVIOUS_STAGE_PIPELINE":
+                ref_stage_id = ds.get("stageId")
+                ref_output_key = ds.get("outputKey")
+                ref_field = ds.get("consumedField")
+
+                if ref_stage_id not in stage_ids_seen:
+                    errors.append(f"stage \"{stage_id}\" references stage \"{ref_stage_id}\", which doesn't exist or comes AFTER it (forward reference)")
+                elif ref_output_key not in export_keys_available:
+                    errors.append(f"stage \"{stage_id}\" references outputKey \"{ref_output_key}\", which no earlier stage exports")
+                elif ref_field not in export_keys_available.get(ref_output_key, set()):
+                    errors.append(f"stage \"{stage_id}\" references field \"{ref_field}\", which \"{ref_output_key}\" doesn't export")
+
+            elif mode not in ("HTTP_REST",):
+                errors.append(f"stage \"{stage_id}\" has an unrecognized dataSource.mode \"{mode}\"")
+
+            # Track this stage's own exports for LATER stages to reference
+            stage_output = stage.get("stageOutput")
+            if stage_output:
+                export_keys_available[stage_output["exportKey"]] = set(stage_output.get("exportedFields", []))
 
         return errors
 
