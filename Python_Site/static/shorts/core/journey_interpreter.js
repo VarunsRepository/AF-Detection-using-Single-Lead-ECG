@@ -42,6 +42,7 @@ const RAIL_ICONS = {
     icon_flip_vertical: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6M9 6l3-3 3 3"/><path d="M12 21v-6M9 18l3 3 3-3"/></svg>`,
     icon_theme: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg>`,
     icon_cycle: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
+    icon_renderer: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>`,
 };
 
 // Speed's icon is DYNAMIC, not static -- the number of stacked chevrons
@@ -284,6 +285,16 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 chartContainer.innerHTML = `<p style="color:#ff4d4d; padding:20px;">This algorithm isn't implemented yet (check console for details).</p>`;
                 return;
             }
+            // Clear container before rendering -- without this, switching
+            // renderers via the rail button leaves the previous renderer's
+            // output visible underneath the new one (two plots on screen).
+            // Each renderer also clears internally (Plotly.purge, innerHTML="")
+            // but only when it recognises its own previous state -- a Canvas
+            // renderer switching to Plotly won't find _fullLayout, so Plotly
+            // wouldn't purge the stale Canvas element.
+            if (chartContainer._fullLayout) Plotly.purge(chartContainer);
+            else chartContainer.innerHTML = "";
+
             renderingEngine.render(chartContainer, dspOutput, sampleId, data.fs, actualDuration);
 
             if (stageJson.stageOutput) {
@@ -342,23 +353,26 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 runAndRender();
                 refreshButtonContent();
 
-                // A rail button click restarts the sweep FRESH (via
-                // runAndRender -> renderingEngine.render), regardless of
-                // pause state -- renderingEngine.render() has no idea
-                // isPaused even exists. Without this, isPaused silently
-                // drifts out of sync with reality: the flag says "paused"
-                // while the sweep is actually running again underneath,
-                // breaking the NEXT pause/resume tap. The progress bar
-                // fill and auto-advance timer need the same "actually
-                // playing again" restart too, or THEY drift out of sync
-                // as well.
+                // Both the progress bar AND the auto-advance timer must
+                // restart unconditionally when any rail button is clicked --
+                // runAndRender() restarts the sweep from 0, so the timer
+                // that was set during the ORIGINAL buildStage() call is now
+                // stale. Without this, the original timer fires at the
+                // original deadline regardless of how many times the renderer
+                // or algorithm was switched, silently advancing to the next
+                // stage at the wrong time.
+                if (autoAdvanceTimer) {
+                    clearTimeout(autoAdvanceTimer);
+                    autoAdvanceTimer = null;
+                }
+                updateProgressBar(currentStageIndex, actualDuration);
+                if (!isPaused && journeyJson.journeyRules.autoAdvance && currentStageIndex < journeyJson.stages.length - 1) {
+                    autoAdvanceEndTime = performance.now() + actualDuration;
+                    autoAdvanceTimer = setTimeout(() => goToStage(currentStageIndex + 1), actualDuration);
+                }
+
                 if (isPaused) {
                     isPaused = false;
-                    updateProgressBar(currentStageIndex, actualDuration);
-                    if (journeyJson.journeyRules.autoAdvance && currentStageIndex < journeyJson.stages.length - 1) {
-                        autoAdvanceEndTime = performance.now() + actualDuration;
-                        autoAdvanceTimer = setTimeout(() => goToStage(currentStageIndex + 1), actualDuration);
-                    }
                 }
             });
             railContainer.appendChild(btn);

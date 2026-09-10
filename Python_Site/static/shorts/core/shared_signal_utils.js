@@ -179,7 +179,10 @@ function startSweepLoop(sampleId, totalDurationMs, drawFn, startElapsedMs = 0) {
     // dropped unevenly, which looks like judder. A steady, achievable
     // 30fps for the actual redraw looks smoother than an inconsistent,
     // stuttering attempt at 60fps.
-    const DRAW_THROTTLE_MS = 33;
+    // Hoisted to module level so the dev FPS toggle can modify at runtime.
+    // Without this, each startSweepLoop() call captures its own local
+    // copy and the toggle would have no effect on already-running loops.
+    const DRAW_THROTTLE_MS = globalThis._DEV_DRAW_THROTTLE_MS ?? 33;
     let lastDrawTime = -Infinity; // guarantees the very first tick always draws immediately, no initial delay
 
     function tick(now) {
@@ -188,7 +191,7 @@ function startSweepLoop(sampleId, totalDurationMs, drawFn, startElapsedMs = 0) {
         if (control) control.lastElapsedMs = elapsed; // ALWAYS kept accurate regardless of draw throttling below -- pause/resume must never be thrown off by this
 
         const isFinalFrame = elapsed >= totalDurationMs;
-        if (isFinalFrame || now - lastDrawTime >= DRAW_THROTTLE_MS) {
+        if (isFinalFrame || DRAW_THROTTLE_MS === 0 || now - lastDrawTime >= DRAW_THROTTLE_MS) {
             // Call via control.drawFn rather than the closure drawFn --
             // this allows renderers (e.g. chart_v1) to wrap/replace drawFn
             // on the control object from outside startSweepLoop, and have
@@ -270,7 +273,7 @@ function renderWaveformSweep(container, sampleId, totalDurationMs, t, y, fs) {
     const layout = buildChartLayout(yMin, yMax, [t[0], t[0] + ECG_WINDOW_SECONDS]);
     Plotly.newPlot(container, [trace], layout, { staticPlot: true, responsive: true });
 
-    const MAX_POINTS_PER_UPDATE = 200;
+    const MAX_POINTS_PER_UPDATE = globalThis._DEV_MAX_POINTS ?? 500;
     const DOWNSAMPLE_STRIDE = Math.max(1, Math.ceil(windowSamples / MAX_POINTS_PER_UPDATE));
     const sampleAligned = makeSampleAligner(t, y, DOWNSAMPLE_STRIDE);
 
