@@ -4,7 +4,7 @@ from Services.dsp_store import DspAlgorithmStore
 from Services.rendering_store import RenderingStore
 
 journey_store = JourneyStore(cache_dir="data_cache/JourneyStore")
- 
+  
 # ---------------------------------------------------------------------------
 # DSP algorithm registry -- server side.
 # Maps algorithm IDs to the static JS file the browser needs to load.
@@ -38,7 +38,10 @@ dsp_store.register("null_dsp",
 rendering_store = RenderingStore()
 rendering_store.register("chart_v1",
     entrypoint="/static/shorts/renderers/chart_v1.js",
-    label="ECG Sweep", description="Progressively-revealed waveform with peak markers")
+    label="ECG Sweep (Plotly)", description="Progressively-revealed waveform with peak markers -- SVG via Plotly")
+rendering_store.register("chart_v1_canvas",
+    entrypoint="/static/shorts/renderers/chart_v1_canvas.js",
+    label="ECG Sweep (Canvas)", description="Same sweep as chart_v1 but Canvas 2D -- no Plotly, raw GPU draw calls")
 rendering_store.register("scatter_density",
     entrypoint="/static/shorts/renderers/scatter_density.js",
     label="Scatter Density", description="Poincaré scatter plot with progressive reveal")
@@ -60,6 +63,7 @@ rendering_store.register("null_renderer",
 # old {block, dependsOn} shape is retired. Two stages, both proven
 # working end-to-end: Pan-Tompkins peak detection into a Poincare plot.
 journey_store.register_journey("ecg", {
+    "version": 2,  # bump this whenever the recipe changes -- store will update while preserving feedback_score
     "label": "AFib Detection",
     "description": "Peak detection and HRV analysis on real ECG recordings.",
     "template": "shorts/journey_page.html",
@@ -96,7 +100,7 @@ journey_store.register_journey("ecg", {
                 "parameters": {"invertSignal": False},
             },
             "renderingEngine": {
-                "availableRenderers": [{"id": "chart_v1", "isDefault": True}],
+                "availableRenderers": [{"id": "chart_v1_canvas", "isDefault": True}, {"id": "chart_v1", "isDefault": False}],
                 "config": {},
             },
             "uiFillers": {
@@ -107,6 +111,7 @@ journey_store.register_journey("ecg", {
             "railControls": [
                 {"ui": {"label": "Invert", "icon": "icon_flip_vertical"}, "action": {"target": "dspEngine", "method": "setParameter", "payload": {"key": "invertSignal", "operation": "toggle"}}},
                 {"ui": {"label": "Algorithm", "icon": "icon_cycle"}, "action": {"target": "dspEngine", "method": "switchAlgorithm", "payload": {}}},
+                {"ui": {"label": "Renderer", "icon": "icon_renderer"}, "action": {"target": "renderingEngine", "method": "switchRenderer", "payload": {}}},
                 {"ui": {"label": "Speed"}, "action": {"target": "journey", "method": "cycleSpeed", "payload": {"options": [0.5, 1.0, 1.5, 2.0]}}},
                 {"ui": {"label": "Theme", "icon": "icon_theme"}, "action": {"target": "journey", "method": "cycleTheme", "payload": {}}},
             ],
@@ -172,6 +177,7 @@ journey_store.register_journey("ecg", {
 # {block, dependsOn} shape. Now migrated to the real schema, using the
 # verified db4_wavelet DSP engine and dwt_comparison_view renderer.
 journey_store.register_journey("dwt", {
+    "version": 2,  # bump this whenever the recipe changes
     "label": "Wavelet Decomposition",
     "description": "Daubechies-4 multi-resolution analysis of real ECG signals.",
     "template": "shorts/journey_page.html",
@@ -205,11 +211,12 @@ journey_store.register_journey("dwt", {
                 "parameters": {},
             },
             "renderingEngine": {
-                "availableRenderers": [{"id": "chart_v1", "isDefault": True}],
+                "availableRenderers": [{"id": "chart_v1_canvas", "isDefault": True}, {"id": "chart_v1", "isDefault": False}],
                 "config": {},
             },
             "uiFillers": {"title": "Raw Signal", "caption": "The original ECG recording."},
             "railControls": [
+                {"ui": {"label": "Renderer", "icon": "icon_renderer"}, "action": {"target": "renderingEngine", "method": "switchRenderer", "payload": {}}},
                 {"ui": {"label": "Speed"}, "action": {"target": "journey", "method": "cycleSpeed", "payload": {"options": [0.5, 1.0, 1.5, 2.0]}}},
                 {"ui": {"label": "Theme", "icon": "icon_theme"}, "action": {"target": "journey", "method": "cycleTheme", "payload": {}}},
             ],
@@ -286,7 +293,7 @@ journey_store.register_journey("test_null_dsp", {
                 "parameters": {},
             },
             "renderingEngine": {
-                "availableRenderers": [{"id": "chart_v1", "isDefault": True}],
+                "availableRenderers": [{"id": "chart_v1_canvas", "isDefault": True}, {"id": "chart_v1", "isDefault": False}],
                 "config": {},
             },
             "uiFillers": {
@@ -417,6 +424,55 @@ journey_store.register_journey("test_null_both", {
                 {"ui": {"label": "Theme", "icon": "icon_theme"}, "action": {"target": "journey", "method": "cycleTheme", "payload": {}}},
             ],
             "baseDurationMs": 3000,
+        },
+    ],
+})
+
+# ---------------------------------------------------------------------------
+# TEST 4: Canvas renderer -- compare directly with chart_v1 (Plotly)
+# Visit /journey/test_canvas alongside /journey/ecg to compare smoothness.
+# Same DSP (pan_tompkins), same data, different renderer.
+# ---------------------------------------------------------------------------
+journey_store.register_journey("test_canvas", {
+    "version": 1,
+    "label": "Test: Canvas 2D Renderer",
+    "description": "Same Pan-Tompkins DSP as ECG journey but rendered via Canvas 2D instead of Plotly SVG. Compare smoothness.",
+    "template": "shorts/journey_page.html",
+    "api_endpoint": "/shorts/api/samples",
+    "status": "test",
+    "category": "test",
+    "feedback_score": 0,
+    "globalThemes": _SHARED_TEST_THEME,
+    "journeyRules": _SHARED_TEST_RULES,
+    "uiShell": _SHARED_TEST_SHELL,
+    "playbackConfig": {"isPaused": False},
+    "layout": _SHARED_TEST_LAYOUT,
+    "stages": [
+        {
+            "stageId": "canvas_stage_1",
+            "dataSource": {"mode": "HTTP_REST"},
+            "dspEngine": {
+                "availableAlgorithms": [
+                    {"id": "pan_tompkins",      "isDefault": True},
+                    {"id": "hamilton_tompkins", "isDefault": False},
+                ],
+                "parameters": {"invertSignal": False},
+            },
+            "renderingEngine": {
+                "availableRenderers": [{"id": "chart_v1_canvas", "isDefault": True}],
+                "config": {},
+            },
+            "uiFillers": {
+                "title": "Canvas 2D Renderer",
+                "caption": "Same Pan-Tompkins DSP as /journey/ecg. Canvas instead of Plotly SVG.",
+                "description": "If this looks smoother than the ECG journey, Canvas wins. No Plotly involved -- pure ctx.lineTo() calls.",
+            },
+            "railControls": [
+                {"ui": {"label": "Algorithm", "icon": "icon_cycle"}, "action": {"target": "dspEngine", "method": "switchAlgorithm", "payload": {}}},
+                {"ui": {"label": "Speed", "icon": "icon_speed"}, "action": {"target": "journey", "method": "cycleSpeed", "payload": {}}},
+                {"ui": {"label": "Theme", "icon": "icon_theme"}, "action": {"target": "journey", "method": "cycleTheme", "payload": {}}},
+            ],
+            "baseDurationMs": 8000,
         },
     ],
 })
