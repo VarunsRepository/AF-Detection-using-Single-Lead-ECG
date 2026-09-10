@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -753,3 +754,760 @@ document.addEventListener("DOMContentLoaded", onDatasetChange);
 </script>
 </body>
 </html>
+=======
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECG Frequency Feature Studio</title>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<style>
+    .panel {
+    border: 1px solid #d8cfc9;
+    border-radius: 6px;
+    padding: 18px 20px;
+    background: #fffdfb;
+}
+
+.panel h3 {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    color: #8c7b77;
+    margin: 0 0 14px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+}
+
+.field label {
+    display: block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    color: #8c7b77;
+    margin-bottom: 4px;
+}
+
+.field select,
+.field input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #d8cfc9;
+    border-radius: 4px;
+    background: #fff;
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 0.9rem;
+}
+
+.checks {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.group-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    color: #8c7b77;
+    margin-right: 4px;
+}
+
+.chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.checks label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.checks button {
+    border: 1px solid #d8cfc9;
+    background: #fff;
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+}
+
+.checks button:hover {
+    background: #f1c6be33;
+}
+
+.checks button.primary {
+    background: #a32638;
+    color: #fff;
+    border-color: #a32638;
+}
+
+.checks button.primary:hover {
+    background: #8a1f2e;
+}
+
+.status {
+    display: block;
+    margin-top: 14px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.75rem;
+    color: #1e6e5c;
+}
+
+.loading-hint {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.75rem;
+    color: #8c7b77;
+    font-style: italic;
+}
+
+/* result plot containers, referenced by JS as #plot-profile, #plot-violin, etc. */
+.plot-container {
+    min-height: 320px;
+    position: relative;
+}
+
+.plot-container.loading::after {
+    content: "loading…";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    color: #8c7b77;
+    background: #fffdfb;
+}
+
+    :root { --bg:#121418; --panel:#1c1e24; --line:#2e3440; --muted:#8b93a1; --text:#f2f4f8; --orange:#eb7b2b; --blue:#3498db; --green:#5cc24a; --yellow:#f1c40f; }
+    * { box-sizing:border-box; }
+    body { margin:20px; background:var(--bg); color:var(--text); font-family:Monaco,Consolas,monospace; }
+    h1,h2,h3 { color:var(--orange); margin-top:0; }
+    h2 { border-bottom:2px solid var(--line); padding-bottom:10px; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:16px; margin-bottom:18px; }
+    .grid { display:grid; grid-template-columns:repeat(4,minmax(160px,1fr)); gap:14px; }
+    .two { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+    .field { display:flex; flex-direction:column; gap:6px; }
+    label { color:var(--muted); font-size:12px; }
+    select,input,button { background:#2e3440; color:var(--text); border:1px solid #4c566a; border-radius:4px; padding:9px 10px; font-family:inherit; }
+    button { cursor:pointer; font-weight:bold; }
+    button.primary { background:#8f4a1e; border-color:var(--orange); }
+    button:hover { filter:brightness(1.15); }
+    .checks { display:flex; flex-wrap:wrap; gap:16px; align-items:center; }
+    .checks label { color:var(--text); display:flex; gap:7px; align-items:center; }
+    .status { padding:8px 10px; border:1px solid var(--line); border-radius:4px; color:var(--green); }
+    .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+    .stat { background:#17191e; border:1px solid var(--line); padding:14px; border-radius:5px; }
+    .stat strong { display:block; font-size:22px; margin-top:5px; }
+    .table-wrap { overflow:auto; max-height:430px; }
+    table { width:100%; border-collapse:collapse; min-width:900px; font-size:12px; }
+    th,td { border-bottom:1px solid var(--line); padding:9px 8px; text-align:right; white-space:nowrap; }
+    th:first-child,td:first-child,th:nth-child(2),td:nth-child(2) { text-align:left; }
+    th { position:sticky; top:0; background:#252933; color:var(--orange); }
+    .heat { background:linear-gradient(90deg,#1b2530,var(--blue)); }
+    .chart { height:430px; }
+    .hint { color:var(--muted); font-size:11px; line-height:1.5; }
+    .band-row { display:grid; grid-template-columns:90px 1fr 100px; gap:12px; align-items:center; margin:8px 0; }
+    .band { height:12px; background:#252933; border-radius:6px; overflow:hidden; }
+    .band span { display:block; height:100%; background:var(--blue); }
+    @media(max-width:850px) { body{margin:10px}.grid,.two,.stats{grid-template-columns:1fr}.chart{height:360px} }
+
+
+select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+ 
+    background-color: #2e3440;
+    color: #d8dee9;
+    border: 1px solid #4c566a;
+    border-radius: 4px;
+    padding: 6px 32px 6px 10px; /* extra right padding makes room for the custom arrow */
+    font-size: 0.9rem;
+    font-family: inherit;
+    cursor: pointer;
+ 
+    /* custom dropdown arrow, drawn as an inline SVG -- avoids relying on
+       the native OS arrow, which stays light/dark per OS theme regardless
+       of page CSS */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23d8dee9' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+}
+ 
+select:hover {
+    border-color: #5e81ac;
+}
+ 
+select:focus {
+    outline: none;
+    border-color: #5cc24a;
+    box-shadow: 0 0 0 2px rgba(92, 194, 74, 0.25);
+}
+ 
+select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+ 
+/* The dropdown POPUP (the list of options) is the part browsers are most
+   stubborn about -- support for styling it varies a lot. This covers what
+   Chrome/Edge/Firefox currently allow; some OS/browser combinations will
+   still show a native-styled popup list regardless (see note below). */
+select option {
+    background-color: #2e3440;
+    color: #d8dee9;
+}
+ 
+select option:checked,
+select option:hover {
+    background-color: #3b4252;
+}
+ 
+/* Firefox-specific: removes the dotted focus outline Firefox draws around
+   the selected option's text */
+select:-moz-focusring {
+    color: transparent;
+    text-shadow: 0 0 0 #d8dee9;
+}
+
+             
+
+</style> 
+</head>
+<body>
+
+
+<!-- Panel 1: dataset + class scope + plot toggles -->
+<div class="panel">
+    <h3>TARGET CLINICAL CLASS: &amp; CONTROLS</h3>
+    <div class="grid">
+        <div class="field">
+            <label>DATASET</label>
+            <select id="datasetSelect" onchange="onDatasetChange()">
+                <option value="full_length">Full-length FFT (variable N)</option>
+                <option value="fixed_9k" selected>Fixed 9,000-pt FFT</option>
+            </select>
+        </div>
+        <div class="field">
+            <label>MAX SAMPLES / CLASS</label>
+            <select id="sampleCount">
+                <option>25</option>
+                <option selected>100</option>
+                <option>250</option>
+                <option>500</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="checks" style="margin-top:14px">
+        <span class="group-label">CLASSES</span>
+        <div id="classChecks" class="chip-row">
+            <span class="loading-hint">loading classes…</span>
+        </div>
+        <button onclick="selectAllClasses()">ALL</button>
+        <button onclick="clearClasses()">NONE</button>
+    </div>
+
+    <div class="checks" style="margin-top:14px">
+        <span class="group-label">PLOTS</span>
+        <label><input type="checkbox" id="plotProfile" onchange="togglePlot('profile', this.checked)" checked> Class Profile</label>
+        <label><input type="checkbox" id="plotViolin" onchange="togglePlot('violin', this.checked)"> Distribution</label>
+        <label><input type="checkbox" id="plotHeatmap" onchange="togglePlot('heatmap', this.checked)"> Heatmap</label>
+        <label><input type="checkbox" id="plotPcaTsne" onchange="togglePlot('pcatsne', this.checked)"> PCA / t-SNE</label>
+        <button class="primary" onclick="refreshAllVisible()">REFRESH</button>
+    </div>
+
+    <span class="status" id="status">Ready — loading dataset…</span>
+</div>
+
+
+<!-- Results panels for the 4 class-comparison plots. Same structure as your
+     wavelet-panel: a .panel wrapper, a .chart-frame div that Plotly targets,
+     and a .panel-footer-cite for source/method notes. -->
+
+<div id="profile-panel" class="panel">
+    <h3>Class Profile — Mean % Power per Band</h3>
+    <div id="plot-profile" class="chart-frame plot-container"></div>
+    <div class="panel-footer-cite">
+        Mean ± std across all selected classes, computed client-side from raw per-sample band values.
+    </div>
+</div>
+
+<div id="violin-panel" class="panel">
+    <h3>Distribution — % Power per Band</h3>
+    <div id="plot-violin" class="chart-frame plot-container"></div>
+    <div class="panel-footer-cite">
+        Violin/box statistics computed byAll charts are generated directly on the client side(web-browser) using Plotly.js. No computation is done at the server-side.
+    </div>
+</div>
+
+<div id="heatmap-panel" class="panel">
+    <h3>Spectral Heatmap — Samples × Bands</h3>
+    <div id="plot-heatmap" class="chart-frame plot-container"></div>
+    <div class="panel-footer-cite">
+        Color = log(1 + % power). Rows grouped and sorted by class for visual coherence.
+    </div>
+</div>
+
+<div id="pcatsne-panel" class="panel">
+    <h3>PCA / t-SNE — 100-Band Feature Space</h3>
+    <div id="plot-pcatsne" class="chart-frame plot-container"></div>
+    <div class="panel-footer-cite">
+        Server-computed, cached per (dataset, class selection). Calculated on the server and saved for quick loading. The first time you select a new dataset or class combination may take a moment.
+    </div>
+</div>
+
+
+<script>
+    // ---------------------------------------------------------------------------
+// Control panel logic.
+// Flow: dataset dropdown -> fetch unique classes for that dataset -> render
+// checkboxes (all checked by default) -> plot toggles fetch lazily, cached
+// per (dataset, sorted classes, plot type) so re-checking a box never
+// re-fetches or re-renders unnecessarily.
+// ---------------------------------------------------------------------------
+
+// in-memory cache: key = `${dataset}|${sortedClasses.join(',')}|${plotType}`
+const plotCache = {};
+
+// the base-route prefix  which is used by all Statistical Analytics API calls 
+const API_BASE = "/statistical_analytics";
+
+// tracks which plots are currently visible, so REFRESH knows what to redo
+const visiblePlots = new Set(["profile"]); // profile checked by default in the HTML
+
+function getSelectedDataset() {
+    return document.getElementById("datasetSelect").value;
+}
+
+function getSelectedClasses() {
+    return Array.from(document.querySelectorAll("#classChecks input[type=checkbox]:checked"))
+        .map(cb => cb.value);
+}
+
+function getMaxSamples() {
+    return parseInt(document.getElementById("sampleCount").value, 10);
+}
+
+function setStatus(text) {
+    document.getElementById("status").textContent = text;
+}
+
+function cacheKey(plotType) {
+    const classes = getSelectedClasses().slice().sort().join(",");
+    return `${getSelectedDataset()}|${classes}|${plotType}`;
+}
+
+// ---------------------------------------------------------------------------
+// Dataset change: re-fetch the unique class labels for whichever CSV was
+// picked, and rebuild the class checkboxes (default: all checked). Any
+// previously loaded plots are stale once the dataset changes, so hide them
+// and clear their cache entries -- don't silently show old-dataset data
+// under a new dataset selection.
+// ---------------------------------------------------------------------------
+async function onDatasetChange() {
+    setStatus("Loading classes for selected dataset…");
+    clearPlotCacheForDatasetSwitch();
+
+    try {
+        const res = await fetch(`${API_BASE}/api/dataset/${getSelectedDataset()}/classes`);
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const data = await res.json(); // expected: { classes: [{code, label, count}, ...] }
+
+        renderClassChecks(data.classes);
+        setStatus(`Ready — ${data.classes.length} classes loaded`);
+
+        // reload any plot the user still has checked, against the new dataset
+        for (const plotType of visiblePlots) {
+            loadPlot(plotType);
+        }
+    } catch (err) {
+        setStatus(`Error loading classes: ${err.message}`);
+        console.error(err);
+    }
+}
+
+function renderClassChecks(classes) {
+    const container = document.getElementById("classChecks");
+    container.innerHTML = "";
+    classes.forEach(cls => {
+        const label = document.createElement("label");
+        label.innerHTML = `<input type="checkbox" value="${cls.code}" checked onchange="onClassChange()"> ${cls.code} — ${cls.label} (${cls.count})`;
+        container.appendChild(label);
+    });
+}
+
+function onClassChange() {
+    // class scope changed -- every visible plot's cache key is now different,
+    // so just reload whatever's currently checked/visible
+    for (const plotType of visiblePlots) {
+        loadPlot(plotType);
+    }
+    updateStatusFromSelection();
+}
+
+function selectAllClasses() {
+    document.querySelectorAll("#classChecks input[type=checkbox]").forEach(cb => cb.checked = true);
+    onClassChange();
+}
+
+function clearClasses() {
+    document.querySelectorAll("#classChecks input[type=checkbox]").forEach(cb => cb.checked = false);
+    onClassChange();
+}
+
+function updateStatusFromSelection() {
+    const classes = getSelectedClasses();
+    setStatus(classes.length
+        ? `Scope: ${classes.join(", ")} — ${visiblePlots.size} plot(s) shown`
+        : "No classes selected — pick at least one");
+}
+
+// ---------------------------------------------------------------------------
+// Plot toggles. Checking a box shows (and lazily loads/caches) that plot;
+// unchecking just hides its container without discarding the cached data,
+// so re-checking it is instant.
+// ---------------------------------------------------------------------------
+function togglePlot(plotType, isChecked) {
+    const container = document.getElementById(`plot-${plotType}`);
+    if (!container) {
+        console.warn(`No container found for #plot-${plotType} -- add it to the results panel`);
+        return;
+    }
+
+    if (isChecked) {
+        visiblePlots.add(plotType);
+        container.style.display = "";
+        loadPlot(plotType);
+    } else {
+        visiblePlots.delete(plotType);
+        container.style.display = "none";
+    }
+    updateStatusFromSelection();
+}
+
+
+
+
+
+
+
+
+
+const CLASS_COLORS = { N: "#1e6e5c", A: "#a32638", O: "#c98a1f", "~": "#8c7b77" };
+ 
+function renderPlot(plotType, container, payload) {
+    switch (plotType) {
+        case "profile":
+            renderClassProfile(container, payload);
+            break;
+        case "violin":
+            renderViolin(container, payload);
+            break;
+        case "heatmap":
+            renderHeatmap(container, payload);
+            break;
+        case "pcatsne":
+            renderPcaTsne(container, payload);
+            break;
+        default:
+            console.warn(`renderPlot: unknown plotType "${plotType}"`);
+    }
+}
+ 
+// ---------------------------------------------------------------------------
+// 1. Class Profile — mean ± std per band, per class.
+// Payload shape (from get_raw_bands): { band_labels: [...], data: { N: {values: [[...]]}, A: {...} } }
+// Aggregation happens here in JS, not server-side.
+// ---------------------------------------------------------------------------
+function renderClassProfile(container, payload) {
+    const { band_labels, data } = payload;
+    const traces = [];
+ 
+    for (const [label, classData] of Object.entries(data)) {
+        const values = classData.values; // shape: n_samples x n_bands
+        const nBands = band_labels.length;
+        const mean = new Array(nBands).fill(0);
+        const std = new Array(nBands).fill(0);
+ 
+        for (let b = 0; b < nBands; b++) {
+            const col = values.map(row => row[b]);
+            const m = col.reduce((a, v) => a + v, 0) / col.length;
+            const variance = col.reduce((a, v) => a + (v - m) ** 2, 0) / col.length;
+            mean[b] = m;
+            std[b] = Math.sqrt(variance);
+        }
+ 
+        const upper = mean.map((m, i) => m + std[i]);
+        const lower = mean.map((m, i) => Math.max(0, m - std[i]));
+        const color = CLASS_COLORS[label] || "#888";
+ 
+        // shaded spread band (drawn first, so the mean line sits on top)
+        traces.push({
+            x: [...band_labels, ...band_labels.slice().reverse()],
+            y: [...upper, ...lower.slice().reverse()],
+            fill: "toself",
+            fillcolor: color + "26", // ~15% alpha
+            line: { color: "transparent" },
+            showlegend: false,
+            hoverinfo: "skip",
+            type: "scatter",
+        });
+ 
+        traces.push({
+            x: band_labels,
+            y: mean,
+            mode: "lines",
+            name: `${label} (n=${values.length})`,
+            line: { color, width: 2 },
+            type: "scatter",
+        });
+    }
+ 
+    Plotly.newPlot(container, traces, {
+        margin: { t: 20, r: 20, b: 40, l: 50 },
+        xaxis: { title: "Frequency band (Hz)", type: "category" },
+        yaxis: { title: "% of total power" },
+        legend: { orientation: "h", y: -0.25 },
+    }, { responsive: true });
+}
+ 
+// ---------------------------------------------------------------------------
+// 2. Distribution — violin plots per band, per class. Plotly computes the
+// distribution shape itself from raw values; no stats computed in JS here.
+// To keep this legible, only plots the first N_BANDS_VIOLIN bands.
+// ---------------------------------------------------------------------------
+const N_BANDS_VIOLIN = 15;
+ 
+function renderViolin(container, payload) {
+    const { band_labels, data } = payload;
+    const bands = band_labels.slice(0, N_BANDS_VIOLIN);
+    const traces = [];
+ 
+    for (const [label, classData] of Object.entries(data)) {
+        const values = classData.values;
+        const color = CLASS_COLORS[label] || "#888";
+ 
+        bands.forEach((bandLabel, bandIdx) => {
+            traces.push({
+                type: "violin",
+                y: values.map(row => row[bandIdx]),
+                x: values.map(() => `${bandLabel} Hz`),
+                name: label,
+                legendgroup: label,
+                showlegend: bandIdx === 0, // only show one legend entry per class
+                line: { color },
+                fillcolor: color + "66",
+                points: false,
+                meanline: { visible: true },
+            });
+        });
+    }
+ 
+    Plotly.newPlot(container, traces, {
+        margin: { t: 20, r: 20, b: 60, l: 50 },
+        xaxis: { title: "Frequency band", type: "category" },
+        yaxis: { title: "% of total power" },
+        violinmode: "group",
+        legend: { orientation: "h", y: -0.3 },
+    }, { responsive: true });
+}
+ 
+// ---------------------------------------------------------------------------
+// 3. Heatmap — samples (rows) x bands (columns), grouped by class with a
+// divider line, log-scaled color. Matrix assembly happens here in JS.
+// ---------------------------------------------------------------------------
+
+function renderHeatmap(container, payload) {
+    const { band_labels, data } = payload;
+    const zRows = [];
+    const classBoundaries = [];
+    const classAnnotations = [];
+    let rowCount = 0;
+ 
+    for (const [label, classData] of Object.entries(data)) {
+        classData.values.forEach(row => {
+            zRows.push(row.map(v => Math.log1p(v)));
+        });
+        const blockStart = rowCount;
+        rowCount += classData.values.length;
+        classBoundaries.push(rowCount);
+        // one label placed at the vertical midpoint of this class's block,
+        // rather than a tick per row (which is what repeated y-values used to do)
+        classAnnotations.push({
+            xref: "paper", x: -0.06,
+            yref: "y", y: (blockStart + rowCount) / 2,
+            text: label,
+            showarrow: false,
+            font: { size: 12, color: CLASS_COLORS[label] || "#333" },
+        });
+    }
+ 
+    // unique numeric index per row -- this is what actually spreads rows
+    // across the full plot height, instead of collapsing same-label rows
+    // onto a single shared category position
+    const yIndex = Array.from({ length: zRows.length }, (_, i) => i);
+ 
+    const trace = {
+        z: zRows,
+        x: band_labels.map(b => `${b} Hz`),
+        y: yIndex,
+        type: "heatmap",
+        colorscale: [
+            [0, "#fbf6f4"],
+            [0.5, "#e8968a"],
+            [1, "#a32638"],
+        ],
+        colorbar: { title: "log(1+%)" },
+    };
+ 
+    // horizontal divider lines between class blocks
+    const shapes = classBoundaries.slice(0, -1).map(boundary => ({
+        type: "line",
+        xref: "paper", x0: 0, x1: 1,
+        yref: "y", y0: boundary - 0.5, y1: boundary - 0.5,
+        line: { color: "#a32638", width: 1.5, dash: "dash" },
+    }));
+ 
+    Plotly.newPlot(container, [trace], {
+        margin: { t: 20, r: 20, b: 40, l: 80 },
+        xaxis: { title: "Frequency band", type: "category" },
+        yaxis: { title: "Sample (grouped by class)", showticklabels: false, autorange: "reversed" },
+        shapes,
+        annotations: classAnnotations,
+    }, { responsive: true });
+}
+
+
+// ---------------------------------------------------------------------------
+// 4. PCA / t-SNE — already-reduced coordinates from the server, just plotted.
+// Payload shape (from get_pca_tsne_coords):
+//   { explained_variance: [...], classes: { N: {pca: [[x,y,z],...], tsne: [[...]]}, A: {...} } }
+// Renders PCA; a second call with a view-toggle could swap to tsne if wanted.
+// ---------------------------------------------------------------------------
+function renderPcaTsne(container, payload) {
+    const { classes, explained_variance } = payload;
+    const traces = [];
+ 
+    for (const [label, classData] of Object.entries(classes)) {
+        const coords = classData.pca; // switch to classData.tsne for the t-SNE view
+        const color = CLASS_COLORS[label] || "#888";
+ 
+        traces.push({
+            x: coords.map(c => c[0]),
+            y: coords.map(c => c[1]),
+            z: coords.map(c => c[2]),
+            mode: "markers",
+            type: "scatter3d",
+            name: `${label} (n=${coords.length})`,
+            marker: { color, size: 3, opacity: 0.6 },
+        });
+    }
+ 
+    const varPct = explained_variance ? explained_variance.map(v => (v * 100).toFixed(1)) : null;
+    const title = varPct
+        ? `PCA (PC1=${varPct[0]}%, PC2=${varPct[1]}%, PC3=${varPct[2]}%)`
+        : "PCA";
+ 
+    Plotly.newPlot(container, traces, {
+        margin: { t: 30, r: 0, b: 0, l: 0 },
+        title: { text: title, font: { size: 12 } },
+        scene: {
+            xaxis: { title: "PC1" },
+            yaxis: { title: "PC2" },
+            zaxis: { title: "PC3" },
+        },
+        legend: { orientation: "h", y: -0.05 },
+    }, { responsive: true });
+}
+
+
+
+
+
+
+
+
+
+async function loadPlot(plotType) {
+    const key = cacheKey(plotType);
+    const container = document.getElementById(`plot-${plotType}`);
+    if (!container) return;
+
+    const classes = getSelectedClasses();
+    if (classes.length === 0) {
+        setStatus("No classes selected — pick at least one");
+        return;
+    }
+
+    if (plotCache[key]) {
+        renderPlot(plotType, container, plotCache[key]);
+        return;
+    }
+
+    setStatus(`Loading ${plotType}…`);
+    container.classList.add("loading");
+
+    try {
+        const params = new URLSearchParams({
+            dataset: getSelectedDataset(),
+            classes: classes.join(","),
+            max_per_class: getMaxSamples(),
+        });
+        const endpoint = plotEndpoint(plotType);
+        const res = await fetch(`${API_BASE}${endpoint}?${params.toString()}`);
+        
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        const payload = await res.json();
+
+        plotCache[key] = payload;
+        renderPlot(plotType, container, payload);
+        setStatus(`Ready — ${plotType} loaded`);
+    } catch (err) {
+        setStatus(`Error loading ${plotType}: ${err.message}`);
+        console.error(err);
+    } finally {
+        container.classList.remove("loading");
+    }
+}
+
+function plotEndpoint(plotType) {
+    // PCA/t-SNE hits a different route since it's server-computed + cached
+    // server-side too; the other three ship raw values for Plotly.js to
+    // turn into stats client-side (see plot_renderers.js).
+    return plotType === "pcatsne" ? "/api/plot/pcatsne" : "/api/plot/raw-bands";
+}
+
+function refreshAllVisible() {
+    // force-clear cache for currently visible plots, then reload -- useful
+    // if the underlying CSV changed server-side and the user wants fresh data
+    for (const plotType of visiblePlots) {
+        delete plotCache[cacheKey(plotType)];
+        loadPlot(plotType);
+    }
+}
+
+function clearPlotCacheForDatasetSwitch() {
+    Object.keys(plotCache).forEach(k => delete plotCache[k]);
+}
+
+// kick things off once the page is ready
+document.addEventListener("DOMContentLoaded", onDatasetChange);
+</script>
+</body>
+</html>
+>>>>>>> a6b8a9e685be5d5ab0c8d3fe028bd21dd9183294
