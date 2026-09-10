@@ -423,12 +423,14 @@ html, body {
 
 .segment .fill {
     height: 100%;
-    width: 0%;
+    width: 100%; /* CHANGED: always full width now -- "empty" is represented by scaleX(0) below, not width:0% */
+    transform: scaleX(0);
+    transform-origin: left; /* so scaleX grows outward from the left edge, matching a left-to-right fill, not from the center */
     background: var(--accent);
 }
 
 .segment.completed .fill {
-    width: 100%;
+    transform: scaleX(1);
 }
 
 .segment.current .fill {
@@ -440,9 +442,14 @@ html, body {
        since different stages now run for different lengths of time. */
 }
 
+/* transform:scaleX(), not width -- animating width forces a browser layout
+   recalculation on EVERY frame of the animation. Since this runs
+   simultaneously with the sweep's own per-frame Plotly redraw, that was
+   real, avoidable competition for the same frame budget. transform is
+   GPU-composited: no layout, no reflow, effectively free by comparison. */
 @keyframes fillBar {
-    from { width: 0%; }
-    to { width: 100%; }
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
 }
 
 .card-footer {
@@ -492,18 +499,20 @@ html, body {
     z-index: 40;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 20px;
     align-items: center;
 }
 
 .rail-btn {
-    width: 42px;
-    height: 42px;
+    width: 46px;
+    height: 46px;
     border-radius: 50%;
-    background: rgba(22, 27, 34, 0.85);
+    background: rgba(0, 0, 0, 0.5); /* darker than before to compensate visually for backdrop-filter staying off (see note below) */
     border: 1px solid var(--border);
     color: var(--text);
     cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); /* subtle depth, so the button stands out against the plot/video behind it -- matches Instagram's own icon rail */
+    transition: transform 0.1s ease;
     /* backdrop-filter: blur(4px); -- TEMP DISABLED for iOS Safari diagnostic;
        WebKit has known bugs where blur-filtered elements become visually
        present but stop reliably receiving touch events. If controls start
@@ -512,6 +521,10 @@ html, body {
     align-items: center;
     justify-content: center;
     position: relative; /* anchors the swatch-dot badge, see below */
+}
+
+.rail-btn:active {
+    transform: scale(0.92); /* tactile press feedback, matches Instagram/TikTok's own icon-rail response */
 }
 
 .rail-btn svg {
@@ -657,6 +670,42 @@ html, body {
 }
 
 /* ---------------------------------------------------------------------
+   DWT decomposition's multi-select comparison view -- holds SEVERAL
+   simultaneously-visible mini-charts (one per toggled-on level), stacked
+   vertically and scrollable. Bottom offset leaves room for the toggle
+   row (.explain-panel, reused directly) below it.
+   --------------------------------------------------------------------- */
+.dwt-stack-container {
+    position: absolute;
+    inset: 0;
+    bottom: 70px;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.dwt-stack-item {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px;
+}
+
+.dwt-stack-item-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    padding: 4px 8px 0;
+}
+
+.dwt-stack-item-chart {
+    width: 100%;
+    height: 140px;
+}
+
+/* ---------------------------------------------------------------------
    Stage caption -- brief, non-blocking, fades in/out automatically on
    EVERY stage entry (not just first-time; that's the separate, still-
    deferred "first-time-only callout" idea). pointer-events:none means it
@@ -685,7 +734,7 @@ html, body {
     padding: 8px 14px;
     border-radius: 8px;
     z-index: 35;
-    opacity: 0;
+    opacity: 0.5;
     pointer-events: none;
     transition: opacity 0.4s ease;
 }
