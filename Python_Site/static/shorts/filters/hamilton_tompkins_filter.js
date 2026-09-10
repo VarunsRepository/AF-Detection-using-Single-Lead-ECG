@@ -88,3 +88,19 @@ function hamiltonTompkinsDetectPeaks(rawY, fs) {
         ],
     };
 }
+
+// Self-register into DSP_ALGORITHMS
+registerDspAlgorithm("hamilton_tompkins", {
+    process(data, parameters) {
+        const y = parameters.invertSignal ? data.y.map(v => -v) : data.y;
+        const { peakIndices, steps } = hamiltonTompkinsDetectPeaks(y, data.fs);
+        const rrIntervalsMs = [];
+        for (let i = 1; i < peakIndices.length; i++) {
+            rrIntervalsMs.push(((peakIndices[i] - peakIndices[i - 1]) / data.fs) * 1000);
+        }
+        return {
+            interimOutputs: steps,
+            finalOutput: { filteredSignal: y, peakIndices, rrIntervalsMs },
+        };
+    },
+});
