@@ -299,6 +299,138 @@
                 applyCanvasPreset(CANVAS_PRESETS[canvasPresetIndex]);
             });
             document.body.appendChild(canvasBtn);
+
+            // ── Dev HUD ────────────────────────────────────────────────
+            // Real-time rendering stats panel. Reads live values from
+            // activeSweepControl, fetchedSignalCache, THEMES, RENDER_ALGORITHMS.
+            // Updates every 200ms -- fast enough to feel live, not so fast
+            // it itself becomes a performance concern.
+            const hud = document.createElement('div');
+            hud.style.cssText = `
+                position: fixed;
+                bottom: 0; left: 0; right: 0;
+                z-index: 9999;
+                background: rgba(0, 0, 0, 0.82);
+                border-top: 1px solid rgba(45, 212, 191, 0.3);
+                padding: 8px 14px 10px;
+                font-family: 'IBM Plex Mono', monospace;
+                font-size: 0.68rem;
+                color: #747d8c;
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+                gap: 4px 16px;
+                pointer-events: none;
+            `;
+            document.body.appendChild(hud);
+
+            // Frame rate measurement -- counts actual frames, not assumed
+            let frameCount = 0;
+            let lastFpsTime = performance.now();
+            let measuredFps = 0;
+            let lastFrameTime = performance.now();
+            let lastRenderDuration = 0;
+
+            // Wrap rAF globally to count frames
+            const _origRAF = window.requestAnimationFrame;
+            window.requestAnimationFrame = function(cb) {
+                return _origRAF.call(window, (now) => {
+                    const renderStart = performance.now();
+                    cb(now);
+                    lastRenderDuration = performance.now() - renderStart;
+                    frameCount++;
+                    lastFrameTime = now;
+                });
+            };
+
+            function stat(label, value, color) {
+                return `<span style="color:${color || '#9aa1ab'}">
+                    <span style="color:#555">${label}: </span>${value}
+                </span>`;
+            }
+
+            function updateHud() {
+                // FPS -- measured from actual rAF calls
+                const now = performance.now();
+                const elapsed = now - lastFpsTime;
+                if (elapsed >= 500) {
+                    measuredFps = Math.round((frameCount / elapsed) * 1000);
+                    frameCount = 0;
+                    lastFpsTime = now;
+                }
+
+                // Find the active sweep -- look for a control with recent activity
+                let sweepInfo = null;
+                activeSweepControl.forEach((control, sampleId) => {
+                    if (!sweepInfo || control.lastElapsedMs > 0) {
+                        sweepInfo = { sampleId, ...control };
+                    }
+                });
+
+                // Signal info from cache
+                let signalInfo = null;
+                if (sweepInfo) {
+                    const cached = fetchedSignalCache.get(sweepInfo.sampleId);
+                    if (cached) signalInfo = cached;
+                }
+
+                // Samples traversed per second
+                // = (total samples / total duration) * speed
+                let samplesPerSec = '--';
+                if (signalInfo && sweepInfo) {
+                    const speed = GLOBAL_SPEED_OPTIONS[globalSpeedIndex];
+                    const totalSamples = signalInfo.signal.length;
+                    const totalDurSec = sweepInfo.totalDurationMs / 1000;
+                    samplesPerSec = Math.round(totalSamples / totalDurSec * speed);
+                }
+
+                // Window samples (visible at any frame)
+                const windowSamples = signalInfo
+                    ? Math.round(3.0 * signalInfo.fs)
+                    : '--';
+
+                // Progress
+                const progress = sweepInfo
+                    ? Math.round((sweepInfo.lastElapsedMs / sweepInfo.totalDurationMs) * 100)
+                    : 0;
+
+                // Throttle setting
+                const throttleMs = globalThis._DEV_DRAW_THROTTLE_MS ?? 33;
+                const targetFps  = throttleMs === 0 ? 'native' : Math.round(1000 / throttleMs);
+
+                // Registered renderers
+                const renderers = Object.keys(RENDER_ALGORITHMS).join(', ') || 'none';
+
+                // Theme
+                const theme = THEMES[themeIndex]?.label || '--';
+
+                // Active renderer -- best guess from registered algorithms
+                // (we can't access per-card renderingEngine from global scope)
+                const canvasActive = globalThis._DEV_CANVAS_GLOW !== undefined;
+
+                hud.innerHTML = [
+                    stat('renderer',        globalThis._DEV_ACTIVE_RENDERER  || '--', '#e8f4f8'),
+                    stat('algorithm',       globalThis._DEV_ACTIVE_ALGORITHM || '--', '#e8f4f8'),
+                    stat('FPS measured',    `${measuredFps}`,                         measuredFps >= 55 ? '#2dd4bf' : measuredFps >= 30 ? '#d9a441' : '#ff4d4d'),
+                    stat('FPS target',      `${targetFps}`),
+                    stat('render cost',     `${lastRenderDuration.toFixed(2)}ms`,      lastRenderDuration < 5 ? '#2dd4bf' : lastRenderDuration < 12 ? '#d9a441' : '#ff4d4d'),
+                    stat('samples/sec',     `${samplesPerSec}`),
+                    stat('window samples',  `${windowSamples}`),
+                    stat('total samples',   signalInfo ? signalInfo.signal.length : '--'),
+                    stat('fs',              signalInfo ? `${signalInfo.fs}Hz` : '--'),
+                    stat('progress',        sweepInfo ? `${progress}%` : '--'),
+                    stat('elapsed',         sweepInfo ? `${(sweepInfo.lastElapsedMs/1000).toFixed(2)}s` : '--'),
+                    stat('duration',        sweepInfo ? `${(sweepInfo.totalDurationMs/1000).toFixed(1)}s` : '--'),
+                    stat('speed',           `${GLOBAL_SPEED_OPTIONS[globalSpeedIndex]}x`),
+                    stat('theme',           theme),
+                    stat('canvas glow',     canvasActive ? (globalThis._DEV_CANVAS_GLOW ? 'on' : 'off') : 'n/a'),
+                    stat('canvas DPR',      canvasActive ? (globalThis._DEV_CANVAS_DPR ?? devicePixelRatio) : 'n/a'),
+                    stat('renderers',       renderers,                                '#555'),
+                    stat('max points',      globalThis._DEV_MAX_POINTS ?? 500),
+                ].join('');
+            }
+
+            updateHud();
+            setInterval(updateHud, 200);
         }
 
         startJourneyScrollFeed({
