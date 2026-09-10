@@ -167,6 +167,68 @@
     .band { height:12px; background:#252933; border-radius:6px; overflow:hidden; }
     .band span { display:block; height:100%; background:var(--blue); }
     @media(max-width:850px) { body{margin:10px}.grid,.two,.stats{grid-template-columns:1fr}.chart{height:360px} }
+
+
+select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+ 
+    background-color: #2e3440;
+    color: #d8dee9;
+    border: 1px solid #4c566a;
+    border-radius: 4px;
+    padding: 6px 32px 6px 10px; /* extra right padding makes room for the custom arrow */
+    font-size: 0.9rem;
+    font-family: inherit;
+    cursor: pointer;
+ 
+    /* custom dropdown arrow, drawn as an inline SVG -- avoids relying on
+       the native OS arrow, which stays light/dark per OS theme regardless
+       of page CSS */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23d8dee9' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+}
+ 
+select:hover {
+    border-color: #5e81ac;
+}
+ 
+select:focus {
+    outline: none;
+    border-color: #5cc24a;
+    box-shadow: 0 0 0 2px rgba(92, 194, 74, 0.25);
+}
+ 
+select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+ 
+/* The dropdown POPUP (the list of options) is the part browsers are most
+   stubborn about -- support for styling it varies a lot. This covers what
+   Chrome/Edge/Firefox currently allow; some OS/browser combinations will
+   still show a native-styled popup list regardless (see note below). */
+select option {
+    background-color: #2e3440;
+    color: #d8dee9;
+}
+ 
+select option:checked,
+select option:hover {
+    background-color: #3b4252;
+}
+ 
+/* Firefox-specific: removes the dotted focus outline Firefox draws around
+   the selected option's text */
+select:-moz-focusring {
+    color: transparent;
+    text-shadow: 0 0 0 #d8dee9;
+}
+
+             
+
 </style> 
 </head>
 <body>
