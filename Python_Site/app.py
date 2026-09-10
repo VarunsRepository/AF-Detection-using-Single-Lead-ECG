@@ -396,7 +396,7 @@ app.register_blueprint(reels_bp)
 # think of it as the main() function of this web-sites programs  
 if __name__ == '__main__':
     # run  the app on the entire LAN, site is accessible by Phone/Tablets/etc any device on the same WiFi 
-    app.run(host='0.0.0.0', port=8080, debug=False)
+    app.run(host='0.0.0.0', port=8080, debug=True)
     
     # Run the app only on the local machine
     #app.run(port=8080, debug=True)
