@@ -295,6 +295,11 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             if (chartContainer._fullLayout) Plotly.purge(chartContainer);
             else chartContainer.innerHTML = "";
 
+            // Expose active renderer to the dev HUD (global scope can't
+            // reach into this closure, so we write it out explicitly).
+            globalThis._DEV_ACTIVE_RENDERER = renderingEngine.getActiveRenderer();
+            globalThis._DEV_ACTIVE_ALGORITHM = dspEngine.getActiveAlgorithm();
+
             renderingEngine.render(chartContainer, dspOutput, sampleId, data.fs, actualDuration);
 
             if (stageJson.stageOutput) {
