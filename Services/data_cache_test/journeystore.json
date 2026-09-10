@@ -1,0 +1,142 @@
+{
+    "ecg_test": {
+        "label": "AFib Detection",
+        "template": "shorts/shorts_feed.html",
+        "api_endpoint": "/shorts/api/samples",
+        "status": "production",
+        "category": "afib",
+        "feedback_score": 0,
+        "stages": [
+            {
+                "stageId": "stage_01_peak_detection",
+                "dataSource": {
+                    "mode": "HTTP_REST"
+                },
+                "dspEngine": {
+                    "availableAlgorithms": [
+                        {
+                            "id": "pan_tompkins",
+                            "isDefault": true
+                        }
+                    ]
+                },
+                "renderingEngine": {
+                    "availableRenderers": [
+                        {
+                            "id": "chart_v1",
+                            "isDefault": true
+                        }
+                    ]
+                },
+                "uiFillers": {
+                    "title": "Finding Each Beat"
+                },
+                "stageOutput": {
+                    "exportKey": "stage_01_processed_data",
+                    "exportedFields": [
+                        "rrIntervalsMs",
+                        "peakIndices"
+                    ]
+                }
+            },
+            {
+                "stageId": "stage_02_poincare_plot",
+                "dataSource": {
+                    "mode": "PREVIOUS_STAGE_PIPELINE",
+                    "stageId": "stage_01_peak_detection",
+                    "outputKey": "stage_01_processed_data",
+                    "consumedField": "rrIntervalsMs"
+                },
+                "dspEngine": {
+                    "availableAlgorithms": [
+                        {
+                            "id": "poincare_standard",
+                            "isDefault": true
+                        }
+                    ]
+                },
+                "renderingEngine": {
+                    "availableRenderers": [
+                        {
+                            "id": "scatter_density",
+                            "isDefault": true
+                        }
+                    ]
+                },
+                "uiFillers": {
+                    "title": "HRV Poincare Plot"
+                }
+            }
+        ]
+    },
+    "ecg_broken_test": {
+        "label": "AFib Detection",
+        "template": "shorts/shorts_feed.html",
+        "api_endpoint": "/shorts/api/samples",
+        "status": "production",
+        "category": "afib",
+        "feedback_score": 0,
+        "stages": [
+            {
+                "stageId": "stage_01_peak_detection",
+                "dataSource": {
+                    "mode": "HTTP_REST"
+                },
+                "dspEngine": {
+                    "availableAlgorithms": [
+                        {
+                            "id": "pan_tompkins",
+                            "isDefault": true
+                        }
+                    ]
+                },
+                "renderingEngine": {
+                    "availableRenderers": [
+                        {
+                            "id": "chart_v1",
+                            "isDefault": true
+                        }
+                    ]
+                },
+                "uiFillers": {
+                    "title": "Finding Each Beat"
+                },
+                "stageOutput": {
+                    "exportKey": "stage_01_processed_data",
+                    "exportedFields": [
+                        "rrIntervalsMs",
+                        "peakIndices"
+                    ]
+                }
+            },
+            {
+                "stageId": "stage_02_poincare_plot",
+                "dataSource": {
+                    "mode": "PREVIOUS_STAGE_PIPELINE",
+                    "stageId": "stage_01_peak_detection",
+                    "outputKey": "stage_01_processed_data",
+                    "consumedField": "rrIntervalzz"
+                },
+                "dspEngine": {
+                    "availableAlgorithms": [
+                        {
+                            "id": "poincare_standard",
+                            "isDefault": true
+                        }
+                    ]
+                },
+                "renderingEngine": {
+                    "availableRenderers": [
+                        {
+                            "id": "scatter_density",
+                            "isDefault": true
+                        }
+                    ]
+                },
+                "uiFillers": {
+                    "title": "HRV Poincare Plot"
+                }
+            }
+        ]
+    }
+}

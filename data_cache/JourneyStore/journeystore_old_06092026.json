@@ -1,0 +1,52 @@
+{
+    "ecg": {
+        "label": "AFib Detection",
+        "description": "Peak detection and HRV analysis on real ECG recordings.",
+        "template": "shorts/shorts_feed.html",
+        "api_endpoint": "/shorts/api/samples",
+        "status": "production",
+        "category": "afib",
+        "feedback_score": 0,
+        "stages": [
+            {
+                "block": "raw_signal",
+                "dependsOn": null
+            },
+            {
+                "block": "baseline_correction",
+                "dependsOn": 0
+            },
+            {
+                "block": "peak_detection",
+                "dependsOn": 1
+            },
+            {
+                "block": "hrv_metrics",
+                "dependsOn": 2
+            },
+            {
+                "block": "verdict",
+                "dependsOn": 3
+            }
+        ]
+    },
+    "dwt": {
+        "label": "Wavelet Decomposition",
+        "description": "Multi-resolution DWT analysis of real ECG signals.",
+        "template": "shorts/dwt_journey.html",
+        "api_endpoint": "/shorts/api/samples",
+        "status": "experimental",
+        "category": "wavelet_analysis",
+        "feedback_score": 0,
+        "stages": [
+            {
+                "block": "raw_signal",
+                "dependsOn": null
+            },
+            {
+                "block": "dwt_decomposition",
+                "dependsOn": 0
+            }
+        ]
+    }
+}

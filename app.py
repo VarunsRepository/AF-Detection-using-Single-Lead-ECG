@@ -2,302 +2,422 @@ import os
 import urllib.request # to send web requests to the Physionet site 
 import scipy.io       # to use plotly(), which is our star performer 
 import numpy as np    # for interim processing for the ECG Signal 
-from flask import Flask, jsonify, request, send_from_directory # all the stuff to make a web-site in minutes without needing to learn  
-                                                               # the usage of dead-sea scrools of Django 
 
-# We're getting serious now with the below mentioned - Advanced Signal Processing
-from scipy.signal import butter, \
-                        lfilter, \
-                        savgol_filter       
+ # all the stuff to make a web-site in minutes without needing to learn  the usage of dead-sea scrools of Django 
+from flask import Flask, Blueprint, jsonify, request, send_from_directory, redirect  # blueprint is used to modularise the app, without BP, the app will hold all the functionality, with BP we van modularise the code into several sub-apps 
 
-app = Flask(__name__)                   
-CACHE_DIR = "data_cache"                 # interim directory, we won't be using it at all
-os.makedirs(CACHE_DIR, exist_ok=True)
-
+      
+from Blueprints.statistical_analytics_bp import statistical_analytics_bp 
+from Blueprints.shorts_bp import shorts_bp
+from Blueprints.dwt_bp import dwt_bp
+from Blueprints.journey_bp import journey_bp
+from Blueprints.reels_bp import reels_bp   # dummy blueprint to prove that that reels engine works and is compeltely agnostic of the Dataset, DSPEngine and RenderingEngine 
  
-# below mentioned functions actually implement our signal processing techniques
 
-def apply_noise_filter(signal):
-   #better to comment this way rather than commenting the standard way of using # sign
-    """Tries to Removes :
-     1. Baseline wander -  the thing that causes the zero mark of the signal to not stay at zero
-     2. Muscle noise - The electrical signal from the muscles - remember alivCor is taking the reading from fingertips and not the chest"""
-    return savgol_filter(signal, window_length=15, polyorder=2)
+# to get of pre-computed Statistical RR-analytics features 
+from Services.ECG_Feature_Manager import ECG_Signal_Feature_Manager 
 
-def detect_local_max_r_peaks(signal,  # the ECG signal 
-                             sampling_rate=300.0  # for the scope of this project, it would stay at 300 Hz but other datasets on physionet might have different freq
-                             ):
-    """Finds standard R-peaks locked perfectly to the highest local apex."""
-    threshold_breaches = np.where(signal > 0.4)[0]
-    if len(threshold_breaches) == 0:
-        return []
-        
-    true_peaks = []
-    groups = np.split(threshold_breaches, np.where(np.diff(threshold_breaches) > 1)[0] + 1)
-    
-    for group in groups:
-        if len(group) == 0: continue
-        local_signal_chunk = signal[group]
-        highest_point_relative_idx = np.argmax(local_signal_chunk)
-        absolute_peak_idx = group[highest_point_relative_idx]
-        
-        if len(true_peaks) == 0 or (absolute_peak_idx - true_peaks[-1]) > (sampling_rate * 0.4):
-            true_peaks.append(int(absolute_peak_idx))
-            
-    return true_peaks
+# to get the dataset for pre-computed FrequencyDomain features 
+#from Services.Spectral_Band_Store import SpectralBandStore
+ 
+# we also need to import the Spectral band store manager so  
+# we can remember the state of each the individual Spectral_Band_Store objects
+# inside the routing file. if this is not used then we would have come up with a mechanism inside app.py
+# to remember the state of each Spectral_Band_Store object
+#from Services.Spectral_Band_Store_Manager import SpectralBandStoreManager
 
-def run_pan_tompkins_segmentation(signal,  # the ECG signal 
-                             sampling_rate=300.0  # for the scope of this project, it would stay at 300 Hz but other datasets on physionet might have different freq
-                             ):
-    
-    """The famous algorithm to detect the QRS interval from 1985 by Jiapu Pan(Shanghai) and Willis Tompkins(USA)
-       running on 8-Bit Z80 processor of the time. Today, we have Floating proint processing units that can easily 
-        hammer down the floating point values from the signal"""
 
-# Nyquist frequency represents the theoretical maximum bandwidth limit (Fs / 2)
-    # At 300 Hz sampling rate, the Nyquist frequency is exactly 150 Hz
-    nyq = 0.5 * sampling_rate           
-    
-    # Normalize our 5 Hz and 15 Hz cutoff frequencies relative to the Nyquist limit
-    low, high = 5.0 / nyq, 15.0 / nyq           
-    
-    # Design and apply a 2nd-order cascaded Butterworth Band-pass filter (5-15 Hz)
-    # This isolates the QRS energy while attenuating muscle noise, 60Hz hum, and T-wave interference
-    b, a = butter(1, [low, high], btype='band') 
-    filtered_signal = lfilter(b, a, signal)     
-    
-    # Five-point first-derivative approximation in the discrete-time domain
-    # This highlights the steep slopes/gradients of the R-wave upstroke
-    derivative = np.diff(filtered_signal)       
-    
-    # Point-by-point squaring operation to make all data points non-negative 
-    # and non-linearly magnify high-frequency QRS complexes over lower-frequency components
-    squared = derivative ** 2                   
-    
-    # Define a 150ms moving window width (45 samples at 300 Hz) to match standard QRS duration
-    window_width = int(0.15 * sampling_rate)    
-    
-    # Discrete-time linear convolution implementing a Moving Window Integration (MWI) 
-    # to obtain a smooth, moving energy envelope of the QRS complex
-    integrated = np.convolve(squared, np.ones(window_width)/window_width, mode='same')  
-    
-    # Calculate a dynamic signal-to-noise threshold profile baseline
-    threshold = np.mean(integrated) * 1.8       
-    r_peaks = []
-    threshold_breaches = np.where(integrated > threshold)[0]
-    
-    # Group continuous blocks of true indices that breached the envelope threshold
-    if len(threshold_breaches) > 0:
-        groups = np.split(threshold_breaches, np.where(np.diff(threshold_breaches) > 1)[0] + 1)
-        for group in groups:
-            if len(group) == 0: continue
-            # Find the absolute maximum amplitude point within the raw signal window
-            actual_signal_window = signal[group]
-            r_peaks.append(int(group[np.argmax(actual_signal_window)]))
-            
-    # Apply a 400ms physiological refractory period blanking window 
-    # to eliminate false positive multiple-triggers on the same cardiac contraction
-    r_peaks = [p for i, p in enumerate(r_peaks) if i == 0 or (p - r_peaks[i-1]) > int(sampling_rate * 0.4)]
 
-    # Relative localized physiological search windows for sub-wave segmentation
-    p_points, q_points, s_points, t_points = [], [], [], []
-    for r in r_peaks:
-        if r < 120 or r > len(signal) - 150: continue
-        
-        # Q-dip: Local minimum immediately preceding the R-peak
-        q_idx = (r - 12) + np.argmin(signal[r-12:r])
-        q_points.append(int(q_idx))
-        
-        # S-dip: Local minimum immediately following the R-peak
-        s_idx = r + np.argmin(signal[r:r+12])
-        s_points.append(int(s_idx))
-        
-        # P-wave: Local maximum corresponding to atrial depolarization
-        p_idx = (r - 60) + np.argmax(signal[r-60:r-15])
-        p_points.append(int(p_idx))
-        
-        # T-wave: Local maximum corresponding to ventricular repolarization
-        t_idx = (r + 30) + np.argmax(signal[r+30:r+120])
-        t_points.append(int(t_idx))
+"Obtaining medical-grade diagnostic data remains a significant challenge, even in an era dominated by high-performance CPUs, expanded RAM,"
+" and advanced cloud storage. When capturing human physiological data, a fundamental trade-off exists: clinical precision and diagnostic "
+"breadth on one end, versus consumer convenience and ease of use on the other.In a hospital or clinical setting, patients are monitored "
+"using top-tier, highly calibrated instrumentation. Systems such as the Philips PageWriter (running the DXL algorithm) can utilize up to "
+"12 physical electrodes to derive a 16-lead ECG, providing multi-angle visibility into complex arrhythmias and structural blockages. "
+"Similarly, GE HealthCare systems featuring the Marquette 12SL algorithm can analyze raw cardiac signals across all heart rates in "
+"real time, deploying advanced digital signal processing to eliminate motion artifacts. While exceptionally accurate, this equipment "
+"is expensive, inaccessible to the general public during the critical first moments of symptom onset, and requires extensive clinical "
+"training to manually position the electrodes across the chest and limbs.On the opposite end of the spectrum lies day-to-day consumer "
+"monitoring. Strapping on a smartwatch or touching a digital crown allows a user to instantly capture an ECG or SpO₂ reading. "
+"While these consumer-grade wearables offer unprecedented convenience, they inherently sacrifice diagnostic depth. "
+"A standard Apple or Samsung watch, for instance, relies almost entirely on automated algorithms that analyze R-R intervals to identify"
+" rhythm irregularities. For complex cardiac monitoring, this single-dimension view is structurally insufficient. "
+"Even accessible development hardware, such as the Adafruit AD8232 single-lead sensor, requires three precisely placed electrodes;"
+" a slight misalignment by an untrained user can render the resulting data completely unusable.Consequently, "
+"a considerable diagnostic gap exists in the market. Consumers need convenient, immediate equipment capable of extracting high-value "
+"diagnostic insights the exact moment cardiac symptoms begin. While hybrid devices like AliveCor’s KardiaMobile have started bridging "
+"this gap by securing FDA clearances for wider QRS and advanced rhythm determinations, the broader pursuit remains: achieving maximum "
+"diagnostic confidence from the simplest possible user interface.As consumer hardware increasingly adopts next-generation digital signal"
+" processing (DSP) and machine learning (ML) models, the boundary of what can be extracted from minimal hardware is expanding. "
+"This paper addresses this vital frontier by deploying advanced machine learning techniques to achieve highly accurate Atrial Fibrillation"
+" (AFib) detection utilizing a single-lead ECG configuration."
 
-    return {"P": p_points, "Q": q_points, "R": r_peaks, "S": s_points, "T": t_points}
+#from DSP_modules.DSP import apply_noise_filter, \
+#                            detect_local_max_r_peaks, \
+#                            run_pan_tompkins_segmentation,\
+#                            run_pan_tompkins_segmentation_nk2,\
+#                            calculate_signal_fft, \
+#                            apply_qrst_cancellation, \
+#                            compute_wavelet_decomposition
 
-def calculate_signal_fft(signal, sampling_rate=300.0):
+## importing the function to correct(invert) the flipped samples.(samples where the patients held the alliveCor device incorrectly)
+#from DSP_modules.inversion_Correction import is_device_inverted, \
+#                                             flip_ecg_sample, \
+#                                             run_pan_tompkins_segmentation
+
+# imported for initializing the dataset labels
+# physionet has separate files contains the lables of all the 8.5K recordings
+# This function just crawls up to the physionetsite and gets those labels
+from Services.physionet_Init import PhysioNetRegistryManager
+
+
+#The main pipeline that's called everyytime the app registers a change accross any of the controls 
+from Engine.Engine import run_ecg_pipeline,  get_dropdown_options #, peak_detection_algorithms,
+
+
+#import neurokit2 as nk  # to leverage the functions of neurokit2 to identify, the different segments of sample 
+
+
+#Now using blueprint
+featureEngg_bp = Blueprint('features', __name__)
+
+#statistical_analytics_bp   = Blueprint('statistical_analytics', __name__)
+
+app = Flask(__name__)         
+
+
+
+###################### the code for managing Physionet IO starts here ######################
+     
+# PHYSIONET MANAGER TO MANAGE THE I/O FROM THE PHYSIONET WEBSITE  
+#  pass the configuration directories directly into the PhysioNetRegistryManager class constructor
+# we have created an object for easier state management
+physionet_mgr = PhysioNetRegistryManager(cache_dir="data_cache/training2017")
+
+physionet_mgr.initialize_registry()
+
+
+# ECG FEATURE MANAGER TO FETCH THE FEATURES LIKE HRV, VIX DIRECTLY FROM THE LOCAL FILE
+ECG_Features = ECG_Signal_Feature_Manager(cache_dir="data_cache/FeatureStore")
+
+
+#CLASS_NAMES = {"N": "Normal", "A": "Atrial Fibrillation", "O": "Other", "~": "Noisy"}
+
+
+#manager = SpectralBandStoreManager()
+#manager.register("full_length", SpectralBandStore(
+#    csv_path="data_cache/SpectralBandStore/HDF5_Full_Length_FFT_To_PSD_band_features-All_Samples.csv",
+#    class_names=CLASS_NAMES,
+#    dataset_name="full_length",
+#))
+#manager.register("fixed_9k", SpectralBandStore(
+#    csv_path="data_cache/SpectralBandStore/FFT_fixed9k_to_PSD_Percentage_for_1Hz_Bands-All_Samples.csv",
+#    class_names=CLASS_NAMES,
+#    dataset_name="fixed_9k",
+#))
+
+#def parse_classes_param():
+#    """?classes=N,A,O -> ['N','A','O']; missing/empty -> []"""
+#    raw = request.args.get("classes", "")
+#    return [c for c in raw.split(",") if c]
+
+
+
+# this route is used to pupulate the dropdown in the view 
+@featureEngg_bp.route('/peak_detection_algorithms', methods=['GET'])
+def fetch_algorithms():
+    # Gets ['Pan Tompkins Native', 'Pan Tompkins nk2', etc ]
+    algo_list = get_dropdown_options() 
+    return jsonify(algo_list)
+
+
+
+@featureEngg_bp.route('/registry', methods=['GET'])
+def get_registry_slice():
     """
-    Transforms the time-domain signal into the frequency domain using 1D FFT.
-    Returns frequencies and their absolute magnitudes up to the Nyquist limit.
+    Returns lists of matching sample IDs based on a requested target class
     """
-    n = len(signal)
-    # Compute the raw FFT values
-    fft_values = np.fft.fft(signal)
-    # Get the corresponding frequency bins
-    frequencies = np.fft.fftfreq(n, d=1.0/sampling_rate)
+    target_class = request.args.get('class', 'N').upper()
+    print(f"\n[BACKEND] Frontend requested recordings for class: '{target_class}'")
     
-    # Take the absolute value to get magnitude, and isolate the positive frequencies
-    positive_identities = np.where(frequencies >= 0)
+    # Safely query live cache from our global class object instance
+    live_cache = physionet_mgr.get_registry()
+    print(f"[BACKEND] Current registry keys available: {list(live_cache.keys())}")
     
-    freqs_cut = frequencies[positive_identities]
-    mags_cut = np.abs(fft_values)[positive_identities]
-    
-    # Only return up to 40 Hz since medical ECG data lives primarily below this threshold
-    useful_range = np.where(freqs_cut <= 40.0)
-    
-    return {
-        "frequencies": freqs_cut[useful_range].tolist(),
-        "magnitudes": mags_cut[useful_range].tolist()
-    }
-
-# --- NEW ADVANCED QRST CANCELLATION ENGINE ---
-def apply_qrst_cancellation(signal, r_peaks, sampling_rate=300.0):
-    """
-    Slices, averages, and subtracts the dominant QRS-T complex 
-    from the raw wave trace to expose hidden underlying atrial f-waves.
-    """
-    cancelled_signal = signal.copy()
-    if len(r_peaks) < 3:
-        return cancelled_signal
+    if target_class not in live_cache:
+        print(f"[BACKEND] ERROR: '{target_class}' not found in registry cache keys.")
+        return jsonify({"error": "Invalid class. Choose N, A, O, or ~"}), 400
         
-    # Define window bounds relative to R-peak (Pre-R: 40ms, Post-R: 160ms)
-    pre_samples = int(0.04 * sampling_rate)  # 12 samples
-    post_samples = int(0.16 * sampling_rate) # 48 samples
-    beat_length = pre_samples + post_samples
+    # Extract the matching samples using the dedicated class accessor method
+    samples_list = physionet_mgr.get_records_by_class(target_class)
     
-    collected_beats = []
+    print(f"[BACKEND] Great Success! Found {len(samples_list)} records for class '{target_class}'")
+    print(f"[BACKEND] First 5 samples being sent: {samples_list[:5]}")
     
-    # 1. Harvest matching ventricular complexes
-    for r in r_peaks:
-        if r - pre_samples < 0 or r + post_samples > len(signal):
-            continue
-        collected_beats.append(signal[r - pre_samples : r + post_samples])
-        
-    if len(collected_beats) == 0:
-        return cancelled_signal
-        
-    # 2. Compute the Master average linear QRS template
-    mean_template = np.mean(collected_beats, axis=0)
-    
-    # 3. Linearly subtract the template from every single detected heartbeat region
-    for r in r_peaks:
-        if r - pre_samples < 0 or r + post_samples > len(signal):
-            continue
-        cancelled_signal[r - pre_samples : r + post_samples] -= mean_template
-        
-    return cancelled_signal
-
-
-#  Signal Processing functions end here
-
+    return jsonify({
+        "class": target_class,
+        "count": len(samples_list),
+        "samples": samples_list
+    })
+###################### the code for managing Physionet IO ends here ######################
+ 
 #deafult app route 
-@app.route('/')
+@featureEngg_bp.route('/')
 def index():
     return send_from_directory('static', 'index.html')
 
+# app route to redirect the user to the right(complete) route 
+@app.route('/')
+def index():
+    return redirect('/api/v1/splunk/')
+
 #route to goto the physionet web site and fetch the actual recording  
-@app.route('/api/v1/splunk/stream')
+@featureEngg_bp.route('/stream')
 def stream_ecg():
+
     record_id = request.args.get('record', 'A01000')
-    
-    # Grab all command toggles out of our HTTP parameters
-
-    #the control for signal processing are set by selecting the radio buttoms on the top of the code
-    enable_filter = request.args.get('filter', 'false').lower() == 'true'    # simple filter
-    enable_local_r = request.args.get('local_r', 'false').lower() == 'true'  # get peaks from the signal 
-    enable_pan = request.args.get('pan_tompkins', 'false').lower() == 'true' # run pan-tompkins algo to get QRS, P and T points - still a crude code 
-    enable_poincare = request.args.get('poincare', 'false').lower() == 'true' # poincarne plots 
-    enable_fft = request.args.get('fft', 'false').lower() == 'true' # FFT for the sample
-    enable_cancel = request.args.get('cancel', 'false').lower() == 'true' # QRST Cancellation function 
-
-    #  TIMELINE SCALE TOGGLE PARAMETER
-    timeline_scale = request.args.get('scale', 'short').lower() # 'short' or 'full'
 
 
-    txt_filename = os.path.join(CACHE_DIR, f"{record_id}.txt")
-    
-    if not os.path.exists(txt_filename):
-        folder_prefix = record_id[:3]
+        # 1. Consolidate Toggle State Parameters
+    config = {
+        'record_id'                   : record_id,
+        'enable_filter'               : request.args.get('filter', 'false').lower() == 'true',
+        'enable_local_r'              : request.args.get('local_r', 'false').lower() == 'true',
+        'enable_pan'                  : request.args.get('pan_tompkins', 'false').lower() == 'true',
+        'enable_poincare'             : request.args.get('poincare', 'false').lower() == 'true',
+        'enable_fft'                  : request.args.get('fft', 'false').lower() == 'true',
+        'enable_cancel'               : request.args.get('cancel', 'false').lower() == 'true',
+        'use_wavelet'                 : request.args.get('wavelet', 'false').lower() == 'true',
+#        'use_pan_tompkins_with_nk2': request.args.get('pan_tompkins_with_nk2', 'false').lower() == 'true',
+        'timeline_scale'              : request.args.get('scale', 'short').lower(),
+        'force_manual_flip'           : request.args.get('manual_flip', 'false').lower() == 'true',
+        'peak_detection_method'       : request.args.get('peak_detection_method', 'false').lower(),  
+        'stacked_beats'               : request.args.get('StackedBeats', 'false').lower() == 'true',
+        'Stacked_Beats_On_Beats'      : request.args.get('StackedBeatsOnBeats', 'false').lower() == 'true',
+        'Stacked_n_RR_Beats'          : request.args.get('Stacked_n_RR_Beats', 'false').lower() == 'true',
+        'VIX_Beats'                   : request.args.get('VIX_Beats', 'false').lower() == 'true',
+        'Stacked_Wavelets_On_Wavelets': request.args.get('StackedWaveletsOnWavelets', 'false').lower() == 'true',
+    }
 
-        # sending a request to the pjysionet website to get the sample for us
-        url = f"https://physionet.org/files/challenge-2017/1.0.0/training/{folder_prefix}/{record_id}.mat?download"
-        try:
-            opener = urllib.request.build_opener()
-            opener.addheaders = [('User-Agent', 'Mozilla/5.0')]
-            urllib.request.install_opener(opener)
-            temp_mat = f"temp_{record_id}.mat"
-            urllib.request.urlretrieve(url, temp_mat)
-            mat_data = scipy.io.loadmat(temp_mat)
-            with open(txt_filename, "w") as f:
-                f.write("\n".join(map(str, mat_data['val'][0])))
-            os.remove(temp_mat)
-        except Exception as e:
-            return jsonify({"error": str(e)})
-
-    # 1. Read base signal matrix
-    raw_units = np.loadtxt(txt_filename)
-    signal_values = raw_units / 1000.0
-    
-    # 2. Extract full mathematical background buffer (30 seconds)
-    long_signal = signal_values[:9000]
-    
-    # 3. Dynamically set the visual timeline stream length based on the UI switch
-    if timeline_scale == 'full':
-        timeline_signal = signal_values[:9000] # Show full 30 seconds
-    else:
-        timeline_signal = signal_values[:2500] # Default to clean 8.3-second zoom
-    
-    processed_signal = timeline_signal.copy()
-    
-    local_r_indices = []
-    features = {"P": [], "Q": [], "R": [], "S": [], "T": []}
-    poincare_data = {"x": [], "y": []}
-    fft_data = {"frequencies": [], "magnitudes": []}
-
-    # 3. Apply Noise Filter FIRST if requested
-    if enable_filter:
-        processed_signal = apply_noise_filter(processed_signal)
-        long_signal = apply_noise_filter(long_signal) # Filter long signal to keep math clean
-
-    # 4. Now extract features from the clean, filtered timeline signal
-    if enable_local_r:
-        local_r_indices = detect_local_max_r_peaks(processed_signal)
+    try:
+        # Changing this to the new method get_individual_record_wfdb() which reads the ECG recording by the old legacy way 
+        signal_values = physionet_mgr.get_individual_record_wfdb(record_id)
         
-    if enable_pan:
-        features = run_pan_tompkins_segmentation(processed_signal)
+        # Direct downstream vector payload execution to pipeline engine
+        result_payload = run_ecg_pipeline(signal_values, config)
+        
+        # Return serialized dictionary directly to UI graph modules
+        return jsonify(result_payload), 200
 
-    # 5. Handle Advanced QRST Cancellation on the timeline signal
-    if enable_cancel:
-        # Run peak detection on the current state of the timeline signal
-        r_peaks_for_cancel = run_pan_tompkins_segmentation(processed_signal)["R"]
-        processed_signal = apply_qrst_cancellation(processed_signal, r_peaks_for_cancel)
+    except Exception as e:
+        print(f"[API ERROR] Pipeline processing crash for record {record_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+ 
+# this route is used to check if the current config for the signal already exists in the ECG signal manager store. 
+# if it exists, we'll simply simply fetch the current config and update the UI as it is instead of running the whole pNN50 or VIX math all over again 
+@featureEngg_bp.route('get-stat', methods=['GET'])
+def get_statistic():
+    record_id = request.args.get('record_id')
+    stat_name = request.args.get('stat_name')
+    version = request.args.get('version')
+    
+    # qurty the Feature from the ECG_Feature_Manager object  
+    metric_data = ECG_Features.get_metric(record_id, stat_name, version)
+    
+    if metric_data:
+        return jsonify({"cached": True, "data": metric_data})
+    return jsonify({"cached": False, "message": "Computation required."})
 
-    # 6. Calculate Poincaré using the high-density long signal
-    if enable_poincare:
-        long_peaks = detect_local_max_r_peaks(long_signal)
-        if len(long_peaks) > 1:
-            rr_intervals_ms = (np.diff(long_peaks) / 300.0) * 1000.0
-            if len(rr_intervals_ms) > 1:
-                poincare_data["x"] = rr_intervals_ms[:-1].tolist()
-                poincare_data["y"] = rr_intervals_ms[1:].tolist()
+# This route is used to save the current config for the given sample inside the ECG Signal Manager store 
+# for whichever current config that you have selected(may it could be small-signal-Sample or full-signal-Sample, it could be oritentation-corrected-Sample  or Origianl-oritentation-restored-Sample ) 
+# when you read a record with for the first time and check for any of the metrics like VIX or pNN50 witht that config, the metric has to be calcualted for the first time run 
+@featureEngg_bp.route('/save-stat', methods=['POST'])
+def save_statistic():
+    payload = request.json
+    
+    # saving the feaure into the object
+    ECG_Features.update_metric(
+        record_id=payload["record_id"],
+        stat_name=payload["statistic_name"],
+        value=payload["value"],
+        version=payload["version"],
+        timestamp=payload.get("last_calculated", "2026-07-19T00:00:00Z")
+    )
+    
+    return jsonify({"status": "Great Success", "message": "RAM state updated. Background persistence active."})
 
-    # 7. Calculate FFT using the long signal for beautiful frequency resolution
-    if enable_fft:
-        # If cancellation is also active, cancel QRST on the long signal first so the FFT isolates f-waves!
-        if enable_cancel:
-            long_peaks_for_cancel = run_pan_tompkins_segmentation(long_signal)["R"]
-            fft_target = apply_qrst_cancellation(long_signal, long_peaks_for_cancel)
-        else:
-            fft_target = long_signal
-            
-        fft_data = calculate_signal_fft(fft_target)
 
-    return jsonify({
-        "metric": record_id,
-        "data": processed_signal.tolist(),
-        "local_r_peaks": local_r_indices,
-        "features": features,
-        "poincare": poincare_data,
-        "fft": fft_data
-    })
+# This route is used to rubber stamp the sample when you click the rubber stamp button
+# THE READER ROUTE (GET)
+@featureEngg_bp.route('/get-record-meta', methods=['GET'])
+def get_record_meta():
+    # Readers pass parameters via URL/Query string: ?record_id=123
+    record_id = request.args.get('record_id')
+    
+    if not record_id:
+        return jsonify({"status": "Failed", "error": "Missing record_id"}), 400
+        
+    stamp_info = ECG_Features.get_rubber_stamp_config(record_id)
+    
+    if stamp_info:
+        return jsonify({"status": "Success", **stamp_info})
+        
+    return jsonify({"status": "Success", 
+                    "record_id": record_id, 
+                    "is_verified": False})
+
+
+# THE WRITER ROUTE (POST)
+@featureEngg_bp.route('/rubber-stamp-record', methods=['POST'])
+def rubber_stamp_record():
+    # Writers pass parameters via JSON Body
+    data = request.get_json() or {}
+    record_id = data.get('record_id')
+    verified_signature = data.get('verified_signature')
+    
+    if not record_id or not verified_signature:
+        return jsonify({"status": "Failed", "error": "Missing parameters"}), 400
+        
+    # Execute the write and disk save
+    ECG_Features.rubber_stamp_record_config(record_id, verified_signature)
+    
+    return jsonify({"status": "Success", "message": f"Config locked for {record_id}"})
+
+
+
+## the routes below are meant for display statistical features in freq Domain
+#@statistical_analytics_bp.route('/')
+#def index2():
+#    return send_from_directory('static', 'index3.html')
+#
+#
+#
+#
+#
+# 
+## ---------------------------------------------------------------------------
+## GET /api/dataset/<dataset_name>/classes
+## Feeds the dynamic class checkboxes -- called on page load and whenever the
+## dataset dropdown changes.
+## ---------------------------------------------------------------------------
+#@statistical_analytics_bp.route("/api/dataset/<dataset_name>/classes")
+#def get_classes(dataset_name):
+#    store, err = manager.get_or_error(dataset_name)
+#    if err:
+#        return jsonify({"error": err}), 404
+#    return jsonify({"classes": store.get_available_classes()})
+# 
+# 
+## ---------------------------------------------------------------------------
+## GET /api/plot/raw-bands?dataset=...&classes=N,A&max_per_class=100
+## Feeds Class Profile, Distribution (violin/box), and Heatmap -- all three
+## computed client-side in JS/Plotly from this one raw payload.
+## ---------------------------------------------------------------------------
+#@statistical_analytics_bp.route("/api/plot/raw-bands")
+#def get_raw_bands():
+#    dataset_name = request.args.get("dataset")
+#    store, err = manager.get_or_error(dataset_name)
+#    if err:
+#        return jsonify({"error": err}), 404
+# 
+#    labels = parse_classes_param()
+#    if not labels:
+#        return jsonify({"error": "No classes specified"}), 400
+# 
+#    max_per_class = int(request.args.get("max_per_class", 300))
+#    n_bands = int(request.args.get("n_bands", 40))
+# 
+#    result = store.get_raw_bands(labels, n_bands=n_bands, max_per_class=max_per_class)
+#    return jsonify(result)
+# 
+# 
+## ---------------------------------------------------------------------------
+## GET /api/plot/pcatsne?dataset=...&classes=N,A&max_per_class=100&force=false
+## The one server-cached, expensive computation -- checked against in-memory
+## then on-disk cache before falling through to sklearn.
+## ---------------------------------------------------------------------------
+#
+#@statistical_analytics_bp.route("/api/plot/pcatsne")
+#def get_pcatsne():
+#    dataset_name = request.args.get("dataset")
+#    store, err = manager.get_or_error(dataset_name)
+#    if err:
+#        return jsonify({"error": err}), 404
+# 
+#    labels = parse_classes_param()
+#    if not labels:
+#        return jsonify({"error": "No classes specified"}), 400
+# 
+#    max_per_class = int(request.args.get("max_per_class", 300))
+#    force = request.args.get("force", "false").lower() == "true"
+# 
+#    result = store.get_pca_tsne_coords(labels, max_per_class=max_per_class, force_recompute=force)
+#    return jsonify(result)
+# 
+# 
+## ---------------------------------------------------------------------------
+## POST /api/dataset/<dataset_name>/reload
+## Manual trigger for when the underlying CSV has grown/changed -- re-reads
+## the file and wipes the PCA/t-SNE cache for that dataset only.
+## ---------------------------------------------------------------------------
+#@statistical_analytics_bp.route("/api/dataset/<dataset_name>/reload", methods=["POST"])
+#def reload_dataset(dataset_name):
+#    store, err = manager.get_or_error(dataset_name)
+#    if err:
+#        return jsonify({"error": err}), 404
+#    store.reload()
+#    return jsonify({"status": "reloaded", "dataset": dataset_name})
+# 
+# 
+#@statistical_analytics_bp.route("/api/datasets/reload-all", methods=["POST"])
+#def reload_all_datasets():
+#    manager.reload_all()
+#    return jsonify({"status": "reloaded", "datasets": manager.list_datasets()})
+ 
+
+ 
+# the routes falling under this Blueprint are meant for our Single ECG Sample
+# Grannular analysis i.e. bit of everything on a single ECG signal 
+app.register_blueprint(featureEngg_bp, url_prefix='/api/v1/splunk') 
+
+# the routes falling under this Blueprint are meant for our bulk ECG Sample Analysis
+# We're not as much as computing on each Sample as we are visualising bulk samples
+app.register_blueprint(statistical_analytics_bp, url_prefix='/statistical_analytics')
+
+
+app.register_blueprint(shorts_bp, url_prefix='/shorts')
+
+app.register_blueprint(dwt_bp)
+
+app.register_blueprint(journey_bp)
+
+app.register_blueprint(reels_bp)
+
 
 # think of it as the main() function of this web-sites programs  
 if __name__ == '__main__':
-    app.run(port=8080, debug=True)
+    # run  the app on the entire LAN, site is accessible by Phone/Tablets/etc any device on the same WiFi 
+    app.run(host='0.0.0.0', port=8080, debug=True)
+    
+    # Run the app only on the local machine
+    #app.run(port=8080, debug=True)
+
+
+# Digitalis (Foxglove): 
+# The Backyard Flower That Saves (or Stops) the HeartFoxglove (Digitalis purpurea) is a common, 
+# breathtakingly beautiful garden plant with bell-shaped purple flowers. 
+# Yet, every single part of it is incredibly toxic.
+# The Poison: 
+# Eating even a couple of leaves introduces powerful chemicals called cardiac glycosides into your body. 
+# These chemicals aggressively attack the sodium-potassium pumps inside your heart cells. In high doses, 
+# it causes severe vomiting, hallucinations where everything appears tinted yellow-green (xanthopsia), 
+# and throws the heart into fatal, chaotic electrical rhythms that abruptly stop it from pumping.
+# The Transformation into Medicine: 
+# In 1785 a Scottish physician named William Withering noticed a local folk remedy effectively treating "dropsy" (severe swelling of the legs caused by a failing heart). 
+# He tracked the active ingredient back to the foxglove plant.
+# The Healer's Hand: 
+# Scientists eventually isolated digoxin from the plant, 
+# creating a crucial medication for congestive heart failure and atrial fibrillation. 
+# In precisely measured, microscopic doses, digoxin does not stop the heart; instead, 
+# it slows down an unsafely racing heart rate and forces the cardiac muscle cells to hold onto calcium. 
+# This calcium boost causes the weakened heart to pump with massive, synchronized, healthy strength. 
+# It has a very narrow therapeutic window, meaning the line between a healing dose and a toxic dose is razor-thin
