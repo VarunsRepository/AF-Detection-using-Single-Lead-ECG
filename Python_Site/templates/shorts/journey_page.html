@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+
+<!-- VIEWPORT -- user-scalable=no prevents pinch-zoom which breaks the
+     scroll-snap card feel. viewport-fit=cover extends into the iPhone's
+     notch/Dynamic Island area and S20's punch-hole camera area. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+
+<!-- PWA / ADD TO HOME SCREEN
+     These tags make the app look and behave like a native app when added
+     to the home screen on both iOS Safari and Android Chrome. -->
+
+<!-- iOS Safari -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<!-- "black-translucent" extends behind the status bar into the notch area
+     on iPhone 13 mini. Use "black" if you want the status bar opaque. -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ECG Shorts">
+
+<!-- Android Chrome (PWA manifest) -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<!-- theme-color sets the browser chrome colour on Android --
+     #000000 matches the app's true black background so the
+     browser bar disappears visually when scrolling. -->
+
+<!-- Prevents iOS from auto-detecting phone numbers and turning them
+     into links -- not relevant for ECG data but prevents Safari from
+     randomly styling numeric values in the signal annotations. -->
+<meta name="format-detection" content="telephone=no">
+
+<!-- PWA manifest -- tells Chrome on Android this is installable.
+     Create /static/manifest.json (see below) for full install support. -->
+<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+
+<!-- iOS home screen icons -- Safari uses these when the user adds to
+     home screen. Sizes cover iPhone 13 mini (375pt) and larger devices.
+     Replace with your actual icon files when you have them. -->
+<link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon-180.png') }}">
+<link rel="apple-touch-icon" sizes="152x152" href="{{ url_for('static', filename='icons/apple-touch-icon-152.png') }}">
+
+<title>Journey Feed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='shorts/shorts_feed.css') }}">
+<style>
+    body { margin: 0; background: var(--bg, #000000); color: #fff; font-family: sans-serif; }
+
+    /* Safe area insets -- required when viewport-fit=cover is set.
+       Without these, content clips behind:
+         iOS: the Dynamic Island/notch (top) and home indicator bar (bottom)
+         Android: the punch-hole camera (top) and navigation gestures (bottom)
+       env(safe-area-inset-*) resolves to 0 on desktop browsers so this
+       has no effect outside a real device. */
+    .journey-feed {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+    }
+
+    /* Stage rail sits above the home indicator on iPhone --
+       add bottom safe area so buttons aren't clipped. */
+    .stage-rail {
+        margin-bottom: env(safe-area-inset-bottom);
+    }
+    .journey-feed {
+        height: 100vh;
+        overflow-y: scroll;
+        scroll-snap-type: y mandatory;
+        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none; /* older Edge/IE */
+    }
+    /* Chrome/Safari/newer Edge -- scroll/swipe still works fully, only the
+       visible track+thumb are hidden. Matches how real Shorts/Reels-style
+       apps feel: no visible scrollbar breaking the edge-to-edge, immersive
+       card experience. */
+    .journey-feed::-webkit-scrollbar {
+        display: none;
+    }
+    .journey-card {
+        height: 100vh;
+        scroll-snap-align: start;
+        padding: 20px;
+        box-sizing: border-box;
+        overflow-y: auto; /* safety net for unusually dense content -- scrollbar itself hidden below, same reasoning as .journey-feed */
+        position: relative; /* anchors .stage-rail's position:absolute against the CARD, not the viewport */
+        display: flex;
+        flex-direction: column;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+    .journey-card::-webkit-scrollbar {
+        display: none;
+    }
+    /* Three stacking zones -- journey_scroll_feed.js places each of
+       title/caption/description/chart into ONE of these, based on the
+       recipe's layout config. Multiple elements sharing a zone stack
+       naturally (flex column), never overlap. */
+    .layout-zone {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        flex-shrink: 0;
+    }
+    .layout-zone[data-zone="center"] {
+        flex: 1 1 auto;
+        justify-content: center;
+        min-height: 0;
+        /* leave room at bottom for the fixed text overlay */
+        padding-bottom: 130px;
+    }
+    /* Bottom zone -- fixed position anchored to card's bottom edge.
+       Height is fixed (130px) so it never shifts between stages
+       regardless of text length. Content that overflows clips cleanly.
+       This matches real Shorts/Reels behavior: the text overlay is a
+       fixed-height region, not a flexbox item that reflows. */
+    .layout-zone[data-zone="bottom"] {
+        position: absolute;
+        bottom: 20px; /* matches card's padding */
+        left: 20px;
+        right: 20px;
+        height: 130px;
+        overflow: hidden;
+        justify-content: flex-end; /* text stacks from bottom up */
+    }
+    .journey-card .chart {
+        width: 100%;
+        flex: 1; /* shrinks to fit whatever space remains when sharing a zone with title/description -- was a rigid height:400px, which could push total content past 100vh once multiple elements shared one zone, triggering the card's overflow-y:auto scrollbar */
+        min-height: 200px; /* floor, so it never becomes too small to actually read */
+        background: transparent; /* was #16161A, a visibly different shade from the card -- made the plot look like a separate boxed element rather than fused into the card. Plotly's own paper_bgcolor/plot_bgcolor are already transparent too, so this now shows the card's true-black background straight through */
+        margin: 16px 0; /* spacing from title/caption -- kept, this is layout breathing room, unrelated to the "boxed look" fix above */
+        position: relative;
+        overflow: hidden; /* NO inner scrollbars -- was overflow-y:auto, which could show a scrollbar within the chart itself. Plotly has its own built-in pan/scroll-zoom feature for later, but that's a deliberate opt-in, not an accidental container scrollbar */
+    }
+    /* Subtle glow on the actual signal trace -- targets Plotly's own SVG
+       structure for line traces (.scatterlayer > .lines > path), so only
+       the line itself glows, not axis labels or gridlines. Color matches
+       the line's real rendered color (#e8f4f8, THEMES[0].traceColor in
+       rail_controls.js) -- not a guess, confirmed against what's actually
+       drawn. Modest blur radius for a subtle glow, not full neon. */
+    .journey-card .chart .scatterlayer .lines path {
+        filter: drop-shadow(0 0 3px var(--ecg-glow-color, rgba(232, 244, 248, 0.7)));
+    }
+    /* Poincaré scatter point glow -- targets marker elements specifically.
+       Uses a fixed cyan glow matching the point color (#00E5FF) rather
+       than the theme's trace color, since the Poincaré dots are always
+       cyan regardless of theme. Slightly wider blur than the line glow
+       since dots are discrete and benefit from more spread. */
+    .journey-card .chart .scatterlayer .points path {
+        filter: drop-shadow(0 0 5px rgba(0, 229, 255, 0.6));
+    }
+    /* shorts_feed.css's .stage-caption is position:absolute, designed for
+       the OLDER system's different layout -- overridden here (higher
+       specificity via .journey-card, naturally wins) so it participates
+       normally in this flex-based zone layout instead of ignoring it. */
+    .journey-card .stage-title,
+    .journey-card .stage-caption,
+    .journey-card .stage-description {
+        position: static;
+        margin: 0;
+        opacity: 1; /* shorts_feed.css's .stage-caption defaults to opacity:0, only revealed via a .visible class that the CURRENT system never adds (that was the OLD system's fade-in, driven by now-deleted JS) -- left as-is, caption was permanently invisible regardless of any layout/positioning fix */
+        text-align: left; /* was center -- switched specifically for this YT-Shorts-style bottom overlay, since Shorts' own text block is left-aligned, not centered. Flagging this as a deliberate change from the earlier explicit "center" request. */
+        font-family: 'Roboto', sans-serif;
+    }
+    .journey-card .stage-title { font-weight: 700; } /* bold -- matches YT's own channel-name weight */
+    .journey-card .stage-caption,
+    .journey-card .stage-description { font-weight: 400; } /* regular -- matches the lighter description text below a Short's channel name */
+    /* clamp(min, preferred, max) -- preferred is viewport-width-based (vw),
+       so text genuinely scales with screen size rather than staying one
+       fixed rem value on every device. Floor/ceiling keep it from ever
+       becoming unreadably small or comically large at the extremes. */
+    .journey-card .stage-title { font-size: clamp(1.1rem, 4vw, 1.6rem); }
+    .journey-card .stage-caption { color: #ccc; font-size: clamp(0.85rem, 3vw, 1.1rem); }
+    .journey-card .stage-description { color: #aaa; font-size: clamp(0.95rem, 3.2vw, 1.2rem); }
+    /* Rail's vertical anchor, configurable via layout.railControls --
+       still always right-aligned (position:absolute; right), only the
+       vertical anchor point changes. "bottom" matches the ORIGINAL
+       hardcoded behavior exactly -- the default if layout is omitted. */
+    .stage-rail[data-zone="top"] { top: 60px; bottom: auto; }
+    .stage-rail[data-zone="center"] { top: 50%; bottom: auto; transform: translateY(-50%); }
+    .stage-rail[data-zone="bottom"] { bottom: 100px; top: auto; }
+</style>
+</head>
+<body>
+    <main id="feed" class="journey-feed"></main>
+
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <script src="{{ url_for('static', filename='shorts/core/rail_controls.js') }}"></script>
+    <script src="{{ url_for('static', filename='shorts/core/shared_signal_utils.js') }}"></script>
+
+    <!-- dsp_registry.js and rendering_registry.js must load BEFORE the
+         algorithm/renderer files below, since those files call
+         registerDspAlgorithm() / registerRenderingAlgorithm() on load. -->
+    <script src="{{ url_for('static', filename='shorts/core/dsp_registry.js') }}"></script>
+    <script src="{{ url_for('static', filename='shorts/core/rendering_registry.js') }}"></script>
+
+    <!-- Server-resolved: only the DSP algorithms this journey actually needs.
+         Was hardcoded (all 3 filter files always, regardless of journey).
+         Now: dsp_store.resolve(stages) in journey_bp.py returns only what's needed. -->
+    {% for url in dsp_entrypoints %}
+    <script src="{{ url }}"></script>
+    {% endfor %}
+
+    <!-- Server-resolved: only the renderers this journey actually needs. -->
+    {% for url in rendering_entrypoints %}
+    <script src="{{ url }}"></script>
+    {% endfor %}
+
+    <script src="{{ url_for('static', filename='shorts/core/dispatcher.js') }}"></script>
+    <script src="{{ url_for('static', filename='shorts/core/journey_interpreter.js') }}"></script>
+    <script src="{{ url_for('static', filename='shorts/core/journey_scroll_feed.js') }}"></script>
+
+    <script>
+        const journeyJson = {
+            globalThemes: {{ journey_themes | tojson }},
+            journeyRules: {{ journey_rules | tojson }},
+            stages: {{ journey_stages | tojson }},
+            uiShell: {{ journey_ui_shell | tojson }},
+            playbackConfig: {{ journey_playback_config | tojson }},
+            layout: {{ journey_layout | tojson }},
+        };
+
+        // If a different sample endpoint base was provided (e.g., for reels/fitness),
+        // override the default before the feed starts fetching.
+        {% if sample_endpoint_base %}
+        globalSampleEndpointBase = "{{ sample_endpoint_base }}";
+        {% endif %}
+
+        applyCurrentTheme(); // must run before the feed starts -- buildChartLayout() and the glow filter both read CSS variables this sets, and would otherwise resolve to empty strings on the very first render
+
+        // DEV TOOL -- only active when ?dev=1 is in the URL.
+        // Cycles through fps/quality presets so you can find the sweet
+        // spot without touching code. Remove this block (and the
+        // _DEV_* globals in shared_signal_utils.js) when done tuning.
+        if (new URLSearchParams(window.location.search).get('dev') === '1') {
+            const PRESETS = [
+                { label: "Native fps", throttle: 0,   points: 800  },
+                { label: "60fps / HQ", throttle: 16,  points: 800  },
+                { label: "30fps / HQ", throttle: 33,  points: 500  },
+                { label: "30fps / MQ", throttle: 33,  points: 300  },
+                { label: "20fps / MQ", throttle: 50,  points: 300  },
+                { label: "15fps / LQ", throttle: 66,  points: 200  },
+            ];
+            let presetIndex = 0; // start at native -- Canvas can handle it
+
+            function applyPreset(p) {
+                globalThis._DEV_DRAW_THROTTLE_MS = p.throttle;
+                globalThis._DEV_MAX_POINTS       = p.points;
+                fpsBtn.textContent = `⚙ ${p.label}`;
+            }
+
+            const fpsBtn = document.createElement('button');
+            fpsBtn.style.cssText = `
+                position: fixed; top: 12px; left: 12px; z-index: 9999;
+                background: rgba(0,0,0,0.75); color: #2dd4bf;
+                border: 1px solid #2dd4bf55; border-radius: 20px;
+                padding: 5px 12px; font-size: 0.72rem;
+                font-family: 'IBM Plex Mono', monospace;
+                cursor: pointer;
+            `;
+            applyPreset(PRESETS[presetIndex]);
+            fpsBtn.addEventListener('click', () => {
+                presetIndex = (presetIndex + 1) % PRESETS.length;
+                applyPreset(PRESETS[presetIndex]);
+            });
+            document.body.appendChild(fpsBtn);
+
+            // Canvas-specific controls -- glow and resolution.
+            // These only affect chart_v1_canvas, ignored by Plotly renderer.
+            const CANVAS_PRESETS = [
+                { label: "Canvas: HQ",   glow: true,  dpr: devicePixelRatio },
+                { label: "Canvas: MQ",   glow: false, dpr: devicePixelRatio },
+                { label: "Canvas: LQ",   glow: false, dpr: 1                },
+            ];
+            let canvasPresetIndex = 0;
+
+            function applyCanvasPreset(p) {
+                globalThis._DEV_CANVAS_GLOW = p.glow;
+                globalThis._DEV_CANVAS_DPR  = p.dpr;
+                canvasBtn.textContent = `◈ ${p.label}`;
+            }
+
+            const canvasBtn = document.createElement('button');
+            canvasBtn.style.cssText = `
+                position: fixed; top: 46px; left: 12px; z-index: 9999;
+                background: rgba(0,0,0,0.75); color: #d9a441;
+                border: 1px solid #d9a44155; border-radius: 20px;
+                padding: 5px 12px; font-size: 0.72rem;
+                font-family: 'IBM Plex Mono', monospace;
+                cursor: pointer;
+            `;
+            applyCanvasPreset(CANVAS_PRESETS[canvasPresetIndex]);
+            canvasBtn.addEventListener('click', () => {
+                canvasPresetIndex = (canvasPresetIndex + 1) % CANVAS_PRESETS.length;
+                applyCanvasPreset(CANVAS_PRESETS[canvasPresetIndex]);
+            });
+            document.body.appendChild(canvasBtn);
+        }
+
+        startJourneyScrollFeed({
+            apiEndpoint: "{{ journey_api_endpoint }}",
+            journeyJson: journeyJson,
+            feedContainer: document.getElementById("feed"),
+        });
+    </script>
+</body>
+</html>
