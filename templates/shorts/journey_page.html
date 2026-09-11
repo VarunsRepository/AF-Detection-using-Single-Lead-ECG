@@ -323,26 +323,37 @@
             `;
             document.body.appendChild(hud);
 
-            // Frame rate measurement -- counts actual frames, not assumed
+            // Frame rate measurement -- tracks display frames, not rAF calls.
+            // The naive approach of counting all rAF callbacks overcounts:
+            // multiple simultaneous rAF loops (sweep, any Plotly internals)
+            // each register their own callback, so 2 loops at 60fps = 240
+            // counted "frames". The fix: track unique display frame timestamps.
+            // The browser passes the same `now` value to ALL callbacks
+            // scheduled for the same display frame, so we only count when
+            // `now` changes from the last seen value.
+            let lastSeenFrameTime = 0;
             let frameCount = 0;
             let lastFpsTime = performance.now();
             let measuredFps = 0;
-            let lastFrameTime = performance.now();
             let lastRenderDuration = 0;
-            let frameIntervalMs = 0; // actual ms between rAF calls
-            let prevFrameTime = performance.now();
+            let frameIntervalMs = 0;
+            let prevDisplayFrame = performance.now();
 
-            // Wrap rAF globally to count frames and measure real interval
             const _origRAF = window.requestAnimationFrame;
             window.requestAnimationFrame = function(cb) {
                 return _origRAF.call(window, (now) => {
-                    frameIntervalMs = now - prevFrameTime;
-                    prevFrameTime = now;
                     const renderStart = performance.now();
                     cb(now);
                     lastRenderDuration = performance.now() - renderStart;
-                    frameCount++;
-                    lastFrameTime = now;
+
+                    // Only count this as a new display frame if the timestamp
+                    // changed -- same `now` = same display frame, multiple loops
+                    if (now !== lastSeenFrameTime) {
+                        frameIntervalMs = now - prevDisplayFrame;
+                        prevDisplayFrame = now;
+                        lastSeenFrameTime = now;
+                        frameCount++;
+                    }
                 });
             };
 

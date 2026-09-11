@@ -71,6 +71,10 @@
                             "isDefault": true
                         },
                         {
+                            "id": "chart_v1_webgl",
+                            "isDefault": false
+                        },
+                        {
                             "id": "chart_v1",
                             "isDefault": false
                         }
@@ -343,6 +347,10 @@
                             "isDefault": true
                         },
                         {
+                            "id": "chart_v1_webgl",
+                            "isDefault": false
+                        },
+                        {
                             "id": "chart_v1",
                             "isDefault": false
                         }
@@ -491,6 +499,10 @@
                         {
                             "id": "chart_v1_canvas",
                             "isDefault": true
+                        },
+                        {
+                            "id": "chart_v1_webgl",
+                            "isDefault": false
                         },
                         {
                             "id": "chart_v1",
@@ -891,6 +903,131 @@
                         "action": {
                             "target": "dspEngine",
                             "method": "switchAlgorithm",
+                            "payload": {}
+                        }
+                    },
+                    {
+                        "ui": {
+                            "label": "Speed",
+                            "icon": "icon_speed"
+                        },
+                        "action": {
+                            "target": "journey",
+                            "method": "cycleSpeed",
+                            "payload": {}
+                        }
+                    },
+                    {
+                        "ui": {
+                            "label": "Theme",
+                            "icon": "icon_theme"
+                        },
+                        "action": {
+                            "target": "journey",
+                            "method": "cycleTheme",
+                            "payload": {}
+                        }
+                    }
+                ],
+                "baseDurationMs": 8000
+            }
+        ]
+    },
+    "test_webgl": {
+        "version": 1,
+        "label": "Test: WebGL Renderer",
+        "description": "Same Pan-Tompkins DSP, signal uploaded to GPU vertex buffer once, single draw call per frame.",
+        "template": "shorts/journey_page.html",
+        "api_endpoint": "/shorts/api/samples",
+        "status": "test",
+        "category": "test",
+        "feedback_score": 0,
+        "globalThemes": {
+            "activeTheme": "test",
+            "themes": [
+                {
+                    "id": "test",
+                    "palette": {
+                        "primary": "#00FF66",
+                        "accent": "#FF3366"
+                    }
+                }
+            ]
+        },
+        "journeyRules": {
+            "allowStageNavigation": true,
+            "autoAdvance": false,
+            "preloadNextStage": false
+        },
+        "uiShell": {
+            "showProgressBar": true,
+            "progressBar": {
+                "position": "top",
+                "activeColor": "rgba(255,165,0,0.8)",
+                "inactiveColor": "rgba(255,255,255,0.2)"
+            }
+        },
+        "playbackConfig": {
+            "isPaused": false
+        },
+        "layout": {
+            "title": "bottom",
+            "description": "bottom",
+            "plot": "center",
+            "caption": "bottom"
+        },
+        "stages": [
+            {
+                "stageId": "webgl_stage_1",
+                "dataSource": {
+                    "mode": "HTTP_REST"
+                },
+                "dspEngine": {
+                    "availableAlgorithms": [
+                        {
+                            "id": "pan_tompkins",
+                            "isDefault": true
+                        },
+                        {
+                            "id": "hamilton_tompkins",
+                            "isDefault": false
+                        }
+                    ],
+                    "parameters": {
+                        "invertSignal": false
+                    }
+                },
+                "renderingEngine": {
+                    "availableRenderers": [
+                        {
+                            "id": "chart_v1_webgl",
+                            "isDefault": true
+                        },
+                        {
+                            "id": "chart_v1_canvas",
+                            "isDefault": false
+                        },
+                        {
+                            "id": "chart_v1",
+                            "isDefault": false
+                        }
+                    ],
+                    "config": {}
+                },
+                "uiFillers": {
+                    "title": "WebGL Renderer",
+                    "caption": "Signal on GPU vertex buffer. Single gl.drawArrays() per frame.",
+                    "description": "Tap \u25fb to cycle: WebGL \u2192 Canvas 2D \u2192 Plotly SVG. Watch render cost in dev HUD."
+                },
+                "railControls": [
+                    {
+                        "ui": {
+                            "label": "Renderer",
+                            "icon": "icon_renderer"
+                        },
+                        "action": {
+                            "target": "renderingEngine",
+                            "method": "switchRenderer",
                             "payload": {}
                         }
                     },

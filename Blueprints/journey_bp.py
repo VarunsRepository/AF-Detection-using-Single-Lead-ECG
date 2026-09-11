@@ -5,6 +5,7 @@ from Services.Rendering_Store import RenderingStore
 
 journey_store = JourneyStore(cache_dir="data_cache/JourneyStore")
 
+
 # ---------------------------------------------------------------------------
 # DSP algorithm registry -- server side.
 # Maps algorithm IDs to the static JS file the browser needs to load.
@@ -30,7 +31,7 @@ dsp_store.register("passthrough",
 dsp_store.register("null_dsp",
     entrypoint="/static/shorts/filters/null_dsp.js",
     label="Null DSP", description="Testing stub -- raw signal passthrough, output matches chart_v1 input contract")
-
+ 
 # ---------------------------------------------------------------------------
 # Rendering registry -- server side.
 # Maps renderer IDs to the static JS file the browser needs to load.
@@ -57,7 +58,7 @@ rendering_store.register("rr_tachogram",
 rendering_store.register("null_renderer",
     entrypoint="/static/shorts/renderers/null_renderer.js",
     label="Null Renderer", description="Testing stub -- dumps DSP finalOutput as formatted JSON, accepts any input shape")
-
+ 
 # Safe to call every time the app starts -- register_journey() skips
 # silently if the journey already exists (loaded from a previous run),
 # so this won't wipe out any accumulated feedback_score on restart.
@@ -175,7 +176,7 @@ journey_store.register_journey("ecg", {
         },
     ],
 })
-
+ 
 # NOTE: "dwt" was previously excluded here since its recipe used the old
 # {block, dependsOn} shape. Now migrated to the real schema, using the
 # verified db4_wavelet DSP engine and dwt_comparison_view renderer.
@@ -244,7 +245,7 @@ journey_store.register_journey("dwt", {
         },
     ],
 })
-
+ 
 # ---------------------------------------------------------------------------
 # TEST JOURNEYS -- 4 configurations for isolated testing
 #
@@ -258,7 +259,7 @@ journey_store.register_journey("dwt", {
 # real signal data still flows through -- only the processing/rendering
 # layer changes. This isolates each layer independently.
 # ---------------------------------------------------------------------------
-
+ 
 # ---------------------------------------------------------------------------
 # TEST 1: null_dsp + real_renderer (chart_v1)
 # Use: verify chart_v1 renders correctly before any DSP is built.
@@ -273,7 +274,7 @@ _SHARED_TEST_THEME = {
 _SHARED_TEST_RULES = {"allowStageNavigation": True, "autoAdvance": False, "preloadNextStage": False}
 _SHARED_TEST_SHELL = {"showProgressBar": True, "progressBar": {"position": "top", "activeColor": "rgba(255,165,0,0.8)", "inactiveColor": "rgba(255,255,255,0.2)"}}
 _SHARED_TEST_LAYOUT = {"title": "bottom", "description": "bottom", "plot": "center", "caption": "bottom"}
-
+ 
 journey_store.register_journey("test_null_dsp", {
     "label": "Test: Null DSP + Real Renderer",
     "description": "Raw signal passed through to chart_v1 unprocessed. Tests rendering pipeline in isolation.",
@@ -312,7 +313,7 @@ journey_store.register_journey("test_null_dsp", {
         },
     ],
 })
-
+ 
 # ---------------------------------------------------------------------------
 # TEST 2: real_dsp (pan_tompkins) + null_renderer
 # Use: inspect exactly what pan_tompkins produces before building or
@@ -361,7 +362,7 @@ journey_store.register_journey("test_null_renderer", {
         },
     ],
 })
-
+ 
 # ---------------------------------------------------------------------------
 # TEST 3: null_dsp + null_renderer
 # Use: test ONLY the feed engine mechanics -- pagination, lazy loading,
@@ -430,7 +431,7 @@ journey_store.register_journey("test_null_both", {
         },
     ],
 })
-
+ 
 # ---------------------------------------------------------------------------
 # TEST 4: Canvas renderer -- compare directly with chart_v1 (Plotly)
 # Visit /journey/test_canvas alongside /journey/ecg to compare smoothness.
@@ -479,7 +480,7 @@ journey_store.register_journey("test_canvas", {
         },
     ],
 })
-
+ 
 journey_store.register_journey("test_webgl", {
     "version": 1,
     "label": "Test: WebGL Renderer",
@@ -527,10 +528,10 @@ journey_store.register_journey("test_webgl", {
         },
     ],
 })
-
+ 
 journey_bp = Blueprint('journey', __name__)
-
-
+ 
+ 
 @journey_bp.route('/journey/<journey_name>')
 def journey(journey_name):
     try:
@@ -539,13 +540,13 @@ def journey(journey_name):
         abort(500, description=str(e))
     if not package:
         abort(404)
-
+ 
     # Resolve which JS files this journey's stages actually need --
     # deduplicated, in registration order. Template generates <script>
     # tags from these lists, replacing the old hardcoded load-everything approach.
     dsp_entrypoints = dsp_store.resolve(package["stages"])
     rendering_entrypoints = rendering_store.resolve(package["stages"])
-
+ 
     return render_template(
         package["template"],
         journey_stages=package["stages"],
@@ -558,3 +559,4 @@ def journey(journey_name):
         dsp_entrypoints=dsp_entrypoints,
         rendering_entrypoints=rendering_entrypoints,
     )
+ 
