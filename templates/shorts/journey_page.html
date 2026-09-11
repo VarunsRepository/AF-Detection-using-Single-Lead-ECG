@@ -172,12 +172,65 @@
        fixed-height region, not a flexbox item that reflows. */
     .layout-zone[data-zone="bottom"] {
         position: absolute;
-        bottom: 20px; /* matches card's padding */
+        bottom: 20px;
         left: 20px;
-        right: 20px;
-        height: 130px;
+        right: 80px; /* leave space for rail buttons on the right */
+        max-height: 140px; /* cap total height -- adapts to content */
         overflow: hidden;
-        justify-content: flex-end; /* text stacks from bottom up */
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        gap: 4px;
+    }
+
+    /* Title -- always fully visible, never clipped */
+    .journey-card .stage-title {
+        flex-shrink: 0;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    /* Caption -- always visible, max 2 lines */
+    .journey-card .stage-caption {
+        flex-shrink: 0;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    /* Description -- collapsed to 2 lines by default, expandable on tap.
+       A fade gradient signals there's more text without hard-clipping. */
+    .journey-card .stage-description {
+        flex-shrink: 1;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        position: relative;
+        cursor: pointer;
+        transition: max-height 0.3s ease;
+    }
+    .journey-card .stage-description.expanded {
+        display: block;
+        -webkit-line-clamp: unset;
+        overflow: visible;
+    }
+    /* Fade gradient on collapsed description */
+    .journey-card .stage-description::after {
+        content: '';
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        height: 1.2em;
+        background: linear-gradient(transparent, var(--bg, #000));
+        pointer-events: none;
+        opacity: 1;
+        transition: opacity 0.2s;
+    }
+    .journey-card .stage-description.expanded::after {
+        opacity: 0;
     }
     .journey-card .chart {
         width: 100%;
