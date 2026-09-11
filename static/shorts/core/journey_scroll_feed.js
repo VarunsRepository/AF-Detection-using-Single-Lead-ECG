@@ -198,12 +198,16 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, feedContainer 
                 cancelSweepAnimation(sampleId);
             }
         });
-    // threshold:0.1 instead of 0.6 -- Android Chrome's IntersectionObserver
-    // has known precision issues with higher thresholds on scroll-snap
-    // containers. 0.6 caused missed callbacks on fast swipes on S20+.
-    // iOS Safari was tolerant of 0.6; Android is not. 0.1 fires as soon
-    // as 10% of the card is visible -- reliable on both platforms.
-    }, { threshold: 0.1 });
+    }, {
+        // root: feedContainer is CRITICAL for Android Chrome.
+        // Without it, IntersectionObserver defaults to the viewport as root.
+        // When the scroll container is a DOM element (not window), Android
+        // Chrome's observer fires unreliably -- iOS Safari works fine without
+        // root but Android doesn't. Explicit root = the actual scroll container
+        // fixes observation against the correct coordinate space.
+        root: feedContainer,
+        threshold: 0.1,
+    });
 
     async function loadFeedCards() {
         try {
@@ -262,22 +266,36 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, feedContainer 
     const sentinelObserver = new IntersectionObserver((entries) => {
         if (entries[0].isIntersecting) {
             loadMoreCards(sentinel).then(() => {
-                // Re-observe after load -- Android Chrome fires the sentinel
-                // observer ONCE per enter/exit cycle. After new cards push the
-                // sentinel down, Android doesn't re-fire until the sentinel
-                // leaves AND re-enters. Re-observing forces a fresh observation
-                // cycle, so fast scrollers don't hit a dead end.
                 sentinelObserver.unobserve(sentinel);
                 sentinelObserver.observe(sentinel);
             });
         }
     }, {
+        root: feedContainer,  // same fix as cardObserver -- must match scroll container
         threshold: 0.01,
-        // rootMargin fires 200px BEFORE the sentinel enters the viewport --
-        // gives time to fetch and build the next batch before the user
-        // actually reaches the bottom. Critical on Android where the
-        // observer callback can be delayed vs iOS Safari.
-        rootMargin: "0px 0px 200px 0px",
+        // Note: rootMargin is NOT used here -- it is ignored by many Android
+        // Chrome versions when root is a DOM element (not viewport).
+        // The scroll event backup below handles early-trigger instead.
     });
     sentinelObserver.observe(sentinel);
+
+    // ── Scroll event backup (Android reliability) ─────────────────────────
+    // IntersectionObserver with a DOM root can silently stop firing on
+    // Android Chrome after a few scroll cycles -- a known Chromium bug
+    // (crbug.com/840590). A scroll listener as a backup catches cases
+    // the observer misses. Throttled to once per 200ms to avoid cost.
+    let scrollThrottleTimer = null;
+    feedContainer.addEventListener("scroll", () => {
+        if (scrollThrottleTimer) return;
+        scrollThrottleTimer = setTimeout(() => {
+            scrollThrottleTimer = null;
+            // Check if user is within 2 card-heights of the bottom
+            const distanceFromBottom = feedContainer.scrollHeight
+                - feedContainer.scrollTop
+                - feedContainer.clientHeight;
+            if (distanceFromBottom < window.innerHeight * 2) {
+                loadMoreCards(sentinel);
+            }
+        }, 200);
+    }, { passive: true });
 }
