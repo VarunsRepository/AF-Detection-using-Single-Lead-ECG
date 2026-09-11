@@ -3,7 +3,7 @@ from Services.Journey_Store import JourneyStore
 from Services.Dsp_Store import DspAlgorithmStore
 from Services.Rendering_Store import RenderingStore
 
-journey_store = JourneyStore(cache_dir="data_cache")
+journey_store = JourneyStore(cache_dir="data_cache/JourneyStore")
 
 # ---------------------------------------------------------------------------
 # DSP algorithm registry -- server side.
