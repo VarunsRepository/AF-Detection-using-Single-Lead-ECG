@@ -30,7 +30,7 @@ const DEFAULT_LAYOUT = {
 };
 
 async function startJourneyScrollFeed({ apiEndpoint, journeyJson, feedContainer }) {
-    const PAGE_SIZE = 5;
+    const PAGE_SIZE = 10; // was 5 -- with only 5 cards the sentinel becomes visible too quickly, tightening the window before pagination fires
     let loadedCount = 0;
     let totalAvailable = null;
     let isLoadingMore = false;
@@ -41,7 +41,20 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, feedContainer 
     async function fetchSamplesPage(offset) {
         const res = await fetch(`${apiEndpoint}?limit=${PAGE_SIZE}&offset=${offset}`);
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
-        return res.json();
+        const data = await res.json();
+
+        // Normalise API response shape -- guard against shape mismatches
+        // that would cause samples.forEach to throw and leave isLoadingMore
+        // stuck as true, silently blocking all future pagination.
+        const samples = data.samples ?? data.data ?? data.records ?? [];
+        const total   = data.total   ?? data.count ?? data.totalCount ?? null;
+
+        if (!Array.isArray(samples)) {
+            console.error("fetchSamplesPage: unexpected response shape", data);
+            return { samples: [], total: null };
+        }
+
+        return { samples, total };
     }
 
     function buildCard(sampleId) {
@@ -225,8 +238,14 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, feedContainer 
 
     await loadFeedCards();
 
+    // Sentinel -- triggers pagination when the user nears the end.
+    // scroll-snap-align: none is CRITICAL: without it, scroll-snap-type:y
+    // mandatory treats the sentinel as a potential snap target. Since it's
+    // 1px with no snap alignment defined, the snap engine can refuse to
+    // scroll past the last real card, making the feed appear stuck even
+    // though more cards exist. Explicit none opts it out of snap entirely.
     const sentinel = document.createElement("div");
-    sentinel.style.height = "1px";
+    sentinel.style.cssText = "height:1px; scroll-snap-align:none; flex-shrink:0;";
     feedContainer.appendChild(sentinel);
 
     const sentinelObserver = new IntersectionObserver((entries) => {

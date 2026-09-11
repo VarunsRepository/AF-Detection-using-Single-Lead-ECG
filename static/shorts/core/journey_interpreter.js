@@ -295,10 +295,14 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             if (chartContainer._fullLayout) Plotly.purge(chartContainer);
             else chartContainer.innerHTML = "";
 
-            // Expose active renderer to the dev HUD (global scope can't
-            // reach into this closure, so we write it out explicitly).
-            globalThis._DEV_ACTIVE_RENDERER = renderingEngine.getActiveRenderer();
+            // Expose active renderer/algorithm/card to the dev HUD.
+            // These are global -- last-write-wins across all cards.
+            // The HUD shows sampleId so you can tell which card's values
+            // are currently displayed.
+            globalThis._DEV_ACTIVE_RENDERER  = renderingEngine.getActiveRenderer();
             globalThis._DEV_ACTIVE_ALGORITHM = dspEngine.getActiveAlgorithm();
+            globalThis._DEV_ACTIVE_SAMPLE    = sampleId;
+            globalThis._DEV_ACTIVE_STAGE     = currentStageIndex;
 
             renderingEngine.render(chartContainer, dspOutput, sampleId, data.fs, actualDuration);
 
