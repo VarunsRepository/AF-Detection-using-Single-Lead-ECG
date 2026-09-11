@@ -84,6 +84,12 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, feedContainer 
 
         const descriptionEl = document.createElement("p");
         descriptionEl.className = "stage-description";
+        // Tap description to expand/collapse -- stopPropagation prevents
+        // the card tap zone from treating this as a navigation gesture
+        descriptionEl.addEventListener("click", (e) => {
+            e.stopPropagation();
+            descriptionEl.classList.toggle("expanded");
+        });
 
         const chartEl = document.createElement("div");
         chartEl.className = "chart";
