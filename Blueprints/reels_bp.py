@@ -14,8 +14,8 @@ This proves separation of concerns.
 """
 
 from flask import Blueprint, render_template
-from Services.dsp_store import DspAlgorithmStore
-from Services.rendering_store import RenderingStore
+from Services.Dsp_Store import DspAlgorithmStore
+from Services.Rendering_Store  import RenderingStore
 
 reels_bp = Blueprint('reels', __name__, url_prefix='/reels')
 
