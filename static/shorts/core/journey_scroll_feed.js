@@ -184,21 +184,26 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, feedContainer 
     const cardObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
             const sampleId = entry.target.dataset.sampleId;
+            if (!sampleId) return;
+
             if (entry.isIntersecting) {
                 if (!activeJourneys.has(sampleId)) {
-                    // Lazy-start -- the journey interpreter for this card
-                    // is only ever built the FIRST time it scrolls into
-                    // view, not upfront for every card on the page.
                     const els = cardElements.get(sampleId);
+                    if (!els) return;
                     const journey = interpretJourney(journeyJson, sampleId, els.chartEl, els.railEl, els.titleEl, els.captionEl, els.progressBarEl, els.descriptionEl);
                     activeJourneys.set(sampleId, journey);
                     journey.start();
                 }
             } else {
-                cancelSweepAnimation(sampleId); // stop animating cards that have scrolled off-screen
+                cancelSweepAnimation(sampleId);
             }
         });
-    }, { threshold: 0.6 });
+    // threshold:0.1 instead of 0.6 -- Android Chrome's IntersectionObserver
+    // has known precision issues with higher thresholds on scroll-snap
+    // containers. 0.6 caused missed callbacks on fast swipes on S20+.
+    // iOS Safari was tolerant of 0.6; Android is not. 0.1 fires as soon
+    // as 10% of the card is visible -- reliable on both platforms.
+    }, { threshold: 0.1 });
 
     async function loadFeedCards() {
         try {
@@ -255,7 +260,24 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, feedContainer 
     feedContainer.appendChild(sentinel);
 
     const sentinelObserver = new IntersectionObserver((entries) => {
-        if (entries[0].isIntersecting) loadMoreCards(sentinel);
-    }, { threshold: 0.01 });
+        if (entries[0].isIntersecting) {
+            loadMoreCards(sentinel).then(() => {
+                // Re-observe after load -- Android Chrome fires the sentinel
+                // observer ONCE per enter/exit cycle. After new cards push the
+                // sentinel down, Android doesn't re-fire until the sentinel
+                // leaves AND re-enters. Re-observing forces a fresh observation
+                // cycle, so fast scrollers don't hit a dead end.
+                sentinelObserver.unobserve(sentinel);
+                sentinelObserver.observe(sentinel);
+            });
+        }
+    }, {
+        threshold: 0.01,
+        // rootMargin fires 200px BEFORE the sentinel enters the viewport --
+        // gives time to fetch and build the next batch before the user
+        // actually reaches the bottom. Critical on Android where the
+        // observer callback can be delayed vs iOS Safari.
+        rootMargin: "0px 0px 200px 0px",
+    });
     sentinelObserver.observe(sentinel);
 }
