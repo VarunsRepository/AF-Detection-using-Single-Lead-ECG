@@ -1,0 +1,5 @@
+data_cache/training2017/
+__pycache__/
+*.pyc
+.venv/
+venv/

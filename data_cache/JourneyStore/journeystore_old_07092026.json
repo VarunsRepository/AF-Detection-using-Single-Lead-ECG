@@ -1,0 +1,214 @@
+{
+    "ecg": {
+        "label": "AFib Detection",
+        "description": "Peak detection and HRV analysis on real ECG recordings.",
+        "template": "shorts/journey_page.html",
+        "api_endpoint": "/shorts/api/samples",
+        "status": "production",
+        "category": "afib",
+        "feedback_score": 0,
+        "globalThemes": {
+            "activeTheme": "clinical_dark",
+            "themes": [
+                {
+                    "id": "clinical_dark",
+                    "palette": {
+                        "primary": "#00FF66",
+                        "accent": "#FF3366",
+                        "secondary": "#00E5FF"
+                    }
+                }
+            ]
+        },
+        "journeyRules": {
+            "allowStageNavigation": true
+        },
+        "stages": [
+            {
+                "stageId": "stage_01_peak_detection",
+                "dataSource": {
+                    "mode": "HTTP_REST"
+                },
+                "dspEngine": {
+                    "availableAlgorithms": [
+                        {
+                            "id": "pan_tompkins",
+                            "isDefault": true
+                        },
+                        {
+                            "id": "hamilton_tompkins",
+                            "isDefault": false
+                        }
+                    ],
+                    "parameters": {
+                        "invertSignal": false
+                    }
+                },
+                "renderingEngine": {
+                    "availableRenderers": [
+                        {
+                            "id": "chart_v1",
+                            "isDefault": true
+                        }
+                    ],
+                    "config": {}
+                },
+                "uiFillers": {
+                    "title": "Finding Each Beat",
+                    "caption": "Peaks are the topmost points in an ECG representing cardiac contraction."
+                },
+                "railControls": [
+                    {
+                        "ui": {
+                            "label": "Invert"
+                        },
+                        "action": {
+                            "target": "dspEngine",
+                            "method": "setParameter",
+                            "payload": {
+                                "key": "invertSignal",
+                                "operation": "toggle"
+                            }
+                        }
+                    },
+                    {
+                        "ui": {
+                            "label": "Algorithm"
+                        },
+                        "action": {
+                            "target": "dspEngine",
+                            "method": "switchAlgorithm",
+                            "payload": {}
+                        }
+                    }
+                ],
+                "stageOutput": {
+                    "exportKey": "stage_01_processed_data",
+                    "exportedFields": [
+                        "rrIntervalsMs",
+                        "peakIndices"
+                    ]
+                }
+            },
+            {
+                "stageId": "stage_02_poincare_plot",
+                "dataSource": {
+                    "mode": "PREVIOUS_STAGE_PIPELINE",
+                    "stageId": "stage_01_peak_detection",
+                    "outputKey": "stage_01_processed_data",
+                    "consumedField": "rrIntervalsMs"
+                },
+                "dspEngine": {
+                    "availableAlgorithms": [
+                        {
+                            "id": "poincare_standard",
+                            "isDefault": true
+                        }
+                    ],
+                    "parameters": {}
+                },
+                "renderingEngine": {
+                    "availableRenderers": [
+                        {
+                            "id": "scatter_density",
+                            "isDefault": true
+                        }
+                    ],
+                    "config": {}
+                },
+                "uiFillers": {
+                    "title": "HRV Poincare Plot",
+                    "caption": "The width (SD1) and length (SD2) of the cloud reflect short- and long-term heart rate variability."
+                },
+                "railControls": []
+            }
+        ]
+    },
+    "dwt": {
+        "label": "Wavelet Decomposition",
+        "description": "Daubechies-4 multi-resolution analysis of real ECG signals.",
+        "template": "shorts/journey_page.html",
+        "api_endpoint": "/shorts/api/samples",
+        "status": "experimental",
+        "category": "wavelet_analysis",
+        "feedback_score": 0,
+        "globalThemes": {
+            "activeTheme": "clinical_dark",
+            "themes": [
+                {
+                    "id": "clinical_dark",
+                    "palette": {
+                        "primary": "#00FF66",
+                        "accent": "#FF3366",
+                        "secondary": "#00E5FF"
+                    }
+                }
+            ]
+        },
+        "journeyRules": {
+            "allowStageNavigation": true
+        },
+        "stages": [
+            {
+                "stageId": "stage_01_raw_signal",
+                "dataSource": {
+                    "mode": "HTTP_REST"
+                },
+                "dspEngine": {
+                    "availableAlgorithms": [
+                        {
+                            "id": "passthrough",
+                            "isDefault": true
+                        }
+                    ],
+                    "parameters": {}
+                },
+                "renderingEngine": {
+                    "availableRenderers": [
+                        {
+                            "id": "chart_v1",
+                            "isDefault": true
+                        }
+                    ],
+                    "config": {}
+                },
+                "uiFillers": {
+                    "title": "Raw Signal",
+                    "caption": "The original ECG recording."
+                },
+                "railControls": []
+            },
+            {
+                "stageId": "stage_02_db4_decomposition",
+                "dataSource": {
+                    "mode": "HTTP_REST"
+                },
+                "dspEngine": {
+                    "availableAlgorithms": [
+                        {
+                            "id": "db4_wavelet",
+                            "isDefault": true
+                        }
+                    ],
+                    "parameters": {
+                        "levels": 6
+                    }
+                },
+                "renderingEngine": {
+                    "availableRenderers": [
+                        {
+                            "id": "dwt_comparison_view",
+                            "isDefault": true
+                        }
+                    ],
+                    "config": {}
+                },
+                "uiFillers": {
+                    "title": "Daubechies-4 Decomposition",
+                    "caption": "Toggle any combination of levels on to compare them side by side."
+                },
+                "railControls": []
+            }
+        ]
+    }
+}

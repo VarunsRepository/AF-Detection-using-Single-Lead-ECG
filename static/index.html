@@ -1,0 +1,3288 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ECG Analytics Workspace Studio</title>
+    <script src="https://tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+
+        body {
+            background-color: #121418;
+            color: #f2f4f8;
+            font-family: 'Monaco', 'Consolas', monospace;
+            margin: 20px;
+        }
+
+        .inline-cite {
+            color: #88c0d0;
+            /* Bright clean ice-blue for interface links */
+            font-family: monospace;
+            font-size: 13px;
+            text-decoration: none;
+            border-bottom: 1px dashed #4c566a;
+            white-space: nowrap;
+        }
+
+        .inline-cite:hover {
+            color: #f2f4f8;
+            border-bottom: 1px solid #88c0d0;
+        }
+
+
+        h2 {
+            color: #eb7b2b;
+            border-bottom: 2px solid #2e3440;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .panel {
+            background-color: #1c1e24;
+            border: 1px solid #2e3440;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: center;
+        }
+
+        select,
+        input,
+        label {
+            cursor: pointer;
+        }
+
+        select {
+            background-color: #2e3440;
+            color: #f2f4f8;
+            border: 1px solid #4c566a;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+
+        .chart-frame {
+            width: 100%;
+            height: 550;
+        }
+
+        .secondary-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+
+        .panel.control-group {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 20px;
+        }
+
+
+        .panel-footer-cite {
+            width: 100%;
+            margin-top: 10px;
+            font-size: 11px;
+            color: #4c566a;
+            font-family: monospace;
+            border-top: 1px solid #2e3440;
+            padding-top: 8px;
+        }
+
+        .panel-footer-cite a {
+            color: #eb7b2b;
+            text-decoration: none;
+        }
+
+        .panel-footer-cite a:hover {
+            text-decoration: underline;
+        }
+
+        .panel-footer-cite-grid {
+            width: 100%;
+            margin-top: 15px;
+            padding-top: 12px;
+            border-top: 1px dashed #2e3440;
+            /* Clean separation line */
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+        }
+
+        .cite-node {
+            display: flex;
+            flex-direction: column;
+            /* Stack label above link for a terminal feel */
+            gap: 4px;
+        }
+
+        .cite-label {
+            font-size: 10px;
+            color: #4c566a;
+            /* Subtle muted gray */
+            font-family: monospace;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+        }
+
+        .cite-link {
+            font-size: 12px;
+            color: #88c0d0;
+            /* Crisp ice-blue link color */
+            font-family: monospace;
+            text-decoration: none;
+            width: fit-content;
+            border-bottom: 1px dotted transparent;
+            transition: all 0.2s ease;
+        }
+
+        .cite-link:hover {
+            color: #f2f4f8;
+            border-bottom: 1px dotted #88c0d0;
+            /* Subtle underline on hover */
+        }
+
+        /* A dedicated wrapper that permanently bonds the status text to its override switch */
+        .hardware-module {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            /* Fixed spacing between the badge and the checkbox */
+        }
+
+        /* Ensure the text expands smoothly and naturally without breaking into two lines */
+        #orientation-status-badge {
+            white-space: nowrap;
+        }
+
+
+
+        /* Automatically stack panels into a single clean column on mobile screens */
+        @media (max-width: 768px) {
+
+            /* Target whatever div wrapper holds your dropdowns/toggles */
+            .selector-container,
+            .panel-controls {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                padding: 10px;
+            }
+
+            /* Make select dropdowns prominent and easy to tap */
+            select {
+                width: 100% !important;
+                height: 48px !important;
+                font-size: 16px !important;
+                /* Forces iOS/Android to NOT zoom in automatically when selected */
+                padding: 10px !important;
+                border-radius: 6px;
+            }
+
+            /* Transform small check toggles into fat clickable action rows */
+            label {
+                display: flex !important;
+                align-items: center;
+                justify-content: space-between;
+                padding: 12px 16px;
+                background-color: #2e3440;
+                /* Fits your dark theme */
+                border-radius: 6px;
+                font-size: 14px;
+                cursor: pointer;
+                min-height: 48px;
+            }
+
+            /* Make the actual checkbox inputs larger */
+            input[type="checkbox"] {
+                width: 20px;
+                height: 20px;
+                cursor: pointer;
+            }
+
+            /* Make sure Plotly charts stretch neatly to the edges of your screen */
+            .chart-holder,
+            #chart-container,
+            #wavelet-container {
+                width: 100% !important;
+                margin: 0 px !important;
+                padding: 0 px !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<!-- 
+<div class="panel">
+  
+    <h3 style="color: #eb7b2b; margin-top: 0; font-size: 14px; border-bottom: 1px solid #2e3440; padding-bottom: 5px; font-family: monospace;">
+        | METRIC // REFERENCE_ANIMATION_STREAM
+    </h3>
+    -->
+
+    <!--
+    <div style="display: flex; justify-content: left; align-items: left; padding: 10px; background-color: #121418; border-radius: 4px;">
+          
+        
+        <img src="/static/images/gta_vice_city_text.gif"  alt="ECG Reference Waveform Animation" 
+             style="max-width: 100%; height: auto; border-radius: 4px; opacity: 0.85; border: 1px solid #2e3440;">
+    </div>
+</div>
+-->
+
+
+
+    <h2>Splunk Pipeline Studio: index="ecg_telemetry"</h2>
+
+
+    <!-- This Panel holds the ECG sample IO from the physionet site-->
+    <div class="panel control-group">
+
+        <div>
+            <label style="color: #eb7b2b; font-weight: bold;">TARGET CLINICAL CLASS: </label>
+            <select id="class-selector" onchange="updateSampleDropdown()">
+                <option value="N">Normal Sinus Rhythm (N)</option>
+                <option value="A">Atrial Fibrillation (A)</option>
+                <option value="O">Other Alternative Arrhythmia (O)</option>
+                <option value="~">Too Noisy / Compromised (~)</option>
+            </select>
+        </div>
+
+        <div>
+            <label style="color: #3498db; font-weight: bold;">AVAILABLE RECORDING: </label>
+            <select id="record-selector" onchange="loadEcgPipeline()">
+            </select>
+        </div>
+
+        <div>
+            <label>TIMELINE SPAN: </label>
+            <select id="scale-selector" onchange="loadEcgPipeline()">
+                <option value="short">Zoomed Snippet (8.3s)</option>
+                <option value="full">Full Stream (30.0s)</option>
+                <option value="fullLengthSample">Full Sample Stream (Upto 90.0s)</option>
+            </select>
+        </div>
+
+        <!-- NEW INLINE SOURCE BADGE 
+        <div class="hardware-module">
+            <span style="font-size: 11px; color: #4c566a; font-family: monospace;">REF:</span>
+            <a href="https://physionet.org" target="_blank" class="inline-cite">
+                physionet.org ↗
+            </a>
+        </div>
+-->
+
+
+    </div>
+
+
+
+
+    <!-- This Panel holds the Peaks(QRS complexes) detectino algorithm for the pipeline -->
+    <div class="panel control-group">
+
+        <div>
+            <label style="color: #eb7b2b; font-weight: bold;">PEAK DETECTION: </label>
+            <select id="Peak-Detection-Selector" onchange="loadEcgPipeline()">
+                <option value="false">No Peak Detection</option>
+                <option value="Pan-Tompkins-Native">Pan Tompkins Inhouse</option>
+                <option value="Pan-Tompkins-Neurokit2">Pan Tompkins using Neurokit2</option>
+                <option value="Pan-Tompkins-Space-Age">Pan-Tomps Sci-Fi Space Age</option>
+            </select>
+        </div>
+    </div>
+
+
+
+
+    <!-- This panel controls the signal preprocessing elements like noise removal, signal flipping, etc -->
+    <div class="panel control-group">
+        <!-- Section Heading Label -->
+        <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">SIGNAL PREPROCESSING:</label>
+
+        <!-- Unified Hardware Status Badge -->
+        <div id="orientation-status-badge"
+            style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block;">
+            Checking Hardware Status...
+        </div>
+
+        <!-- Manuallly Force option  -->
+        <div style="display: inline-flex; align-items: center;">
+            <input type="checkbox" id="toggle-manual-flip" onchange="loadEcgPipeline()" style="margin-right: 6px;">
+            <label for="toggle-manual-flip" style="color: #f2994a; font-weight: bold;">| force_manual_flip</label>
+        </div>
+
+        <!-- Noise Filter  -->
+        <div style="display: inline-flex; align-items: center;">
+            <input type="checkbox" id="toggle-filter" onchange="loadEcgPipeline()" style="margin-right: 6px;">
+            <label for="toggle-filter" style="color: #5cc24a; font-weight: bold;">| apply_noise_filter</label>
+        </div>
+    </div>
+
+
+    <!-- THIS CONTROL IS MEANT TO VISUALSE THE R-R DISTANCES MORE EFFECTIVELY -->
+    <div class="panel control-group">
+
+        <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">R-R INTERVALS</label>
+
+
+        <div>
+            <input type="checkbox" id="stacked-beats" onchange="loadEcgPipeline()">
+            <label for="stacked-beats" style="color: #5cc24a;">| Plot Stacked Beats </label>
+        </div>
+
+
+        <div>
+            <input type="checkbox" id="stacked-beats-on-beats" onchange="loadEcgPipeline()">
+            <label for="stacked-beats-on-beats" style="color: #f1c40f;">| Plot Stacked Beat(s)-on-Beat(s) </label>
+        </div>
+
+        <div>
+            <input type="checkbox" id="stacked-n-RR-beats" onchange="loadEcgPipeline()">
+            <label for="stacked-n-RR-beats" style="color: #f1c40f;">| Plot Stacked n-RR beats </label>
+        </div>
+
+        <div>
+            <input type="checkbox" id="beats-VIX" onchange="loadEcgPipeline()">
+            <label for="beats-VIX" style="color: #f1c40f;">| Plot Volatility-Index for Beats </label>
+        </div>
+    </div>
+
+
+
+    <!-- this panel holds the STATISTICAL FEATURES DSP methods and control -->
+    <div class="panel control-group">
+
+        <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">TIME-DOMAIN & HRV STATISTICS</label>
+
+
+        <div>
+            <input type="checkbox" id="toggle-poincare" onchange="loadEcgPipeline()">
+            <label for="toggle-poincare" style="color: #f1c40f;">| map_poincare</label>
+        </div>
+    </div>
+
+
+    <!-- this panel holds the  DSP methods and control -->
+    <div class="panel control-group">
+
+        <label style="color: #3498db; font-weight: bold; margin-right: 10px;">DSP TRANSFORMS & FILTERS </label>
+
+        <div>
+            <input type="checkbox" id="toggle-local" onchange="loadEcgPipeline()">
+            <label for="toggle-local" style="color: #3498db;">| local_max_r_peaks</label>
+        </div>
+
+        <!--
+        <div>
+            <input type="checkbox" id="toggle-pan" onchange="loadEcgPipeline()">
+            <label for="toggle-pan" style="color: #eb7b2b;">| run_pan_tompkins</label>
+        </div>
+         -->
+
+        <div>
+            <input type="checkbox" id="toggle-cancel" onchange="loadEcgPipeline()">
+            <label for="toggle-cancel" style="color: #e74c3c;">| cancel_qrst_complex</label>
+        </div>
+
+        <div>
+            <input type="checkbox" id="toggle-fft" onchange="loadEcgPipeline()">
+            <label for="toggle-fft" style="color: #9b59b6;">| calculate_spectrum_fft</label>
+        </div>
+
+        <div>
+            <input type="checkbox" id="toggle-wavelet" onchange="loadEcgPipeline()">
+            <label for="toggle-wavelet" style="color: #3498db;">| decompose_wavelets_db4</label>
+        </div>
+    </div>
+
+
+
+    <div class="panel control-group">
+        <!-- SIGNAL VERIFICATIONS CONTROLS -->
+        <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">SIGNAL VERIFICATIONS CONTROLS</label>
+
+        <!-- Unified Signal rubber stamp Status Badge -->
+        <div id="rubber-stamp-status-badge"
+            style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block;">
+            Checking Rubber Stamp Status...
+        </div>
+
+        <!-- Stamp button to verify the status of the signal here 
+        <div style="display: inline-flex; align-items: center;">
+            <input type="checkbox" id="toggle-manual-flip" onchange="loadEcgPipeline()" style="margin-right: 6px;">
+            <label for="toggle-manual-flip" style="color: #f2994a; font-weight: bold;">| Verify This Configuration</label>
+        </div>
+        -->
+        <button id="rubber-stamp-btn" older_code_onclick="lockThisIsItConfiguration()"
+            old_onclick="window.dispatchEvent(new CustomEvent('tuldLockRequested'))"
+            style="background-color: #5cc24a; color: #111111; border: 1px solid #44a635; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px;"   
+            Super_class="bg-[#5cc24a] text-[#111111] font-bold text-[12px] uppercase tracking-[0.5px] px-4 py-[6px] border border-[#44a635] rounded-[3px] cursor-pointer transition-all duration-150 ease-in-out hover:bg-[#4cb03b] hover:shadow-[0_0_4px_rgba(92,194,74,0.4)]"
+
+            onmouseover="this.style.backgroundColor='#4cb03b'; this.style.boxShadow='0 0 4px rgba(92,194,74,0.4)';"
+            onmouseout="this.style.backgroundColor='#5cc24a'; this.style.boxShadow='none';">
+            🔒 This Is It! Lock Configuration
+        </button>
+
+        <!-- 💰 THE TULD MARGIN CALL CAPTION -->
+        <span id="tuld-caption"
+            style="font-size: 9px; font-family: monospace; color: #747d8c; margin-top: 4px; padding-left: 2px; text-transform: uppercase; letter-spacing: 0.3px; opacity: 0.4; transition: opacity 0.15s ease-in-out;">
+            Protocol: Be first. Be smarter. Lock the gate.
+        </span>
+
+    </div>
+
+
+
+    <div class="panel control-group" style="margin-top: 15px;">
+        <!-- RECORD NAVIGATION CONTROLS -->
+        <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">Record NAVIGATION CONTROLS</label>
+
+        <!-- Unified Current Record Status Badge -->
+        <div id="record-navigation-status-badge"
+            style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block; margin-right: 8px;">
+            Viewing Record: #---
+        </div>
+
+        <!-- PREVIOUS Record BUTTON -->
+        <button id="prev-Record-btn" onclick="window.dispatchEvent(new CustomEvent('navPrevRecordRequested'))"
+            style="background-color: #2e3440; color: #d8dee9; border: 1px solid #4c566a; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 6px;"
+            onmouseover="this.style.backgroundColor='#3b4252'; this.style.borderColor='#5e81ac';"
+            onmouseout="this.style.backgroundColor='#2e3440'; this.style.borderColor='#4c566a';">
+            ◀ Prev Record
+        </button>
+
+        <!-- NEXT Record BUTTON -->
+        <button id="next-Record-btn" onclick="window.dispatchEvent(new CustomEvent('navNextRecordRequested'))"
+            style="background-color: #5cc24a; color: #111111; border: 1px solid #44a635; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px;"
+            onmouseover="this.style.backgroundColor='#4cb03b'; this.style.boxShadow='0 0 4px rgba(92,194,74,0.4)';"
+            onmouseout="this.style.backgroundColor='#5cc24a'; this.style.boxShadow='none';">
+            Next Record ▶
+        </button>
+
+        <!-- 💰 THE TULD NAVIGATION CAPTION -->
+        <span id="tuld-nav-caption"
+            style="font-size: 9px; font-family: monospace; color: #747d8c; margin-top: 4px; padding-left: 2px; text-transform: uppercase; letter-spacing: 0.3px; opacity: 0.4; transition: opacity 0.15s ease-in-out; display: block;">
+            Protocol: Review sequence. Maintain alignment. Run pipeline.
+        </span>
+    </div>
+
+
+
+        <div class="panel control-group" style="margin-top: 15px;">
+        <!-- STATISTICAL ANALYSIS NAVIGATION -->
+        <label style="color: #5cc24a; font-weight: bold; margin-right: 10px;">STATISTICAL ANALYSIS</label>
+
+        <!-- Unified Status Badge -->
+        <div id="stats-nav-status-badge"
+            style="padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 13px; background-color: #2e3440; border: 1px solid #4c566a; display: inline-block; margin-right: 8px;">
+            Spectral Band Dashboard
+        </div>
+
+
+
+        <!-- OPEN STATISTICAL ANALYSIS BUTTON -->
+        <a id="open-stats-btn" href="/statistical_analytics/"
+            style="background-color: #5cc24a; color: #111111; border: 1px solid #44a635; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 6px; text-decoration: none; display: inline-block;"
+            onmouseover="this.style.backgroundColor='#4cb03b'; this.style.boxShadow='0 0 4px rgba(92,194,74,0.4)';"
+            onmouseout="this.style.backgroundColor='#5cc24a'; this.style.boxShadow='none';">
+            Open Analysis ▶
+        </a>
+
+        <!-- OPEN IN NEW TAB BUTTON
+        <a id="open-stats-newtab-btn" href="/statistical_analytics/" target="_blank" rel="noopener"
+            style="background-color: #2e3440; color: #d8dee9; border: 1px solid #4c566a; padding: 6px 16px; font-size: 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-family: 'Proxima Nova', 'Helvetica Neue', Arial, sans-serif; transition: all 0.15s ease-in-out; text-transform: uppercase; letter-spacing: 0.5px; text-decoration: none; display: inline-block;"
+            onmouseover="this.style.backgroundColor='#3b4252'; this.style.borderColor='#5e81ac';"
+            onmouseout="this.style.backgroundColor='#2e3440'; this.style.borderColor='#4c566a';">
+            ◱ New Tab
+        </a>
+         -->
+
+        <!-- 💰 THE TULD NAVIGATION CAPTION -->
+        <span id="tuld-stats-nav-caption"
+            style="font-size: 9px; font-family: monospace; color: #747d8c; margin-top: 4px; padding-left: 2px; text-transform: uppercase; letter-spacing: 0.3px; opacity: 0.4; transition: opacity 0.15s ease-in-out; display: block;">
+            Protocol: Aggregate the signal. Compare the classes. Trust the spread.
+        </span>
+    </div>
+
+
+
+    <div class="panel">
+        <!-- 
+        Added citation directly on beneath the plot - Makes design simpler-->
+        <div id="chart-container" class="chart-frame"></div>
+        <div id="chart-container-citation" class="panel-footer-cite">
+
+            <!-- 1. PAN-TOMPKINS SLOT (HIDDEN BY DEFAULT) -->
+            <span id="cite-pan-tompkins" class="hidden-citation">
+                PEAKS & QRS DETECTION METHOD: J. Pan and W. J. Tompkins, "A Real-Time QRS Detection Algorithm,"
+                <i>IEEE Transactions on Biomedical Engineering</i>, vol. BME-32, no. 3, pp. 230-236, Mar. 1985.
+                DOI: <a href="https://doi.org" target="_blank"
+                    style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1109/TBME.1985.325532</a>
+                |
+            </span>
+
+            <!-- 2. WAVELET DECOMPOSITION SLOT (HIDDEN BY DEFAULT) -->
+            <span id="cite-wavelets" class="hidden-citation">
+                WAVELET MATH: M. S. Manikandan and S. Dandapat, "Wavelet-Based Electrocardiogram Signal Compression and
+                Noise Removal,"
+                <i>Biomedical Signal Processing and Control</i>, vol. 60, p. 102143, Aug. 2020.
+                DOI: <a href="https://doi.org" target="_blank"
+                    style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
+                |
+            </span>
+
+            <!-- 3. MAIN DATASET SLOT (PERMANENTLY VISIBLE) -->
+            <span id="cite-physionet">
+                DATA: <a href="https://physionet.org" target="_blank"
+                    style="color: #3498db; text-decoration: underline; font-weight: bold;">Goldberger et al. PhysioNet
+                    Database</a>
+            </span>
+        </div>
+    </div>
+
+    <div class="secondary-grid">
+        <div id="fft-panel" class="panel" style="display: none;">
+            <div id="fft-container" class="chart-frame"></div>
+        </div>
+
+        <div id="poincare-panel" class="panel" style="display: none;">
+            <div id="poincare-container" class="chart-frame"></div>
+
+            <div id="poincare-panel-citation" class="panel-footer-cite">
+                RR INTERVALS: A L Goldberger, L A Amaral, L
+                Glass, J M Hausdorff, P C Ivanov, R G Mark, J E Mietus, G B Moody, C K Peng, H E Stanley. (2000)
+                PhysioBank, PhysioToolkit, and PhysioNet: Components of a new research resource for complex physiologic
+                signals. Circulation [Online]. 101 (23), pp. e215–e220
+                </i>, vol. 40, no. 5, pp. 230-236, 3 June 2019. DOI: <a
+                    href="https://iopscience.iop.org/article/10.1088/1361-6579/aaff04" target="_blank"
+                    style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1088/1361-6579/aaff04</a>
+            </div>
+
+        </div>
+    </div>
+
+
+
+
+    <div id="wavelet-panel" class="panel">
+        <h3>Wavelet Sub-Band Decomposition</h3>
+
+        <!-- the Wavelet container, this is the HTML element controlled by Plotly. Any  graphs/charts/ECG signals would come up here  -->
+        <div id="wavelet-container" class="chart-frame"></div>
+
+        <!-- The citation box's Code -->
+        <div class="panel-footer-cite">
+            WAVELET MATH: M. S. Manikandan and S. Dandapat, "Wavelet-Based Electrocardiogram Signal Compression and
+            Noise Removal,"
+            <i>Biomedical Signal Processing and Control</i>, vol. 60, p. 102143, Aug. 2020. DOI:
+            <a href="https://doi.org" target="_blank"
+                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
+        </div>
+    </div>
+
+    <div id="stacked-overlay-panel" class="panel">
+        <!-- <h3>Stacked beats Comparison</h3> -->
+
+
+        <div id="stacked-overlay-container" class="chart-frame"></div>
+        <div class="panel-footer-cite">
+            STACKED ECG BEATS (R-central )
+            This plot stacks individual heartbeats using the R-peak as a common starting point. Overlaying the signals
+            makes it instantly clear whether other physiological phases—such as atrial depolarization (P-wave) and
+            ventricular repolarization (T-wave)—are perfectly synchronized.
+            </i>, vol. 60, p. 102143, Aug. 2020. DOI:
+            <a href="https://doi.org" target="_blank"
+                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
+        </div>
+    </div>
+
+
+    <div id="stacked-beats-on-beats-overlay-panel" class="panel">
+        <!-- <h3>Beat(s) on Beat(s) Comparison</h3> -->
+
+        <div id="stacked-beats-on-beats-overlay-container" class="chart-frame"></div>
+        <div class="panel-footer-cite">
+            STACKED 2 ECG BEATS (R-central)
+            This plot stacks individual heartbeats using the R-peak as a common starting point. Overlaying the signals
+            makes it instantly clear whether other physiological phases—such as atrial depolarization (P-wave) and
+            ventricular repolarization (T-wave)—are perfectly synchronized.
+            </i>, vol. 60, p. 102143, Aug. 2020. DOI:
+            <a href="https://doi.org" target="_blank"
+                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
+        </div>
+    </div>
+
+
+    <div id="stacked-n-RR-beats-overlay-panel" class="panel">
+        <!-- <h3>Beat(s) on Beat(s) Comparison</h3> -->
+
+        <div id="stacked-n-RR-beats-overlay-container" class="chart-frame"></div>
+        <div class="panel-footer-cite">
+            STACKED n-ECG BEATS (R-central)
+            This plot stacks individual heartbeats using the R-peak as a common starting point. Overlaying the signals
+            makes it instantly clear whether other physiological phases—such as atrial depolarization (P-wave) and
+            ventricular repolarization (T-wave)—are perfectly synchronized.
+            </i>, vol. 60, p. 102143, Aug. 2020. DOI:
+            <a href="https://doi.org" target="_blank"
+                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
+        </div>
+    </div>
+
+    <div id="beats-voltility-index-overlay-panel" class="panel">
+        <!-- <h3>checking the volatility index for the beats</h3> -->
+
+        <div id="beats-voltility-index-overlay-container" class="chart-frame"></div>
+        <div class="panel-footer-cite">
+            VOLATILITY INDEX FOR THE BEATS
+            This plot views the R-R intervals like a typical comodity price in a stock market. The way volatlity is
+            calculated
+            for a stock-price, we are here calcualting the volatility for an R-R interval to see if the variation is
+            withtin the controlled
+            or not.
+            </i>, vol. 60, p. 102143, Aug. 2020. DOI:
+            <a href="https://doi.org" target="_blank"
+                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
+        </div>
+    </div>
+
+
+        <!-- this panel holds the STATISTICAL FEATURES DSP methods and control -->
+    <div class="panel control-group">
+
+        <label style="color: #f1c40f; font-weight: bold; margin-right: 10px;">UNIFIED STACKED PEAKS & WAVEWLET PLOT :</label>
+
+
+        <div>
+            <input type="checkbox" id="toggle-Stacked-Wavelets-On-Wavelets" onchange="loadEcgPipeline()">
+            <label for="toggle-Stacked-Wavelets-On-Wavelets" style="color: #f1c40f;">| Stack_Wavelets</label>
+        </div>
+    </div>  
+    
+    
+        <div id="Stacked-Wavelets-On-Wavelets-view-overlay-panel" class="panel">
+        <!-- <h3>checking the volatility index for the beats</h3> -->
+
+        <div id="Stacked-Wavelets-On-Wavelets-overlay-container" class="chart-frame"></div>
+        <div class="panel-footer-cite">
+            An experimental plot that unified stacked chart with the waavelet transform.
+            The plot still shows the stacked RR chart with the Consequitive beats alinged at their R-peaks.
+            It instead of showing the beats, it now shows the wavelets, this helping us to understand     
+ 
+            <a href="https://doi.org" target="_blank"
+                style="color: #eb7b2b; text-decoration: underline; font-weight: bold;">10.1016/j.bspc.2020.102143</a>
+        </div>
+    </div>
+
+    
+</body>
+
+</html>
+
+<script>
+    /**
+     * Pulls matching sample IDs from the Flask registry slice endpoint
+     * and rebuilds the RECORDING selector automatically on modification.
+     */
+    function updateSampleDropdown_() {
+        const chosenClass = document.getElementById('class-selector').value;
+
+        // hardcoded URL
+        //const registryUrl = `http://127.0.0.1:8080/api/v1/splunk/registry?class=${chosenClass}`;
+
+        // Need the url to be created and accessible dynamically if we're accessing it on the LAN via phone
+        const registryUrl = `/api/v1/splunk/registry?class=${chosenClass}`;
+
+        fetch(registryUrl)
+            .then(res => res.json())
+            .then(payload => {
+                const recordMenu = document.getElementById('record-selector');
+                recordMenu.innerHTML = ""; // Wipe previous entries cleanly
+
+                // Inject the new batch of matching recordings
+                payload.samples.forEach((rec, idx) => {
+                    if (idx < 100) { // Safety limit for fluid DOM execution
+                        const opt = document.createElement('option');
+                        opt.value = rec;
+                        opt.textContent = `${rec} (True: ${chosenClass})`;
+                        recordMenu.appendChild(opt);
+                    }
+                });
+
+                // CHAIN REACTION: Instantly pull vector calculations for the first child item
+                loadEcgPipeline();
+            })
+            .catch(err => console.error("Error compilation failing on registry slice:", err));
+    }
+
+
+    let currentRecordOffset = 0;
+    const RECORDS_PER_BATCH = 100;
+    let isRecordLoading = false; // Flag to prevent accidental Double-Reads 
+
+    function updateSampleDropdown(isAppending = false) {
+        if (isRecordLoading) return; // Guard clause to prevent spamming requests
+        isRecordLoading = true;
+
+        const chosenClass = document.getElementById('class-selector').value;
+        const recordMenu = document.getElementById('record-selector');
+
+        // 1. Reset or advance offset tracker
+        if (!isAppending) {
+            currentRecordOffset = 0;
+            recordMenu.innerHTML = ""; // Wipe previous entries cleanly
+        }
+
+        const registryUrl = `/api/v1/splunk/registry?class=${chosenClass}&limit=${RECORDS_PER_BATCH}&offset=${currentRecordOffset}`;
+
+        fetch(registryUrl)
+            .then(res => res.json())
+            .then(payload => {
+                if (payload.samples.length === 0) {
+                    isRecordLoading = false;
+                    return; // Nothing left to load
+                }
+
+                // Record the current selected index before adding new options
+                const originalSelectedIndex = recordMenu.selectedIndex;
+
+                // 2. Inject the new batch of matching recordings
+                payload.samples.forEach((rec) => {
+                    const opt = document.createElement('option');
+                    opt.value = rec;
+                    opt.textContent = `${rec} (True: ${chosenClass})`;
+                    recordMenu.appendChild(opt);
+                });
+
+                // 3. Maintain active selection state
+                if (isAppending) {
+                    // Keep the active index locked on what the user was viewing
+                    recordMenu.selectedIndex = originalSelectedIndex;
+                } else {
+                    // For a brand new class, fallback to the default chain reaction execution
+                    loadEcgPipeline();
+                }
+
+                // Advance offset for the next dynamic trigger
+                currentRecordOffset += payload.samples.length;
+                isRecordLoading = false;
+            })
+            .catch(err => {
+                console.error("Error compilation failing on registry slice:", err);
+                isRecordLoading = false;
+            });
+    }
+
+
+
+
+    async function updatePeakDetectionDropdown() {
+        const url = `/api/v1/splunk/peak_detection_algorithms`;
+        console.log("inside updatePeakDetectionDropdown now")
+
+        try {
+
+            const response = await fetch(url);
+            const algoList = await response.json();
+            console.log(algoList);
+
+            const algoMenu = document.getElementById('Peak-Detection-Selector');
+            algoMenu.innerHTML = '<option value="false"> No Peak Detection </option>';
+
+            for (const algoName of algoList) {
+                console.log(algoName);
+                const opt = document.createElement('option');
+                opt.value = algoName;
+                opt.textContent = algoName;
+                algoMenu.appendChild(opt);
+            }
+
+            console.log("algotithms loaded successfully.");
+
+        } catch (err) {
+            console.error("Failed to load algorithm registry:", err);
+        }
+
+
+    }
+
+
+    /*
+    This function does the actual heavylifting for generating the custom dataset for the plotly view.
+    Earlier we had this functionlaity on the server-side{On the python back end via generate_stacked_RR_dataset()} 
+    Now since we want the option to view single, double or tripple beats-on-beats, we're moving that functionality to the front end i.e. JS 
+    1. This offloads some work from the server. 
+    2. This also gives us the flexibility to design elaborate features in the front end without needing 
+    to design/update/haul complex data-structures as Payloads to-and-fro through the server 
+    */
+    function sliceStackedBeatsFrontend(signal,           // the input ECG signal 
+        absoluteIndices,  // The P,Q,R,S and T points returned from Pan-Tompkins or similar peak detection Algorithm 
+        beatsToStack = 2, // If you want to a stack a single-beat or 2-consequitive beats or 3-beats or more...
+        samplingRate = 300// Sampling rate
+    ) {
+        const rPeaks = absoluteIndices.R || [];
+        const stackedDataset = [];
+
+        //A pre-determined number of ECG-points before and after our R-peak
+        // As the plot would be centered around the R point, we would need to decide on the number of points 
+        // that are enough to display a complete beat
+        // sometimes the beat can be long, and sometimes the beat can be short we need to accomodate that with some logic
+        // hardcoding the ECG-points for now to 
+        // 0.2 seconds or 60 sample before the R-point
+        // 0.4 seconds or 120 samples after the R point 
+        const samplesBefore = Math.floor(0.20 * samplingRate); // 60 samples
+        const samplesAfter = Math.floor(0.40 * samplingRate);  // 120 samples
+
+        // Loop through R-peaks, stopping safely before we run out of neighboring beats
+        for (let idx = 0; idx < rPeaks.length - (beatsToStack - 1); idx++) {
+            const rCurrent = rPeaks[idx];                        // This represents the current R-peak in the view
+            const rTargetEnd = rPeaks[idx + (beatsToStack - 1)]; // This represents the last R-peak in the view
+
+
+            const startSample = rCurrent - samplesBefore; //represents the first Sample ID from the signal Array 
+            const endSample = rTargetEnd + samplesAfter;  //represents the Last  Sample ID from the signal Array 
+
+            // Guard clause against boundary overflow errors near file endpoints
+            if (startSample < 0 || endSample >= signal.length) continue;
+
+            // Slice the ECG recording from first designated R-point to the last R-point that we want  
+            const amplitudes = signal.slice(startSample, endSample);
+
+            // generate the x-axis timeline(same as what we did earlier in our generate_stacked_RR_dataset()  in python)
+            const timesMs = Array.from({ length: amplitudes.length }, (_, s) => {
+                const absoluteSampleIndex = startSample + s;
+                return Number((((absoluteSampleIndex - rCurrent) / samplingRate) * 1000).toFixed(1));
+            });
+
+            // Map the PQRST Markers
+            const features = { P: [], Q: [], R: [], S: [], T: [] };
+
+            ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+                const indices = absoluteIndices[wave] || [];
+                indices.forEach(sampleIdx => {
+                    // If the marker falls within our current window slice
+                    if (sampleIdx >= startSample && sampleIdx <= endSample) {
+                        features[wave].push({
+                            x: Number((((sampleIdx - rCurrent) / samplingRate) * 1000).toFixed(1)),
+                            y: signal[sampleIdx]
+                        });
+                    }
+                });
+            });
+
+            //finally push everything onto the stackedDataset
+            stackedDataset.push({
+                beat_number: idx + 1,
+                time_ms: timesMs,
+                amplitude_mv: amplitudes,
+                features: features
+            });
+        }
+
+        return stackedDataset;
+    }
+
+
+    /* THIS FUNCTION TAKES CARE OF ALL THE R-R BEATS PLOTS. IT DOES THE FOLLOWING :
+       * Moves the R-R plotting and rendering math from server to the browser side
+       * simplies the stacked plots. earlier we has a separate data structure in the 
+         server's payload for each R-R plot, but now the server just sends the Processed signal array and the feature array(Pan-Tompkins/Peak detection) 
+         and rest of figured out by the browser in real time 
+    */
+
+    /**
+     * Decoupled VIX function
+        * our earlier code had VIX logicintegratedinto the plotting function, here we'e separated the 2.
+        calculation of VIX to be done by  calculateVolatilityIndex()
+        and Plotting done by the original function
+     
+        returns: {
+            cvi_raw ,
+            volatility_percentage ,
+            is_volatile ,
+            lower_bollinger_bound ,
+            upper_bollinger_bound ,
+            total_beats  
+            }
+        */
+    function calculateVolatilityIndex(pureRRIntervals) {
+        if (!pureRRIntervals || pureRRIntervals.length <= 1) return null;
+
+        const logReturns = [];
+
+        // Calculate Log-Returns of successive intervals just as in Stock markets
+        for (let b = 0; b < pureRRIntervals.length - 1; b++) {
+            const currentInt = pureRRIntervals[b];
+            const nextInt = pureRRIntervals[b + 1];
+
+            if (currentInt > 0 && nextInt > 0) {
+                logReturns.push(Math.log(nextInt / currentInt));
+            }
+        }
+
+        if (logReturns.length === 0) return null;
+
+        // Calculate Standard Deviation of the Log Returns
+        const meanLog = logReturns.reduce((s, v) => s + v, 0) / logReturns.length;
+        const varLog = logReturns.reduce((s, v) => s + Math.pow(v - meanLog, 2), 0) / logReturns.length;
+        const cviRaw = Math.sqrt(varLog);
+
+        // Scale to a clean percentage index
+        const cardiacVolatilityIndex = cviRaw * 100;
+        const isVolatile = cardiacVolatilityIndex > 10.0;
+
+        // Compute Bollinger-Band boundary markers(for safe range of volatility )
+        const totalValidBeats = pureRRIntervals.length;
+        const meanRR = pureRRIntervals.reduce((sum, val) => sum + val, 0) / totalValidBeats;
+        const lowerVolBound = meanRR * Math.exp(-cviRaw);
+        const upperVolBound = meanRR * Math.exp(cviRaw);
+
+        // Return the Math object 
+        return {
+            cvi_raw: cviRaw,
+            volatility_percentage: parseFloat(cardiacVolatilityIndex.toFixed(2)),
+            is_volatile: isVolatile,
+            lower_bollinger_bound: lowerVolBound,
+            upper_bollinger_bound: upperVolBound,
+            total_beats: totalValidBeats
+        };
+    }
+
+    /*
+    This function plots the Volatility Index (VIX) in a separate view. Volatility indexes are used in finance to forecast how volatile or unstable a market
+     might be over a strict, fixed 30-day forward horizon. This volatility can swing in either direction, meaning an individual asset can either climb or deprecate in value. 
+     Assets with low volatility are generally favorable in the long run due to future price stability, while assets with high volatility are traded upon when
+     the acceptable risk level is considerably higher because they can provide potential returns in shorter timeframes. However, because investors purchase protective options during market downturns,
+     the VIX typically spikes during a crash, giving it a strong inverse correlation with market direction.
+     In our analysis, however, the VIX framework offers an unexpected diagnostic advantage. We do not care if the value of the R-R intervals speeds up or slows down, nor do we look for inverse market correlations; 
+     we are exclusively interested in detecting high successional variability, which is a core indicator of an AF rhythm. It does not matter 
+     if the baseline heart rate increases or decreases smoothly—a normal Sinus Rhythm should never sway beyond a certain tight variance threshold.
+    
+     So the function runVolatilityIndexPlot() borrows heavily from the above function - updateStackedChart() in terms of structure. the only difference is in the core Math
+     */
+
+    async function runVolatilityIndexPlot(serverPayload,
+        beatsToStack = 2,
+        samplingRate = 300,
+        currentConfig
+    ) {
+
+        console.log("inside runVolatilityIndexPlot")
+        // Run the math function to slice the data on the fly without needing to ask the server to do it for us
+        const stackedBeats = sliceStackedBeatsFrontend(
+            serverPayload.data,
+            serverPayload.features, // e.g. { P:[...], Q:[...], R:[...] }
+            beatsToStack,
+            samplingRate
+        );
+
+        const finalPlotTraces = [];
+
+        // Consolidated tracking buckets for all PQRST markers
+        const featureMap = {
+            P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
+            Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
+            R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
+            S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
+            T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
+        };
+
+        // Loop through the frontend-sliced chunks to push lines and collect dots
+        for (const chunk of stackedBeats) {
+
+            // Push the continuous ECG trace lines
+            finalPlotTraces.push({
+                x: chunk.time_ms,
+                y: chunk.amplitude_mv,
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.2 },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+
+            // Loop through P, Q, R, S, T waves to harvest their shifted offsets
+            ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+                chunk.features[wave].forEach(marker => {
+                    featureMap[wave].x.push(marker.x);
+                    featureMap[wave].y.push(marker.y);
+                });
+            });
+        }
+
+        // Add the grouped markers to the chart array
+        for (const [key, cfg] of Object.entries(featureMap)) {
+            if (cfg.x.length > 0) {
+                finalPlotTraces.push({
+                    x: cfg.x,
+                    y: cfg.y,
+                    type: 'scatter',
+                    mode: 'markers',
+                    name: cfg.name,
+                    marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
+                    hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                });
+            }
+        }
+
+        // Set dynamic X-axis range width based on how many beats are stacked
+        // right now we are hardcoding the interval but in future we might need some logic to ge the longest or the most frequenct beat length or something like that 
+        // 1 beat  : 450ms wide
+        // 2 beats : 1100ms wide 
+        // 3 beats : 1800ms wide
+        const maxRangeX = beatsToStack === 1 ? 450 : beatsToStack === 2 ? 1100 : 1800;
+
+        
+
+
+        // we will generate Horizontal indicator lines that literally show the  R-R interval lengths
+
+const rrIntervalLines = [];
+
+let prevRrLengthMs = null; // RR interval of the previous pair, for comparison
+
+featureMap.R.x.forEach((r2OffsetMs, i) => {
+    if (r2OffsetMs > 0) {
+        const r2Voltage = featureMap.R.y[i];
+
+        // Compare this pair's RR length to the previous pair's RR length
+        let lineColor;
+        if (prevRrLengthMs === null) {
+            lineColor = 'rgba(50, 168, 82, 0.30)'; // green — no previous pair to compare against
+        } else {
+            const deltaMs = Math.abs(r2OffsetMs - prevRrLengthMs);
+            lineColor = deltaMs > 50
+                ? 'rgba(220, 53, 43, 0.30)'   // red-ish, 30% opacity — RR changed by >50ms vs previous
+                : 'rgba(50, 168, 82, 0.30)';  // green-ish, 30% opacity — stable RR
+        }
+
+        rrIntervalLines.push({
+            type: 'line',
+            x0: 0,
+            y0: r2Voltage,
+            x1: r2OffsetMs,
+            y1: r2Voltage,
+            line: {
+                color: lineColor,
+                width: 1
+            }
+        });
+
+        prevRrLengthMs = r2OffsetMs; // this pair's RR becomes "previous" for the next one
+    }
+});
+
+
+        //       const rrIntervalLines = [];
+//
+//       // Looping into the feature map that we genearted above using the signal and the Pan-tompkins Markers
+//       featureMap.R.x.forEach((r2OffsetMs, i) => {
+//           if (r2OffsetMs > 0) {
+//               // Get the corresponding voltage peak so the line reaches all the way up to the apex
+//               const r2Voltage = featureMap.R.y[i];
+//
+//               rrIntervalLines.push({
+//                   type: 'line',
+//                   x0: 0,           // Starts at the first R-peak 
+//                   y0: r2Voltage,   // Connects horizontally at the peak voltage level
+//                   x1: r2OffsetMs,  // Stretches to the second R-peak location
+//                   y1: r2Voltage,   // Keeps it flat
+//                   line: {
+//                       color: 'rgba(235, 123, 43, 0.30)', // splunk style orange color, with 30% opacity. not too bright or else it will steal the spotlight from the main signal  
+//                       width: 1 // not too thick  or else it will take off the spotlight from the main signal 
+//                   }
+//               });
+//           }
+//       });
+
+
+        //************************ THE CODE BELOW MANAGES THE STATS FOR THE CURRENT SAMPLE ************************ //
+
+        // Filter out the 0ms starting R-peaks to get pure RR interval durations
+        const pureRRIntervals = featureMap.R.x.filter(x => x > 0);
+        const totalValidBeats = pureRRIntervals.length;
+
+
+        let statsAnnotation = [];
+
+        //******************************  CODE FOR MANAGING/DISPLYAING SIGNAL STATS END HERE  ******************************  //
+        //we would only need the above 3 vriables from the stats function that we'd written earlier
+
+        //************************ THE CODE BELOW MANAGES THE VOLATILITY INDEX(VIX) FOR THE CURRENT SAMPLE ************************ //
+        //
+
+
+
+
+        const engineVersion = "2.0.1";
+
+        // Intercept or run the math through the universal first-class object cache wrapper
+        const vixResults = await getOrComputeMetric(
+            serverPayload.record_id,
+            `${currentConfig}-vix_analytics`,
+            engineVersion,
+            () => {
+                // This math function block ONLY runs if the server RAM is completely empty!
+                const pureRRIntervals = featureMap.R.x.filter(x => x > 0);
+                return calculateVolatilityIndex(pureRRIntervals);
+            }
+        );
+
+        console.log(`getOrComputeMetric: ${vixResults}`)
+
+        // INJECT PRE-COMPUTED VIX ANNOTATIONS DIRECTLY
+        if (vixResults) {
+            const statusColor = vixResults.is_volatile ? '#e74c3c' : '#5e81ac';
+
+
+            // Pushing a dummy entry
+            finalPlotTraces.push({
+                type: 'scatter',
+                mode: 'markers',
+                name: 'Summary Box',        // The text that appears in your legend
+                showlegend: true,
+                x: [null], y: [null],       // Draws absolutely nothing on the screen
+                legendgroup: 'summary_group' // 🔑 The secret key linking it to the annotation
+            });
+
+            // pushing a dummy value for RR interval lines
+            finalPlotTraces.push({
+                type: 'scatter',
+                mode: 'markers',
+                name: 'RR Intervals',        // The text that appears in your legend
+                showlegend: true,
+                x: [null], y: [null],       // Draws absolutely nothing on the screen
+                legendgroup: 'RR_Intervals' // 🔑 The secret key linking it to the annotation
+            });
+            
+            
+
+            let statusBoxObject_v1 = {
+                x: 0.98, y: 0.62,
+                xref: 'paper', yref: 'paper',
+                text: `<b>Heart Beat volatility Trackerdre5u</b><br>` +
+                    `━━━━━━━━━━━━━━━<br>` +
+                    `R-R Volatility Index: <span style="color:${statusColor}"><b>${vixResults.volatility_percentage}%</b></span><br>` +
+                    `Status: <b>${vixResults.is_volatile ? 'VOLATILE BEAT' : 'STABLE BEAT'}</b>`,
+                align: 'left',
+                showarrow: false,
+                bgcolor: 'rgba(36, 41, 51, 0.95)',
+                bordercolor: statusColor,
+                borderwidth: 1.5,
+                borderpad: 8,
+                font: { color: '#eceff4', size: 10, family: 'monospace' }
+            }
+
+            let statusBoxObject_v2 = {
+                x: 0.98, y: 0.62,
+
+                xref: 'paper', yref: 'paper',
+                align: 'left',
+                showarrow: false,
+
+                text:
+                    `<b>Heart Beat Volatility Tracker</b><br>` +
+                    `━━━━━━━━━━━━━━━<br>` +
+                    `R-R Volatility Index: <b>${vixResults.volatility_percentage}%</b><br>` +
+                    `Status: <b>${vixResults.is_volatile ? 'VOLATILE BEAT' : 'STABLE BEAT'}</b>`,
+
+                bgcolor: '#1c1e24',       // Perfect match for dark theme background
+                bordercolor: '#4c566a',   // Structural frame line
+                borderwidth: 1,           // Thickness
+                font: { color: '#aaaaaa', size: 12 },
+
+                legendgroup: 'summary_group'
+
+            };
+
+            statsAnnotation.push(statusBoxObject_v1);
+
+
+
+            // Push Bollinger-Band highlight rectangles using cached float boundary values
+            rrIntervalLines.push({
+                type: 'rect',
+                xref: 'x', yref: 'paper',
+                x0: vixResults.lower_bollinger_bound, y0: 0,
+                x1: vixResults.upper_bollinger_bound, y1: 1,
+                fillcolor: 'rgba(136, 192, 208, 0.05)',
+                line: { color: 'rgba(136, 192, 208, 0.3)', width: 1, dash: 'dash' }
+            });
+
+
+        }
+
+
+
+
+        //***************************  CODE FOR MANAGING/DISPLYAING VOLATILITY INDEX(VIX) END HERE  ******************************  //
+
+        // The constant overlayLayout will hold the data to do the actual plotting. 
+        // in plotly, if we need to draw something the we need a dictinary like the below with some pre-defined mandatory keys
+        // such as what we have below 
+        const overlayLayout = {
+            title: { text: `<b>Volatility Index of the R-R Intervals</b>`, font: { size: 16, color: '#aaaaaa' } },
+            xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, maxRangeX], gridcolor: '#2e3440' },
+            yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+
+            shapes: rrIntervalLines,  // This member manages the shape for RR intervals 
+
+            annotations: statsAnnotation,  // This member manages the lines for stats 
+
+            plot_bgcolor: '#1c1e24',
+            paper_bgcolor: '#1c1e24',
+            showlegend: true,
+            legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+            hovermode: 'closest'
+        };
+
+        Plotly.newPlot('beats-voltility-index-overlay-container'
+            , finalPlotTraces
+            , overlayLayout
+        );
+
+
+
+        let isSummaryBoxVisible = true;
+        const plotContainerDiv = document.getElementById('beats-voltility-index-overlay-container');
+
+//        plotContainerDiv.on('plotly_legendclick', function(data) {
+//        // Check if the user specifically clicked the 'Toggle Summary Box' trace item
+//            if (data.curveNumber === finalPlotTraces.length - 1) {
+//                isSummaryBoxVisible = !isSummaryBoxVisible;
+//                
+//                // Update ONLY the visibility state of the annotation inside the layout engine
+//                Plotly.relayout('beats-voltility-index-overlay-container', {
+//                    'annotations[0].visible': isSummaryBoxVisible
+//                });
+//                
+//                // Returning true allows Plotly to dim the legend item text natively, showing it is off
+//                return true; 
+//            }
+//        });
+
+
+// Now we will incoperate two controls(RR intervals, Summary box) to Legend bar instead of one 
+let isRrLinesVisible = true;
+plotContainerDiv.on('plotly_legendclick', function(data) {
+    const clickedTrace = finalPlotTraces[data.curveNumber];
+
+
+    if (clickedTrace.name === 'Summary Box') {
+        isSummaryBoxVisible = !isSummaryBoxVisible;
+        Plotly.relayout('beats-voltility-index-overlay-container', {
+            'annotations[0].visible': isSummaryBoxVisible
+        });
+        return true;
+    }
+
+     
+    if (clickedTrace.name === 'RR Intervals') {
+        isRrLinesVisible = !isRrLinesVisible;
+        Plotly.relayout('beats-voltility-index-overlay-container', {
+            shapes: isRrLinesVisible ? rrIntervalLines : []
+        });
+        return true;
+    }
+
+
+
+});
+
+    }
+
+    /**
+     * calcualtes the metrics or features for the given ECG signal. 
+     * Note that some of the metrics are calcualted in separte functions, we'll use this function for a cleaner approch
+     * We will also add other metrics later to this function
+     * This function takes the raw R-R points in time and does the math for :
+     1. Mean R-R Interval
+     2. Median R-R Interval
+     3. standard Deviation 
+     4. RMS successive differences of the R-R interval 
+     5. VIX or volatility index
+     */
+
+
+    /*
+        Created this function to calcualte the HRV metrics separately rather than having the view and the ufunction together.
+        VIX removed as that VIX has its own separate plot  
+    */
+
+    /**
+     *  
+     * Compute standard, un-interpolated time-domain metrics.
+        returns: {
+            mean ,
+            mode ,
+            rmssd ,
+            pnn50 ,
+            total 
+            }
+     */
+    function calculateCardiacAnalytics(RRIntervals) {
+        const rawRR = RRIntervals.filter(x => x >= 300 && x <= 2000);
+        const totalBeats = rawRR.length;
+        if (totalBeats === 0) return null;
+
+        // Mean
+        const meanRR = rawRR.reduce((s, v) => s + v, 0) / totalBeats;
+
+        // Mode binning
+        const bins = {};
+        rawRR.forEach(v => { const b = Math.round(v / 10) * 10; bins[b] = (bins[b] || 0) + 1; });
+        const modeRR = Number(Object.keys(bins).reduce((a, b) => bins[a] > bins[b] ? a : b));
+
+        // RMSSD & pNN50
+        let sumSquaredDiffs = 0;
+        let diffCount = 0;
+        let nn50Count = 0;
+
+        for (let i = 0; i < rawRR.length - 1; i++) {
+            const stepJump = Math.abs(rawRR[i + 1] - rawRR[i]);
+            if (stepJump > 50) nn50Count++;
+            sumSquaredDiffs += Math.pow(rawRR[i + 1] - rawRR[i], 2);
+            diffCount++;
+        }
+
+        const pNN50 = diffCount > 0 ? (nn50Count / diffCount) * 100 : 0;
+
+        return {
+            mean: meanRR,
+            mode: modeRR,
+            rmssd: diffCount > 0 ? Math.sqrt(sumSquaredDiffs / diffCount) : 0,
+            pnn50: pNN50,
+            total: totalBeats
+        };
+
+
+    }
+
+    /**
+     * Advanced Poincaré & Variability Analytics
+     * calculate geometric Poincaré scatter metrics (SD1, SD2, Area) 
+     * alongside the 3-tier filtering pipeline outputs.
+     * Returns : 
+             poincare: {
+                sd1 ,
+                sd2 ,
+                sd1_sd2_ratio ,
+                ellipse_area
+            },
+            variability: {
+                sdrr_straight ,
+                sdnn_approx ,
+                sdnn_interpolated 
+            },
+            qaReport: {
+                rawLength ,
+                beatsProcessedInInterpolation ,
+                noiseCount ,
+                ectopicCount ,
+                ectopicIndices ,
+                missedBeatCount ,
+                missedBeatIndices ,
+                hasEctopics ,
+                hasMissedBeats
+            }
+     */
+    function calculatePoincareAnalytics(RRIntervals) {
+
+        console.log(`qaReport : ${RRIntervals}`)
+        // 1. Run sub-algorithms to get the different filtered pipelines
+        const straightPipeline = runSDRR_Straight(RRIntervals);
+        const approxPipeline = runSDNN_Approx(RRIntervals);
+        const interpolatedPipeline = runSDNN_Interpolated(RRIntervals);
+
+        if (!straightPipeline || !approxPipeline || !interpolatedPipeline) return null;
+
+        // 2. Fetch baseline analytics for RMSSD
+        const baseAnalytics = calculateCardiacAnalytics(RRIntervals);
+        if (!baseAnalytics) return null;
+
+        // 3. Compute Poincaré SD1 and SD2
+        const sdrr = straightPipeline.sdrr;
+        const sd1 = baseAnalytics.rmssd / Math.sqrt(2);
+
+        // Standard Poincaré ellipse math to extract long-term SD2 from overall SDRR
+        const sd2 = Math.sqrt(Math.max(0, (2 * Math.pow(sdrr, 2)) - Math.pow(sd1, 2)));
+
+        // Bonus geometric feature: Total Ellipse Area (highly predictive for ML)
+        const poincareArea = Math.PI * sd1 * sd2;
+
+        // 4. Assemble and return everything in a structured layout
+        return {
+            // Geometric Poincaré Descriptors
+            poincare: {
+                sd1: sd1,
+                sd2: sd2,
+                sd1_sd2_ratio: sd2 > 0 ? sd1 / sd2 : 0,
+                ellipse_area: poincareArea
+            },
+            // The 3 variations of Standard Deviation we built
+            variability: {
+                sdrr_straight: sdrr,
+                sdnn_approx: approxPipeline.sdnn_approx,
+                sdnn_interpolated: interpolatedPipeline.sdnn_interpolated
+            },
+            // Quality Assurance & Signal Integrity Data (Crucial for PhysioNet)
+            qaReport: {
+                rawLength: RRIntervals.length,
+                beatsProcessedInInterpolation: interpolatedPipeline.totalBeatsProcessed,
+                noiseCount: interpolatedPipeline.noiseCount,
+                ectopicCount: interpolatedPipeline.ectopicCount,
+                ectopicIndices: interpolatedPipeline.ectopicIndices,
+                missedBeatCount: interpolatedPipeline.missedBeatCount,
+                missedBeatIndices: interpolatedPipeline.missedBeatIndices,
+                hasEctopics: interpolatedPipeline.ectopicCount > 0,
+                hasMissedBeats: interpolatedPipeline.missedBeatCount > 0
+            }
+        };
+    }
+
+    //  the following 3 functions are meant for corrected and interpolated HRV metrics
+
+    function runSDRR_Straight(RRIntervals) {
+        //1. First step is to play "I'm only human after all" by  Rag'n'Bone Man
+        const humanRR = RRIntervals.filter(x => x >= 300 && x <= 2000);
+        //2.  Next up is "I AM NOTHING" by Kat Von D 
+        if (humanRR.length === 0) return null;
+        //3. mean girls by KATSEYE(we could have taken Mean by Taylor Swift but WE'RE NOT "SWIFTIES" )
+        const mean = humanRR.reduce((s, v) => s + v, 0) / humanRR.length;
+        //4. couldn't find a song with variance
+        // "Variance" by Coteen (A deep electronic track—ironically, this artist also has a track named "Mean"!)
+        // or Justin Bieber — "Changes"(we'll accept Bieber though)
+        const variance = humanRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / humanRR.length;
+        // Kelly Clarkson - "Einstein"
+        return { sdrr: Math.sqrt(variance) };
+    }
+
+    function runSDNN_Approx(RRIntervals) {
+        const rawRR = RRIntervals.filter(x => x > 0);
+        const cleanRR = [];
+        const recentWindow = [];
+
+        for (let i = 0; i < rawRR.length; i++) {
+            const current = rawRR[i];
+            // "I'm only human after all" by  Rag'n'Bone Man
+            let isHuman = current >= 300 && current <= 2000;
+            if (isHuman && cleanRR.length > 0) {
+                if (Math.abs(current - cleanRR[cleanRR.length - 1]) / cleanRR[cleanRR.length - 1] > 0.20) isHuman = false;
+            }
+
+            if (isHuman && recentWindow.length > 0) {
+                const avg = recentWindow.reduce((s, v) => s + v, 0) / recentWindow.length;
+                if (Math.abs(current - avg) / avg > 0.20) isHuman = false;
+            }
+            if (isHuman) {
+                cleanRR.push(current);
+                recentWindow.push(current);
+                if (recentWindow.length > 5) recentWindow.shift();
+            }
+        }
+
+        if (cleanRR.length === 0) { return null; }
+        const mean = cleanRR.reduce((s, v) => s + v, 0) / cleanRR.length;
+        const variance = cleanRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / cleanRR.length;
+
+        return { sdnn_approx: Math.sqrt(variance) };
+    }
+
+    function runSDNN_Interpolated(RRIntervals) {
+        const rawRR = RRIntervals.filter(x => x >= 300 && x <= 2000);
+        if (rawRR.length < 3) return null;
+
+        const trueSinusRR = [];
+        let ectopicCount = 0; const ectopicIndices = [];
+        let missedBeatCount = 0; const missedBeatIndices = [];
+        let noiseCount = 0;
+
+        let i = 0;
+        while (i < rawRR.length) {
+            const current = rawRR[i];
+            const lookback = trueSinusRR.slice(-3);
+            const localAvg = lookback.length > 0 ? lookback.reduce((a, b) => a + b, 0) / lookback.length : current;
+
+            if (current > localAvg * 1.8 && current < localAvg * 2.2) {
+                missedBeatCount++; missedBeatIndices.push(i);
+                const slicedInterval = current / 2;
+                trueSinusRR.push(slicedInterval); trueSinusRR.push(slicedInterval);
+                i++; continue;
+            }
+
+            if (i < rawRR.length - 1) {
+                const next = rawRR[i + 1];
+                const isShort = current < localAvg * 0.85;
+                const isLongNext = next > localAvg * 1.15;
+                const combinedSumNormal = Math.abs((current + next) - (localAvg * 2)) / (localAvg * 2) < 0.15;
+
+                if (isShort && isLongNext && combinedSumNormal) {
+                    ectopicCount++; ectopicIndices.push(i);
+                    trueSinusRR.push(localAvg); trueSinusRR.push(localAvg);
+                    i += 2; continue;
+                }
+            }
+
+            if (Math.abs(current - localAvg) / localAvg > 0.25) {
+                noiseCount++;
+            } else {
+                trueSinusRR.push(current);
+            }
+            i++;
+        }
+
+        if (trueSinusRR.length === 0) return null;
+        const mean = trueSinusRR.reduce((s, v) => s + v, 0) / trueSinusRR.length;
+        const variance = trueSinusRR.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / trueSinusRR.length;
+
+        return {
+            sdnn_interpolated: Math.sqrt(variance),
+            totalBeatsProcessed: trueSinusRR.length,
+            ectopicCount, ectopicIndices,
+            missedBeatCount, missedBeatIndices,
+            noiseCount: noiseCount + (RRIntervals.length - rawRR.length)
+        };
+    }
+
+    async function renderPoincareGraph(serverPayload, usePoincare, currentConfig) {
+        // the switch to enable/disable the poincare plot.
+        // this condition was there in the loadEcgPipeline()'s main loop, we've shifted it in here  
+        //   if (!usePoincare || !serverPayload?.poincare?.x?.length) {
+        //       return; 
+        //   }
+
+        const rPeakIndices = serverPayload?.features?.R;
+
+        // updated the guard clause to now check features.R instead of poincare.x
+        if (!usePoincare || !rPeakIndices?.length || rPeakIndices.length < 2) {
+            return;
+        }
+
+        const samplingRate = 300;  //we need a sinsible way later to fetch it systematically
+
+
+
+
+        const rrIntervals = [];
+        for (let i = 0; i < rPeakIndices.length - 1; i++) {
+            const intervalSamples = rPeakIndices[i + 1] - rPeakIndices[i];
+            const intervalMs = (intervalSamples / samplingRate) * 1000;
+            rrIntervals.push(intervalMs);
+        }
+
+        if (rrIntervals.length < 2) return; // not enough for a Poincaré pair
+
+        // Build the x, y pairs the scatter plot needs (x = RR_n, y = RR_n+1)
+        const x = rrIntervals.slice(0, -1);
+        const y = rrIntervals.slice(1);
+
+        // just a pre-condition to calculate the extreme bounds of the canvas for plotting
+        const maxVal = Math.max(...x, ...y, 1100);
+        const minVal = Math.min(...x, ...y, 400);
+        const axisRange = [minVal - 30, maxVal + 30];
+
+        const scatterTrace = {
+            x: x,
+            y: y,
+            type: 'scatter',
+            mode: 'markers',
+            name: 'Interval Matrix',
+            marker: { color: '#eb7b2b', size: 8, opacity: 0.7 }
+        };
+
+        const identityLine = {
+            x: [minVal, maxVal],
+            y: [minVal, maxVal],
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Identity (y=x)',
+            line: { color: '#4c566a', width: 1, dash: 'dash' },
+            hoverinfo: 'none'
+        };
+
+        const advancedStats = await getOrComputeMetric(
+            serverPayload.record_id,
+            //`${currentConfig}-advanced_poincare_analytics_object`,
+            `${currentConfig}-poincare_analytics_object`,
+            "1.0.0",
+            () => {
+                // Now fed the RR-interval series derived from features.R, not the old poincare.x
+                return calculatePoincareAnalytics(rrIntervals);
+            }
+        );
+
+        // advancedStats contains :
+        //    poincare: {
+        //        sd1 ,
+        //        sd2 ,
+        //        sd1_sd2_ratio ,
+        //        ellipse_area
+        //    },
+        //    variability: {
+        //        sdrr_straight ,
+        //        sdnn_approx ,
+        //        sdnn_interpolated 
+        //    },
+        //    qaReport: {
+        //        rawLength ,
+        //        beatsProcessedInInterpolation ,
+        //        noiseCount ,
+        //        ectopicCount ,
+        //        ectopicIndices ,
+        //        missedBeatCount ,
+        //        missedBeatIndices ,
+        //        hasEctopics ,
+        //        hasMissedBeats
+        //    } 
+
+        console.log("running <i>get Or Compute Metric </i> logic for Poincaré :", advancedStats);
+
+        const finalPlotTraces = [scatterTrace, identityLine]; // collating the identity line as well as the points for the traces
+        let poincareAnnotations = [];
+
+        // if everything has  been parsed safely generate the rotated trace
+        if (advancedStats) {
+            const { sd1, sd2, sd1_sd2_ratio, ellipse_area } = advancedStats.poincare;
+            const { sdrr_straight, sdnn_approx, sdnn_interpolated } = advancedStats.variability;
+            const { rawLength, beatsProcessedInInterpolation, noiseCount, ectopicCount, hasEctopics, hasMissedBeats } = advancedStats.qaReport;
+
+            // Visual Indicator 2: Signal Quality / Ignored Beats Warning Banner
+            const requiresAttention = hasEctopics || hasMissedBeats || noiseCount > 0;
+            const bannerColor = requiresAttention ? '#bf616a' : '#a3be8c'; // Red-orange warning vs green safety
+
+            const noiseColor = noiseCount > 0 ? '#d08770' : '#a3be8c';
+            const ectopicColor = ectopicCount > 0 ? '#d08770' : '#a3be8c';
+
+
+            // Visual Indicator 1: Quantitative HRV Metrics Text Box
+            poincareAnnotations.push({
+                text: `<b>Data Summary:</b><br>` +
+                    `• Raw Data Length: <b>${rawLength}</b> beats<br>` +
+                    `<span style="color: ${noiseColor};">• Noise Artifacts Ignored: <b>${noiseCount}</b></span><br>` +
+                    `<span style="color: ${noiseColor};">• Valid / Interpolated: <b>${beatsProcessedInInterpolation}</b> beats</span><br>` +
+                    `<span style="color: ${ectopicColor};">• Ectopic Beats Dropped: <b>${ectopicCount}</b></span><br><br>` +
+                    `<b>HRV Descriptors (Non-linear):</b><br>` +
+                    `• SD1 (Short-term): ${sd1?.toFixed(1) || 'N/A'} ms<br>` +
+                    `• SD2 (Long-term): ${sd2?.toFixed(1) || 'N/A'} ms<br>` +
+                    `• SD1/SD2 Ratio: ${sd1_sd2_ratio?.toFixed(2) || 'N/A'}<br>` +
+                    `• Ellipse Area: ${ellipse_area?.toFixed(0) || 'N/A'} ms²<br><br>` +
+                    `<b>Variability Matrix:</b><br>` +
+                    `• SDRR: ${sdrr_straight?.toFixed(1) || 'N/A'} ms<br>` +
+                    `• SDNN Approx: ${sdnn_approx?.toFixed(1) || 'N/A'} ms<br>` +
+                    `• SDNN Interp: ${sdnn_interpolated?.toFixed(1) || 'N/A'} ms`,
+                xref: 'paper', yref: 'paper',
+                x: 1.05, y: 0.95, // Positioned outside right margin
+                xanchor: 'left', yanchor: 'top',
+                showarrow: false,
+                align: 'left',
+                font: { family: 'monospace', size: 11, color: '#f2f4f8' },
+                bordercolor: '#2e3440', borderwidth: 1, borderpad: 8, bgcolor: '#1c1e24'
+            });
+
+
+        }
+
+        // the lyout objet that dictates how the plot is gonna look like i.e. bgcolor, foregroundcolor, annotations, legends etc.
+        const poincareLayout = {
+            paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
+            font: { color: '#f2f4f8', family: 'monospace' },
+            title: `| stats Poincaré map calculated=true`,
+            xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: axisRange },
+            yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: axisRange },
+            margin: { l: 60, r: 240, t: 60, b: 60 }, // Expanded margins dynamically allocate space for metrics & warning boxes
+            annotations: poincareAnnotations,
+            legend: {
+                orientation: 'h',
+                y: -0.15, x: 0.0,
+                xanchor: 'left', yanchor: 'top'
+            }
+        };
+        // finally render directly the poincare plot
+        Plotly.newPlot('poincare-container', finalPlotTraces, poincareLayout);
+        //Plotly.newPlot('poincare-container', finalPlotTraces );
+    }
+
+    /*
+        This function off-loads some work the client side, too.
+        calcualtes the value of the HRV metrics when the sample is accessed for the first time.
+        get the value of he HRV metrics if the sample has already been traversed. 
+    */
+    async function getOrComputeMetric(recordId, statName, version, computeCallback) {
+        try {
+            // So the first preference would be to read the stats from the JSON Stats object(ECG_Features). To do this we need to call the read_API route as depicted below 
+            const response = await fetch(`/api/v1/splunk/get-stat?record_id=${recordId}&stat_name=${statName}&version=${version}`);
+            const result = await response.json();
+
+            // successfuly gathered the cached copy of the HRV stats
+            if (result.cached) {
+                console.log(`[CACHE HIT] Loaded consolidated object "${statName}" (v${version}) from RAM.`);
+                console.log(result)
+                // returning the Metric back to the calling function 
+                // note that the object structure and type must be exactly similar to the object that our computation function returns.
+                // i.e. { mean, mode, sdnn, rmssd, pnn50, total }
+                // otherwise there would be a mismatch and the plot will not render properly
+                return result.data.value;
+            }
+
+            // This is the OR-Scenario, if the metrics are not found in the ECG_Features object, we need to run computation on the spot
+            console.log(`[CACHE MISS] Running live cardiac analytical matrices for ${statName}...`);
+            const freshlyCalculatedObject = computeCallback();
+
+            if (!freshlyCalculatedObject) return null;
+
+            // when we're calculating the metric in real time, we also need to save the metric into the ECG_Features object. 
+            // this would be done using the write_API route as depicted below 
+            fetch('/api/v1/splunk/save-stat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    record_id: recordId,
+                    statistic_name: statName,
+                    value: freshlyCalculatedObject,
+                    version: version,
+                    last_calculated: new Date().toISOString()
+                })
+            }).catch(err => console.warn("Background sync delayed:", err));
+
+            return freshlyCalculatedObject;
+
+        } catch (networkError) {
+            console.error(`🚨 SERVER OFFLINE OR SYSTEM ERROR:`, networkError);
+
+            // Test if the callback can safely run or if data is missing entirely
+            try {
+                return computeCallback();
+            } catch (fallbackError) {
+                console.error("❌ Critical: Emergency live processing failed due to missing signal arrays.", fallbackError);
+                return null; // Return null so downstream chart render scripts don't break on undefined values
+            }
+        }
+    }
+
+
+    /*
+        * we've redone the function cause the original one was too long and unmanageable to incoperate additional 
+          HRV features like RMSSD
+    */
+    async function updateStackedChart(serverPayload, beatsToStack = 2, samplingRate = 300, currentConfig) {
+
+        // calling sliceStackedBeatsFrontend() to manipulate the server's payload  
+        const stackedBeats = sliceStackedBeatsFrontend(
+            serverPayload.data,
+            serverPayload.features,
+            beatsToStack,
+            samplingRate
+        );
+
+        const finalPlotTraces = [];
+        // feature map is same as before 
+        const featureMap = {
+            P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
+            Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
+            R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
+            S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
+            T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
+        };
+
+        // getting markers from the signal also the same as before 
+        for (const chunk of stackedBeats) {
+            finalPlotTraces.push({
+                x: chunk.time_ms,
+                y: chunk.amplitude_mv,
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.2 },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+
+            // this part is also the same as before, this is a quick and dirty way to work on 5 arrays without writing 5 loops
+            ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+                chunk.features[wave].forEach(marker => {
+                    featureMap[wave].x.push(marker.x);
+                    featureMap[wave].y.push(marker.y);
+                });
+            });
+        }
+
+        // plotting the Scatter Points to the view 
+        for (const [key, cfg] of Object.entries(featureMap)) {
+            if (cfg.x.length > 0) {
+                finalPlotTraces.push({
+                    x: cfg.x, y: cfg.y, type: 'scatter', mode: 'markers', name: cfg.name,
+                    marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
+                    hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                });
+            }
+        }
+
+        // R-R interval horizontal lines 
+        const rrIntervalLines = [];
+        featureMap.R.x.forEach((r2OffsetMs, i) => {
+            if (r2OffsetMs > 0) {
+                rrIntervalLines.push({
+                    type: 'line', x0: 0, y0: featureMap.R.y[i], x1: r2OffsetMs, y1: featureMap.R.y[i],
+                    line: { color: 'rgba(235, 123, 43, 0.30)', width: 1 }
+                });
+            }
+        });
+
+        // 1. Fetch Time Domain Stats
+        const stats = await getOrComputeMetric(
+            serverPayload.record_id,
+            `${currentConfig}-time_domain_analytics_object`,  // we're getting the general stats values such as 
+            "1.0.0",
+            () => calculateCardiacAnalytics(featureMap.R.x)
+        );
+
+        // 2. Fetch Poincaré and QA Report Stats using the exact same strategy
+        const poincareStats = await getOrComputeMetric(
+            serverPayload.record_id,
+            `${currentConfig}-poincare_analytics_object`,
+            "1.0.0",
+            () => calculatePoincareAnalytics(featureMap.R.x) // Assumes this uses your R peak data
+        );
+
+        console.log("getOrComputeStatistic TimeDomain:", stats);
+        console.log("getOrComputeStatistic Poincare:", poincareStats);
+
+        let statsAnnotation = [];
+
+        if (stats) {
+
+                        // Pushing a dummy entry
+            finalPlotTraces.push({
+                type: 'scatter',
+                mode: 'markers',
+                name: 'Summary Box',        // The text that appears in your legend
+                showlegend: true,
+                x: [null], y: [null],       // Draws absolutely nothing on the screen
+                legendgroup: 'summary_group' // 🔑 The secret key linking it to the annotation
+            });
+
+
+            const isAFib = stats.sdnn > 50 || stats.rmssd > 60;
+            const statusColor = isAFib ? '#e74c3c' : '#2ecc71';
+            const statusText = isAFib
+                ? '☠️ CHAOTIC ERA Sir Francis Bacon<br>: High SD/RMSSD (Potentially AFib)'
+                : '💖 STABLE ERA Dr. Copernicus<br>: Low Variance (Normal Sinus)';
+
+            // Primary base text block 
+            let annotationText = `<b>R-R Analytics Summary</b><br>` +
+                `━━━━━━━━━━━━━━━<br>` +
+                `Mean RR: <b>${stats.mean.toFixed(1)} ms</b><br>` +
+                `Mode RR: <b>${stats.mode.toFixed(0)} ms</b><br>` +
+                `RMSSD (Local): <span style="color:${statusColor}"><b>${stats.rmssd.toFixed(1)} ms</b></span><br>` +
+                `pNN50 Index: <span style="color:${statusColor}"><b>${stats.pnn50.toFixed(1)}%</b></span><br>` +
+                `Total Beats: <b>${stats.total}</b><br>`;
+
+            // Append the QA/Poincaré information safely if it successfully resolves
+            if (poincareStats && poincareStats.qaReport) {
+                const qa = poincareStats.qaReport;
+                const noiseColor = qa.noiseCount > 0 ? '#d08770' : '#2ecc71';
+                const ectopicColor = qa.ectopicCount > 0 ? '#d08770' : '#2ecc71';
+
+                annotationText += `━━━━━━━━━━━━━━━<br>` +
+                    `<b>Signal QA Report:</b><br>` +
+                    `• Raw Beats Recieved: <b>${qa.rawLength}</b><br>` +
+                    `<span style="color: ${noiseColor};">• Noise Ignored: <b>${qa.noiseCount}</b></span><br>` +
+                    `<span style="color: ${ectopicColor};">• Ectopics Dropped: <b>${qa.ectopicCount}</b></span><br>`;
+            }
+
+            // Complete the block with your diagnostic indicator
+            annotationText += `━━━━━━━━━━━━━━━<br><span style="color:${statusColor}"><b>${statusText}</b></span>`;
+
+            let statusBoxObject_v1  = {
+                x: 0.98, y: 0.95, xref: 'paper', yref: 'paper',
+                text: annotationText,
+                align: 'left', showarrow: false,
+                bgcolor: 'rgba(46, 52, 64, 0.9)', bordercolor: statusColor,
+                borderwidth: 1.5, borderpad: 8,
+                font: { color: '#d8dee9', size: 11, family: 'monospace' }
+            } 
+
+            statsAnnotation.push(statusBoxObject_v1)
+            //statsAnnotation = [{
+            //    x: 0.98, y: 0.95, xref: 'paper', yref: 'paper',
+            //    text: annotationText,
+            //    align: 'left', showarrow: false,
+            //    bgcolor: 'rgba(46, 52, 64, 0.9)', bordercolor: statusColor,
+            //    borderwidth: 1.5, borderpad: 8,
+            //    font: { color: '#d8dee9', size: 11, family: 'monospace' }
+            //}];
+        }
+
+        // finally creating the final object to pass into plotly
+        const maxRangeX = beatsToStack === 1 ? 450 : beatsToStack === 2 ? 1100 : 1800;
+        const overlayLayout = {
+            title: { text: `<b>Superimposed Cycles (${beatsToStack}x Beat Phase View)</b>`, font: { size: 16 } },
+            xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, maxRangeX], gridcolor: '#2e3440' },
+            yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+            shapes: rrIntervalLines,
+            annotations: statsAnnotation,
+            plot_bgcolor: '#1c1e24', paper_bgcolor: '#1c1e24',
+            showlegend: true, legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+            hovermode: 'closest'
+        };
+        // calling the plotly's API to finally do the printing
+        Plotly.newPlot('stacked-n-RR-beats-overlay-container', finalPlotTraces, overlayLayout);
+    
+    let isSummaryBoxVisible = true;
+const plotContainerDiv = document.getElementById('stacked-n-RR-beats-overlay-container');
+
+plotContainerDiv.on('plotly_legendclick', function(data) {
+    // Check if the user specifically clicked the 'Toggle Summary Box' trace item
+    if (data.curveNumber === finalPlotTraces.length - 1) {
+        isSummaryBoxVisible = !isSummaryBoxVisible;
+        
+        // Update ONLY the visibility state of the annotation inside the layout engine
+        Plotly.relayout('stacked-n-RR-beats-overlay-container', {
+            'annotations[0].visible': isSummaryBoxVisible
+        });
+        
+        // Returning true allows Plotly to dim the legend item text natively, showing it is off
+        return true; 
+    }
+});
+ 
+
+    }
+
+
+    function updateVerificationUiState(isVerified, savedSignature = "", stampedAt = "", isInitialLoad = false) {
+        const badge = document.getElementById("rubber-stamp-status-badge");
+        const btn = document.getElementById("rubber-stamp-btn");
+        const caption = document.getElementById("tuld-caption");
+
+        if (isVerified) {
+            // Splunk Rubber-Stamp badge is highlighted like the orientation-badge  
+            badge.innerText = "✓ GROUND TRUTH LOCKED";
+            badge.style.backgroundColor = "#1b5e20"; // Dark Emerald Background
+            badge.style.color = "#a5d6a7";           // Light crisp green text
+            badge.style.borderColor = "#2e7d32";
+
+            // Disable the main action button to show the work is finished
+            btn.innerText = "✓ Position Closed";
+            btn.style.backgroundColor = "#2f3542";
+            btn.style.color = "#747d8c";
+            btn.style.borderColor = "#475266";
+            btn.style.cursor = "default";
+            btn.disabled = true;
+
+            //Format the audit timestamp text cleanly for display
+            let formattedDate = "Unknown Time";
+
+            console.log(`stampedAt: ${stampedAt}`);
+
+            if (stampedAt) {
+                const dateObj = new Date(stampedAt);
+
+                // CRITICAL GUARD: Only convert to ISO string if the date object is structurally valid
+                if (!isNaN(dateObj.getTime())) {
+                    console.log("Its too complicated to explain tis here so we're just putting the if-clause above that returned 1, plus its JS so it won't hep even if we understand, its like Quantum Mechanics.")
+                    formattedDate = dateObj.toISOString().replace('T', ' ').substring(0, 19);
+                } else {
+                    console.warn("⚠️ Received unrecognizable timestamp format:", stampedAt);
+                    formattedDate = "Malformed Timestamp";
+                }
+            }
+
+            // 4. Update the boardroom caption text to show the audit logs
+            caption.innerHTML = `STAMPED: <span style="color: #f1c40f;">${formattedDate} UTC</span> | CONFIG: ${savedSignature}`;
+            caption.style.color = "#a5d6a7";
+            caption.style.opacity = "1";
+
+
+
+            //  DECOUPLING LOGIC: Only force the UI switches to move if this is a fresh record load pass
+            if (isInitialLoad) {
+                console.log("⚙️ Fresh record load detected. Aligning UI switches to historical ground truth.");
+                applySavedConfigToUiSwitches(savedSignature);
+            } else {
+                console.log("⚡ Manual update cycle or active session. Preserving operator switch states.");
+            }
+
+
+
+
+        } else {
+            // Reset the interface parameters back to cold unverified warning amber tracking mode
+            badge.innerText = "UNVERIFIED RAW SIGNAL";
+            badge.style.backgroundColor = "#2f3542";
+            badge.style.color = "#f2994a"; // Splunk Warning Amber
+            badge.style.borderColor = "#475266";
+
+            btn.innerText = "🔒 This Is It! Lock Configuration";
+            btn.style.backgroundColor = "#5cc24a";
+            btn.style.color = "#111111";
+            btn.style.borderColor = "#44a635";
+            btn.style.cursor = "pointer";
+            btn.disabled = false;
+
+            caption.innerText = 'Tuld: "This is it. Close it out. Sell it all today."';
+            caption.style.color = "#747d8c";
+            caption.style.opacity = "0.4";
+        }
+    }
+
+    //Update the controls on the webpage to update the changes in the switches
+    function applySavedConfigToUiSwitches(signature) {
+        // Splits "currentScale:full-useFilter:false-CancelQRS:false-Orientation:Inversion Correction Applied"
+        const parts = signature.split("-");
+        if (parts.length < 4) return;
+
+        // Extract the values behind the colons safely
+        const scaleValue = parts[0].split(":")[1];       // "full" or "small"
+        const filterValue = parts[1].split(":")[1];      // "true" or "false"
+        const qrsValue = parts[2].split(":")[1];         // "true" or "false"
+        const orientationValue = parts[3].split(":")[1]; // "Inversion Correction Applied", etc.
+
+        // Force your UI components to visually adapt dynamically
+        document.getElementById("scale-selector").value = scaleValue;
+        document.getElementById("toggle-filter").checked = (filterValue === "true");
+        document.getElementById("toggle-cancel").checked = (qrsValue === "true");
+
+        // Set your custom orientation status tracking value variables here as well...
+        console.log(`🤖 Dashboard auto-aligned to verified state matrix: Scale=${scaleValue}, Filter=${filterValue}`);
+    }
+
+
+    async function checkRecordStampStatus(recordId, isInitialLoad = false) { // Pass it down from the event
+        try {
+            const response = await fetch(`/api/v1/splunk/get-record-meta?record_id=${encodeURIComponent(recordId)}`, {
+                method: 'GET'
+            });
+            const result = await response.json();
+
+            if (result.status === "Success") {
+                if (result.is_verified) {
+                    // Pass true/false downwards into the UI updater
+                    //updateVerificationUiState(true, result.verified_signature, result.stamped_at, false);
+
+                    updateVerificationUiState(true, result.verified_signature, result.stamped_at, isInitialLoad);
+
+
+                } else {
+                    updateVerificationUiState(false, null, null, isInitialLoad);
+                }
+            }
+        } catch (err) {
+            console.error("🚨 Failed to fetch record metadata:", err);
+        }
+    }
+
+
+    async function executeTuldRubberStamp(recordId, completedConfigString) {
+        try {
+            // Changed URL to target the dedicated writer endpoint
+            const response = await fetch('/api/v1/splunk/rubber-stamp-record', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    record_id: recordId,
+                    verified_signature: completedConfigString
+                })
+            });
+            const result = await response.json();
+
+            if (result.status === "Success") {
+                // Turn On the Splunk dashboard badge green instantly
+                updateVerificationUiState(true, completedConfigString, new Date().toISOString());
+                console.log(`🔒 [SYSTEM] Ground truth secured for ${recordId}. Position closed.`);
+            } else {
+                console.error("❌ Server rejected stamp operation:", result.error);
+            }
+        } catch (err) {
+            console.error("🚨 Critical database write lock exception:", err);
+        }
+    }
+
+ function sliceStackedWaveletsFrontend(waveletBands, signal, absoluteIndices, beatsToStack = 2, samplingRate = 300) {
+    const rPeaks = absoluteIndices.R || [];
+    const stackedDataset = [];
+
+    const samplesBefore = Math.floor(0.20 * samplingRate); 
+    const samplesAfter = Math.floor(0.40 * samplingRate);  
+
+    console.log("waveletBands inside sliceStackedWaveletsFrontend before loop start ", waveletBands)
+
+    for (let idx = 0; idx < rPeaks.length - (beatsToStack - 1); idx++) {
+        const rCurrent = rPeaks[idx];                        
+        const rTargetEnd = rPeaks[idx + (beatsToStack - 1)]; 
+
+        const startSample = rCurrent - samplesBefore; 
+        const endSample = rTargetEnd + samplesAfter;  
+
+        if (startSample < 0 || endSample >= signal.length) continue;
+
+        // 1. Slice out a reference segment to match the amplitude length property exactly
+        const referenceSlice = signal.slice(startSample, endSample);
+
+        // 2. Generate the timeline using your exact original logic
+        const timesMs = Array.from({ length: referenceSlice.length }, (_, s) => {
+            const absoluteSampleIndex = startSample + s;
+            return Number((((absoluteSampleIndex - rCurrent) / samplingRate) * 1000).toFixed(1));
+        });
+
+        // 3. Slice every wavelet band array matching the window bounds
+        const slicedBands = {};
+        for (const [bandName, fullBandArray] of Object.entries(waveletBands)) {
+            slicedBands[bandName] = fullBandArray.slice(startSample, endSample);
+        }
+
+
+        const features = { P: [], Q: [], R: [], S: [], T: [] };
+        ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+            const indices = absoluteIndices[wave] || [];
+            indices.forEach(sampleIdx => {
+                if (sampleIdx >= startSample && sampleIdx <= endSample) {
+                    features[wave].push({
+                        x: Number((((sampleIdx - rCurrent) / samplingRate) * 1000).toFixed(1)),
+                        y: signal[sampleIdx]
+                    });
+                }
+            });
+        });
+
+        stackedDataset.push({
+            beat_number: idx + 1,
+            time_ms: timesMs,
+            wavelet_bands: slicedBands, 
+            features: features
+        });
+    }
+
+    // === ADDED DEBUG LOG FOR INTERACTIVE INSPECTION ===
+    console.log("=== FRONTIER SLICED STACKED WAVELETS ===", stackedDataset);
+
+    return stackedDataset;
+}
+
+
+
+//    async function runStackedWaveletsOnWavelets(serverPayload = payload, beatsToStack = 2, samplingRate = 300, current_config){
+async function updateStackedWaveletChart(
+    serverPayload,       // The payload containing serverPayload.wavelet_bands AND serverPayload.data
+    selectedBandName,    // e.g., 'detail_band_D1', 'baseline_wander_A5', etc.
+    beatsToStack = 2, 
+    samplingRate = 300, 
+    currentConfig
+) {
+
+    console.log(
+        `updateStackedWaveletChart input payload is ${serverPayload.wavelets}`
+    );
+
+    // ---------------------------------------------------------
+    // 1. Slice the wavelet bands into the requested beat windows
+    // ---------------------------------------------------------
+
+    const stackedWavelets = sliceStackedWaveletsFrontend(
+        serverPayload.wavelets,
+        serverPayload.data,
+        serverPayload.features,
+        beatsToStack,
+        samplingRate
+    );
+
+    console.log('#stacked Wavelet Data:', stackedWavelets);
+
+    const finalPlotTraces = [];
+
+
+    // ---------------------------------------------------------
+    // 2. Convert backend wavelet names into clean legend names
+    // ---------------------------------------------------------
+
+    function getWaveletLegendName(bandName) {
+
+        const mapping = {
+            detail_band_D1: 'D1',
+            detail_band_D2: 'D2',
+            detail_band_D3: 'D3',
+            detail_band_D4: 'D4',
+            detail_band_D5: 'D5',
+            baseline_wander_A5: 'A5'
+        };
+
+        return mapping[bandName] || bandName;
+    }
+
+
+    // Keep track of which PQRST legend entries have already
+    // been created. We only want one P/Q/R/S/T entry each.
+    const markerLegendShown = {
+        P: false,
+        Q: false,
+        R: false,
+        S: false,
+        T: false
+    };
+
+
+    // ---------------------------------------------------------
+    // 3. Loop through every beat
+    // ---------------------------------------------------------
+
+    stackedWavelets.forEach((beat, beatIndex) => {
+
+
+        // -----------------------------------------------------
+        // 4. Loop through ALL wavelet bands
+        // -----------------------------------------------------
+
+        Object.entries(beat.wavelet_bands).forEach(
+            ([bandName, waveletYValues]) => {
+
+                if (!waveletYValues) return;
+
+                const legendName =
+                    getWaveletLegendName(bandName);
+
+
+                // -------------------------------------------------
+                // 5. Wavelet waveform trace
+                // -------------------------------------------------
+
+                finalPlotTraces.push({
+
+                    x: beat.time_ms,
+
+                    y: waveletYValues,
+
+                    type: 'scatter',
+
+                    mode: 'lines',
+
+                    // What appears in the legend
+                    name: legendName,
+
+                    // All beats belonging to this wavelet
+                    // are placed in the same legend group
+                    legendgroup: bandName,
+
+                    // Only the first beat creates the
+                    // visible D1/D2/... legend entry
+                    showlegend: beatIndex === 0,
+
+                    opacity: 0.7,
+
+                    line: {
+                        width: 2
+                    },
+
+                    hovertemplate:
+                        `${legendName} — Beat ${beat.beat_number}` +
+                        '<br>Time: %{x} ms' +
+                        '<br>Coefficient: %{y}' +
+                        '<extra></extra>'
+                });
+
+
+                // -------------------------------------------------
+                // 6. PQRST markers
+                // -------------------------------------------------
+
+                ['P', 'Q', 'R', 'S', 'T'].forEach(wave => {
+
+                    const markers =
+                        beat.features[wave] || [];
+
+                    if (markers.length === 0) {
+                        return;
+                    }
+
+
+                    // Map the absolute PQRST locations onto
+                    // the current wavelet's Y values
+                    const markerX = markers.map(m => m.x);
+
+                    const markerY = markers.map(m => {
+
+                        const relativeIdx =
+                            beat.time_ms.indexOf(m.x);
+
+                        return relativeIdx !== -1
+                            ? waveletYValues[relativeIdx]
+                            : m.y;
+                    });
+
+
+                    // -------------------------------------------------
+                    // 7. Create marker trace
+                    // -------------------------------------------------
+
+                    finalPlotTraces.push({
+
+                        x: markerX,
+
+                        y: markerY,
+
+                        type: 'scatter',
+
+                        mode: 'markers',
+
+                        // ---------------------------------------------
+                        // IMPORTANT:
+                        //
+                        // P, Q, R, S and T each get their OWN
+                        // legend group.
+                        // ---------------------------------------------
+
+                        legendgroup: wave,
+
+                        name: wave,
+
+                        // Only show one P/Q/R/S/T item in the legend.
+                        //
+                        // Once that legend entry exists, all the
+                        // remaining marker traces are hidden from
+                        // the legend but remain in the same group.
+                        showlegend:
+                            !markerLegendShown[wave],
+
+                        marker: {
+                            size: 6
+                        },
+
+                        hovertemplate:
+                            `${wave} Peak` +
+                            `<br>${legendName}` +
+                            `<br>Beat ${beat.beat_number}` +
+                            '<br>Time: %{x} ms' +
+                            '<extra></extra>'
+                    });
+
+
+                    // We've now created the single legend entry
+                    // for this marker type.
+                    markerLegendShown[wave] = true;
+
+                });
+
+            }
+        );
+    });
+
+
+    // ---------------------------------------------------------
+    // 8. Configure layout
+    // ---------------------------------------------------------
+
+    const overlayLayout = {
+
+        title: {
+            text:
+                'Stacked Wavelet Decomposition — All Layers',
+            font: {
+                size: 16
+            }
+        },
+
+        xaxis: {
+
+            title:
+                'Time aligned to current R-Peak (ms)',
+
+            zeroline: true,
+
+            zerolinecolor: '#ff0000',
+
+            zerolinewidth: 1.5
+        },
+
+        yaxis: {
+
+            title:
+                'Wavelet Coefficient Amplitude',
+
+            automargin: true
+        },
+
+        hovermode: 'closest',
+
+        showlegend: true,
+
+        legend: {
+
+            orientation: 'h',
+
+            y: -0.2,
+
+            // Clicking a legend item toggles the
+            // ENTIRE legend group.
+            groupclick: 'togglegroup'
+        }
+    };
+
+
+    // ---------------------------------------------------------
+    // 9. Render plot
+    // ---------------------------------------------------------
+
+    Plotly.newPlot(
+        'Stacked-Wavelets-On-Wavelets-overlay-container',
+        finalPlotTraces,
+        overlayLayout
+    );
+}
+
+
+
+
+
+
+    /**
+     * Fetches vector matrices from the active Flask stream API 
+     * and renders the resulting charts via python's Plotly's via JS.
+     * Think if it as the main() function or the default app route for the application.
+     * it does all the heavy lifiting on the browser side of things
+     */
+    function loadEcgPipeline() {
+        const recordId = document.getElementById('record-selector').value;
+        if (!recordId) return; // Guard clause if boot routine is active
+
+        const currentScale = document.getElementById('scale-selector').value;
+        const useFilter = document.getElementById('toggle-filter').checked;
+        const useLocal = document.getElementById('toggle-local').checked;
+        // const usePan = document.getElementById('toggle-pan').checked;
+        const useCancel = document.getElementById('toggle-cancel').checked;
+        const usePoincare = document.getElementById('toggle-poincare').checked;
+        const useFft = document.getElementById('toggle-fft').checked;
+        const useWavelet = document.getElementById('toggle-wavelet').checked;
+        const forceManualFlip = document.getElementById('toggle-manual-flip').checked;
+        // const usePanTompkinsWithNk2 = document.getElementById('pan_tompkins_using_nk2').checked;
+
+        const recordBadge = document.getElementById("record-navigation-status-badge");
+        console.log(`record-navigation-status-badge updated to: ${recordBadge.innerText}`);
+        document.getElementById("record-navigation-status-badge").innerText = recordId;
+
+
+        const peakDetectionMethod = document.getElementById('Peak-Detection-Selector').value;
+        console.log("Peak Detection method passed to the Controller : ", peakDetectionMethod) // ohh yes, we're still using the classic Javascript debugging Technique
+
+        const showStackedBeats = document.getElementById('stacked-beats').checked;
+        console.log("stacked_beats_dataset in the request", showStackedBeats)
+
+        // to display the double beats on beats comparison
+        const showStackedBeatsOnBeats = document.getElementById('stacked-beats-on-beats').checked;
+
+        // to display the n beats on beats comparison
+        const showStacked_n_RR_Beats = document.getElementById('stacked-n-RR-beats').checked;
+        console.log("showStacked_n_RR_Beats in the request", showStacked_n_RR_Beats)
+
+        // VIX controller
+        const showBeatsVIX = document.getElementById('beats-VIX').checked;
+        console.log("showBeatsVIX in the request", showBeatsVIX)
+
+        // Stacked wavelets 
+        const showStackedWaveletsOnWavelets = document.getElementById('toggle-Stacked-Wavelets-On-Wavelets').checked;
+        console.log("Stacked-Wavelets-On-Wavelets in the request", showStackedWaveletsOnWavelets)
+
+
+        // conditional statements with ternary operator for displaying the selected visuaization only when the corresponding control is activated 
+        document.getElementById('poincare-panel').style.display = usePoincare ? 'block' : 'none';
+        document.getElementById('fft-panel').style.display = useFft ? 'block' : 'none';
+        document.getElementById('wavelet-panel').style.display = useWavelet ? 'block' : 'none';
+        document.getElementById('stacked-overlay-panel').style.display = showStackedBeats ? 'block' : 'none';
+        document.getElementById('stacked-beats-on-beats-overlay-panel').style.display = showStackedBeatsOnBeats ? 'block' : 'none';
+        document.getElementById('stacked-n-RR-beats-overlay-panel').style.display = showStacked_n_RR_Beats ? 'block' : 'none';
+        document.getElementById('beats-voltility-index-overlay-panel').style.display = showBeatsVIX ? 'block' : 'none';
+        document.getElementById('Stacked-Wavelets-On-Wavelets-view-overlay-panel').style.display = showStackedWaveletsOnWavelets ? 'block' : 'none';
+
+        // FIXED: Synchronized matching variable references and cleanly mapped all toggles to URL query keys
+        //const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}`;
+
+        // Depracted as the list keeps gettng longer, we are using the below method to pass all the params using the url 
+        //Add Param to forcefully flip the signal manually.
+        //Add Pan TOmpkins using Neurokit2 Package. 
+        //const targetUrl = `/api/v1/splunk/stream?record=${recordId}&scale=${currentScale}&filter=${useFilter}&local_r=${useLocal}&pan_tompkins=${usePan}&cancel=${useCancel}&poincare=${usePoincare}&fft=${useFft}&wavelet=${useWavelet}&manual_flip=${forceManualFlip}&pan_tompkins_with_nk2=${usePanTompkinsWithNk2}&peak_detection_method=${peakDetectionMethod}`;
+
+
+        // we are trying a better way to consolidate all the arg as the list of arguments is increasing continously
+        const params = {
+            record: recordId,
+            scale: currentScale,
+            filter: useFilter,
+            local_r: useLocal,
+            //             pan_tompkins: usePan,
+            cancel: useCancel,
+            poincare: usePoincare,
+            fft: useFft,
+            wavelet: useWavelet,
+            manual_flip: forceManualFlip,
+            //    pan_tompkins_with_nk2: usePanTompkinsWithNk2,
+            peak_detection_method: peakDetectionMethod,
+            StackedBeats: showStackedBeats,
+            StackedBeatsOnBeats: showStackedBeatsOnBeats,
+            Stacked_n_RR_Beats: showStacked_n_RR_Beats,
+            VIX_Beats: showBeatsVIX,
+            StackedWaveletsOnWavelets: showStackedWaveletsOnWavelets 
+
+        };
+        //***************** TILL THIS POINT WE HAVE JUST GENERATED THE REQEUST, NOTHING MORE  *****************
+        // Pass the object to URLSearchParams to auto-format and encode it
+        const queryString = new URLSearchParams(params).toString();
+
+        // final URL which is clean and tidy 
+        const targetUrl = `/api/v1/splunk/stream?${queryString}`;
+
+        // sending the reqeust to the server via the URL params generated aboove and capturing the response into payload
+        fetch(targetUrl)
+            .then(res => res.json())
+            .then(payload => {
+                if (payload.error) return;
+
+                console.log("payload received:", payload)
+
+                let current_config = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${payload.orientation_status}`
+
+                //***************** TILL THIS POINT WE HAVE SENT THE REQEUST, RECEIVED THE RESPONSE AND CONVERTED THE PAYLOAD INTO JSON *****************
+
+ 
+
+                //***************** WE'RE CHECKING THE RUBBER STAMPING STATUS FOR THE CURRENT CONFIGURATION FOR THE CURRENT SIGNAL    *****************
+
+                checkRecordStampStatus(payload.record_id, true);
+  
+                //***************** BELOW THIS POINT, EVERYTHING HAPPENS IN THE BROWSER ON THE CLIENT SIDE  *****************
+                const badge = document.getElementById('orientation-status-badge');
+                if (badge && payload.orientation_status) {
+                    badge.textContent = `${payload.orientation_status}`;
+
+                    if (payload.is_inverted) {
+                        // Alert layout styling (Orange Warning Alert to flag an upside-down recording)
+                        badge.style.backgroundColor = 'rgba(235, 123, 43, 0.15)';
+                        badge.style.color = '#eb7b2b';
+                        badge.style.borderColor = '#eb7b2b';
+                    } else {
+                        // Normal operational layout styling (Green Operational confirmation)
+                        badge.style.backgroundColor = 'rgba(92, 194, 74, 0.15)';
+                        badge.style.color = '#5cc24a';
+                        badge.style.borderColor = '#5cc24a';
+                    }
+                }
+                // ========================================================
+
+                const timeIndices = payload.data.map((_, i) => i);
+
+                // Trace 1: Core Timeline Matrix Line -  
+                // This code just plots the blank canvas where we plot all the signals
+                const baseTrace = {
+                    x: timeIndices, y: payload.data,
+                    type: 'scatter', mode: 'lines',
+                    name: useCancel ? 'Residual Atrial Wave' : 'ECG Signal',
+                    line: { color: useCancel ? '#e74c3c' : (useFilter ? '#2ecc71' : '#4c566a'), width: 1.4 }
+                };
+                const mainTraces = [baseTrace];
+
+                //commenting this part out as now we get a separate control to select peak detection algorithms 
+                // Trace 2: Standard Peak Locations
+                // this code just sets the ECG Peak markers, no plots drawn yet
+                if (useLocal && !useCancel && payload.local_r_peaks) {
+                    mainTraces.push({
+                        x: payload.local_r_peaks,
+                        y: payload.local_r_peaks.map(idx => payload.data[idx]),
+                        type: 'scatter', mode: 'markers', name: 'R Peaks',
+                        marker: { color: '#3498db', size: 10, symbol: 'diamond' }
+                    });
+                }
+
+
+                // we removed trace 3 entirely cause now we have a single control that either uses Pan-Tomp(inhouse) or Pan-Tomp(neurokit2)
+                // so no point of showing it separately
+
+                // Trace 4: Full Pan-Tompkins Segment Mapping using NeuroKit2
+                if (peakDetectionMethod != 'false' && !useCancel && payload.features) {
+                    const waveConfig = [
+                        { key: 'P', color: '#1abc9c', name: 'P-Wave_NK2' },
+                        { key: 'Q', color: '#f1c40f', name: 'Q-Dip_NK2' },
+                        { key: 'R', color: '#eb7b2b', name: 'R-Apex_NK2' },
+                        { key: 'S', color: '#e74c3c', name: 'S-Dip_NK2' },
+                        { key: 'T', color: '#9b59b6', name: 'T-Wave_NK2' }
+                    ];
+                    waveConfig.forEach(cfg => {
+                        const indices = payload.features[cfg.key];
+                        if (indices && indices.length > 0) {
+                            mainTraces.push({
+                                x: indices,
+                                y: indices.map(idx => payload.data[idx]),
+                                type: 'scatter', mode: 'markers', name: cfg.name,
+                                marker: { color: cfg.color, size: 8 }
+                            });
+                        }
+                    });
+                }
+
+
+                // Render Graph 1 - the main raw signal
+                // Orientation inversion/correction 
+                // Pan-tompkins: inhouse implementaion or NK2 implementation(All P,Q,R,S and T points)
+                // R-R Peaks Only
+                // Noise Filtering using custom filter
+                // QRS Complex calcellation
+                const mainLayout = {
+                    paper_bgcolor: '#1c1e24',
+                    plot_bgcolor: '#1c1e24',
+                    font: { color: '#f2f4f8', family: 'monospace' },
+                    title: `Pipeline Execution: index="ecg" | record_id="${recordId}"`,
+                    dragmode: 'zoom',
+                    hovermode: 'x',
+                    xaxis: {
+                        title: 'Samples (300 Hz)',
+                        gridcolor: '#2e3440',
+                        showspikes: true,
+                        spikemode: 'across+marker',
+                        spikethickness: 1,
+                        spikedash: 'solid',
+                        spikecolor: '#a3be8c'
+                    },
+                    yaxis: { title: 'Voltage (mV)', gridcolor: '#2e3440' },
+
+                    legend: {
+                        orientation: 'h',
+                        y: -0.20, // by trial and error, best legend position y has been -0.2 or 20 %         
+                        x: 0.0,
+                        xanchor: 'left',
+                        yanchor: 'top'
+                    },
+                    annotations: [{
+                        text: '',
+                        xref: 'paper',
+                        yref: 'paper',
+                        x: 0.0,
+                        y: -0.30,  // by trial and erro, best annotation box positon x has been -0.4 or 40%
+                        xanchor: 'left',
+                        yanchor: 'top',
+                        showarrow: false,
+                        font: { family: 'monospace', size: 11, color: '#4c566a' }
+                    }],
+
+                    //  FORCE THE SAME BUFFER ZONE SO IT NEVER CLIPS OUT
+                    margin: {
+                        l: 50, r: 30,
+                        t: 100,
+                        b: 100
+                    }
+
+                };
+
+                Plotly.newPlot('chart-container', mainTraces, mainLayout);
+
+                // Render Graph 2 (FFT Power Spectrum)
+                if (useFft && payload.fft && payload.fft.frequencies) {
+                    const fftTrace = {
+                        x: payload.fft.frequencies, y: payload.fft.magnitudes,
+                        type: 'scatter', mode: 'lines', name: 'Power Spectrum',
+                        line: { color: '#9b59b6', width: 1.8 },
+                        fill: 'tozeroy', fillcolor: 'rgba(155, 89, 182, 0.15)'
+                    };
+                    const fftLayout = {
+                        paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
+                        font: { color: '#f2f4f8', family: 'monospace' },
+                        title: useCancel ? `| FFT Spectral Density (Isolated Atrial Base)` : `| FFT Spectral Density (Raw Signal Mix)`,
+                        xaxis: { title: 'Frequency (Hz)', gridcolor: '#2e3440', range: [2, 25] },
+                        yaxis: { title: 'Magnitude Amplitude', gridcolor: '#2e3440' }
+                    };
+                    Plotly.newPlot('fft-container', [fftTrace], fftLayout);
+                }
+
+
+                // Render Graph 3 (Poincaré Scatter Mapping)
+                // we converted the logic into a separate function. The main loop is growing too large, hence we had to reduce that
+
+
+                renderPoincareGraph(payload, usePoincare, current_config);
+
+                // Old inline poincare renderer code 
+                //if (usePoincare && payload.poincare && payload.poincare.x.length > 0) {
+                //    const scatterTrace = {
+                //        x: payload.poincare.x, y: payload.poincare.y,
+                //        type: 'scatter', mode: 'markers', name: 'Interval Matrix',
+                //        marker: { color: '#eb7b2b', size: 8, opacity: 0.7 }
+                //    };
+                //    const maxVal = Math.max(...payload.poincare.x, ...payload.poincare.y, 1100);
+                //    const minVal = Math.min(...payload.poincare.x, ...payload.poincare.y, 400);
+                //    const identityLine = { // this represents the y=x line in the poincare plot
+                //        x: [minVal, maxVal], y: [minVal, maxVal],
+                //        type: 'scatter', mode: 'lines', name: 'Identity (y=x)',
+                //        line: { color: '#4c566a', width: 1, dash: 'dash' }, hoverinfo: 'none'
+                //    };
+                //    const poincareLayout = {
+                //        paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
+                //        font: { color: '#f2f4f8', family: 'monospace' },
+                //        title: `| stats Poincaré  map calculated=true`,
+                //        xaxis: { title: 'RR_n (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
+                //        yaxis: { title: 'RR_n+1 (ms)', gridcolor: '#2e3440', range: [minVal - 30, maxVal + 30] },
+
+                //        legend: {
+                //            orientation: 'h',
+                //            y: -0.20, // by trial and error, best legend position y has been -0.2 or 20 %         
+                //            x: 0.0,
+                //            xanchor: 'left',
+                //            yanchor: 'top'
+                //        },
+                //        //                   annotations: [{
+                //        //                       text: '',
+                //        //                       xref: 'paper',
+                //        //                       yref: 'paper',
+                //        //                       x: 0.0,
+                //        //                       y: -0.30,  // by trial and erro, best annotation box positon x has been -0.4 or 40%
+                //        //                       xanchor: 'left',
+                //        //                       yanchor: 'top',
+                //        //                       showarrow: false,
+                //        //                       font: { family: 'monospace', size: 11, color: '#4c566a' }
+                //        //                   }],
+
+                //        //                   //  FORCE THE SAME BUFFER ZONE SO IT NEVER CLIPS OUT
+                //        //                   margin: {
+                //        //                       l: 50, r: 30,
+                //        //                       t: 100,
+                //        //                       b: 100
+                //        //                   }
+                //    };
+                //    Plotly.newPlot('poincare-container', [scatterTrace, identityLine], poincareLayout);
+                //}
+
+                // Render Graph 4 (Wavelet decomposition plot)
+                if (useWavelet && payload.wavelets && Object.keys(payload.wavelets).length > 0) {
+                    console.log("Wavelet data successfully delivered in the main payload!");
+                    
+                    console.log("=== WAVELET PAYLOAD DATA ===", payload.wavelets);
+
+                    const waveletTraces = [];
+
+                    // FIXED: Removed the duplicate 'const' declaration to reuse the existing timeIndices mapping cleanly
+                    const waveletTimeIndices = payload.wavelets.baseline_wander_A5.map((_, idx) => idx);
+
+                    const baselineWander = payload.wavelets.baseline_wander_A5;
+                    const highFreqNoise = payload.wavelets.detail_band_D1;
+                    const D2 = payload.wavelets.detail_band_D2;
+                    const qrsComplexPeaks = payload.wavelets.detail_band_D3;
+                    const D4 = payload.wavelets.detail_band_D4;
+                    const D5 = payload.wavelets.detail_band_D5;
+
+                    // Plot D1 (High frequency noise/sharp R transitions)
+                    waveletTraces.push({
+                        x: waveletTimeIndices, y: highFreqNoise,
+                        type: 'scatter', mode: 'lines', name: 'D1:High-Freq Buzz',
+                        line: { width: 1, color: '#e74c3c' }
+                    });
+
+                    // Plot D2  
+                    waveletTraces.push({
+                        x: waveletTimeIndices, y: D2,
+                        type: 'scatter', mode: 'lines', name: 'D2:D2-Something',
+                        line: { width: 1, color: '#b64bf4' }
+                    });
+
+                    // Plot D3 (Main QRS complex anatomical physical velocity)
+                    waveletTraces.push({
+                        x: waveletTimeIndices, y: qrsComplexPeaks,
+                        type: 'scatter', mode: 'lines', name: 'D3:QRS R-Peaks',
+                        line: { width: 1.2, color: '#2ecc71' }
+                    });
+
+                    // Plot D4  
+                    waveletTraces.push({
+                        x: waveletTimeIndices, y: D4,
+                        type: 'scatter', mode: 'lines', name: 'D4:D4-Something',
+                        line: { width: 1, color: '#e74c3c' }
+                    });
+
+                    // Plot D5  
+                    waveletTraces.push({
+                        x: waveletTimeIndices, y: D5,
+                        type: 'scatter', mode: 'lines', name: 'D5:D5-Something',
+                        line: { width: 1, color: '#ff7200' }
+                    });
+
+                    // Plot A5 (The rolling slow baseline drift)
+                    waveletTraces.push({
+                        x: waveletTimeIndices, y: baselineWander,
+                        type: 'scatter', mode: 'lines', name: 'A5:Baseline Wander',
+                        line: { width: 1.5, dash: 'dot', color: '#f1c40f' }
+                    });
+
+                    const waveletLayout = {
+                        paper_bgcolor: '#1c1e24', plot_bgcolor: '#1c1e24',
+                        font: { color: '#f2f4f8', family: 'monospace' },
+                        title: 'Wavelet Sub-Band Decomposition (| multi_level_dwt mode="db4")',
+                        dragmode: 'zoom',
+                        hovermode: 'x', // <--- Combines all 6 sub-band traces into a unified tooltip display
+                        xaxis: {
+                            title: 'Samples',
+                            gridcolor: '#2e3440',
+                            showspikes: true,             // <--- Enable the vertical cursor line
+                            spikemode: 'across+marker',   // <--- Draw it across the sub-bands
+                            spikethickness: 1,
+                            spikedash: 'solid',
+                            spikecolor: '#a3be8c'         // <--- Keeps the crosshair line color uniform
+                        },
+
+                        //xaxis: { title: 'Samples', gridcolor: '#2e3440' },
+                        yaxis: { title: 'Reconstructed Voltage', gridcolor: '#2e3440' },
+
+                        legend: {
+                            orientation: 'h',
+                            y: -0.20, // by trial and error, best legend position y has been -0.2 or 20 %         
+                            x: 0.0,
+                            xanchor: 'left',
+                            yanchor: 'top'
+                        },
+                        annotations: [{
+                            text: '',
+                            xref: 'paper',
+                            yref: 'paper',
+                            x: 0.0,
+                            y: -0.30,  // by trial and erro, best annotation box positon x has been -0.4 or 40%
+                            xanchor: 'left',
+                            yanchor: 'top',
+                            showarrow: false,
+                            font: { family: 'monospace', size: 11, color: '#4c566a' }
+                        }],
+
+
+                        margin: {
+                            l: 50, r: 30,
+                            t: 100,
+                            b: 100
+                        }
+                    };
+
+
+                    Plotly.newPlot('wavelet-container', waveletTraces, waveletLayout);
+                
+                    // lastly we are syncing the waveletdata plot and the mains signal plot
+                    synchronizeCharts('chart-container', 'wavelet-container'); //chart container syncs with wavelet container
+                    synchronizeCharts('wavelet-container', 'chart-container'); // wavelet container syncs with chart container
+
+                }
+
+
+ 
+
+                console.log("showStackedBeats:", showStackedBeats)
+                console.log("payload.stacked_beats_dataset:", payload.stacked_beats_dataset)
+                console.log("payload.stacked_beats_dataset.length:", payload.stacked_beats_dataset.length)
+
+                //******************** This Block is meant to display SINGLE/INDIVIDUAL ECG BEATS ******************** //  
+                if (!showStackedBeats || !payload.stacked_beats_dataset || payload.stacked_beats_dataset.length === 0) {
+                    console.warn("Stacked heartbeat data unavailable. Check the control and stacked_beats_dataset from payload first, mate");
+                    //return;
+                }
+
+                if (showStackedBeats && payload.stacked_beats_dataset && payload.stacked_beats_dataset.length > 0) {
+                    console.log("generating superimposed beats now, seems everything is in order");
+                    const finalPlotTraces = [];
+
+                    // Arrays to collect PQRST dots across all sub-signals into consolidated traces 
+                    const featureMap = {
+                        P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
+                        Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
+                        R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
+                        S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
+                        T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
+                    };
+
+                    // Looping though the collection payload.stacked_beats_dataset  
+                    for (const beat of payload.stacked_beats_dataset) {
+                        // Some boilerplate code to plot the Grid, axes and other background stuff  
+                        finalPlotTraces.push({
+                            x: beat.time_ms,
+                            y: beat.amplitude_mv,
+                            type: 'scatter',
+                            mode: 'lines',
+                            line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.5 },
+                            showlegend: false,
+                            hoverinfo: 'skip'
+                        });
+
+                        // Layer up coordinates into consolidated tracking buckets
+                        if (beat.features.P) { featureMap.P.x.push(beat.features.P.x); featureMap.P.y.push(beat.features.P.y); }
+                        if (beat.features.Q) { featureMap.Q.x.push(beat.features.Q.x); featureMap.Q.y.push(beat.features.Q.y); }
+
+                        // Force R point to be at a fixed spot all the times irrespective of the rest of the beat
+                        featureMap.R.x.push(0.0);
+                        featureMap.R.y.push(beat.features.r_val);
+
+                        if (beat.features.S) { featureMap.S.x.push(beat.features.S.x); featureMap.S.y.push(beat.features.S.y); }
+                        if (beat.features.T) { featureMap.T.x.push(beat.features.T.x); featureMap.T.y.push(beat.features.T.y); }
+                    }
+
+                    //  Add individual beats to the main collection : finalPlotTraces 
+                    for (const [key, cfg] of Object.entries(featureMap)) {
+                        if (cfg.x.length > 0) {
+                            finalPlotTraces.push({
+                                x: cfg.x,
+                                y: cfg.y,
+                                type: 'scatter',
+                                mode: 'markers',
+                                name: cfg.name,
+                                marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
+                                hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                            });
+                        }
+                    }
+
+                    // Finally plotting the stacked Beats
+                    const overlayLayout = {
+                        title: { text: '<b>Superimposed Beats with R-centres</b>', font: { size: 16 } },
+                        xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, 400], gridcolor: '#2e3440' },
+                        yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+                        plot_bgcolor: '#1c1e24',
+                        paper_bgcolor: '#1c1e24',
+                        showlegend: true,
+                        legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+                        hovermode: 'closest'
+                    };
+
+
+                    Plotly.newPlot('stacked-overlay-container', finalPlotTraces, overlayLayout);
+                    console.log("Stacked overlay rendering assembly successfully finalized.");
+                }
+                //************************************************************************************************* //
+
+
+                console.log("showStackedBeatsOnBeats:", showStackedBeatsOnBeats)
+                console.log("payload.Stacked_Beats_On_Beats:", payload.Stacked_Beats_On_Beats)
+                console.log("payload.Stacked_Beats_On_Beats.length:", payload.Stacked_Beats_On_Beats.length)
+
+
+                // STACKED DOUBLE BEATS ON BEATS RENDERING LOGIC HERE 
+                if (showStackedBeatsOnBeats && payload.Stacked_Beats_On_Beats && payload.Stacked_Beats_On_Beats.length > 0) {
+                    console.log("generating R-R beats now, seems everything is in order");
+                    const finalPlotTraces = [];
+
+                    // Arrays to collect PQRST dots across all sub-signals into consolidated traces 
+                    const featureMap = {
+                        P: { x: [], y: [], name: 'P-Wave', color: '#1abc9c', symbol: 'circle' },
+                        Q: { x: [], y: [], name: 'Q-Dip', color: '#f1c40f', symbol: 'circle' },
+                        R: { x: [], y: [], name: 'R-Apex', color: '#eb7b2b', symbol: 'diamond' },
+                        S: { x: [], y: [], name: 'S-Dip', color: '#e74c3c', symbol: 'circle' },
+                        T: { x: [], y: [], name: 'T-Wave', color: '#9b59b6', symbol: 'circle' }
+                    };
+
+                    // Looping though the collection payload.Stacked_Beats_On_Beats  
+                    for (const beat of payload.Stacked_Beats_On_Beats) {
+                        // Some boilerplate code to plot the Grid, axes and other background stuff  
+                        finalPlotTraces.push({
+                            x: beat.time_ms,
+                            y: beat.amplitude_mv,
+                            type: 'scatter',
+                            mode: 'lines',
+                            line: { color: 'rgba(76, 86, 106, 0.15)', width: 1.5 },
+                            showlegend: false,
+                            hoverinfo: 'skip'
+                        });
+
+                        // Layer up coordinates into consolidated tracking buckets
+                        if (beat.features.P) { featureMap.P.x.push(beat.features.P.x); featureMap.P.y.push(beat.features.P.y); }
+                        if (beat.features.Q) { featureMap.Q.x.push(beat.features.Q.x); featureMap.Q.y.push(beat.features.Q.y); }
+
+                        // Force R point to be at a fixed spot all the times irrespective of the rest of the beat
+                        featureMap.R.x.push(0.0);
+                        featureMap.R.y.push(beat.features.r_val);
+
+                        if (beat.features.S) { featureMap.S.x.push(beat.features.S.x); featureMap.S.y.push(beat.features.S.y); }
+                        if (beat.features.T) { featureMap.T.x.push(beat.features.T.x); featureMap.T.y.push(beat.features.T.y); }
+                    }
+
+                    //  Add individual beats to the main collection : finalPlotTraces 
+                    for (const [key, cfg] of Object.entries(featureMap)) {
+                        if (cfg.x.length > 0) {
+                            finalPlotTraces.push({
+                                x: cfg.x,
+                                y: cfg.y,
+                                type: 'scatter',
+                                mode: 'markers',
+                                name: cfg.name,
+                                marker: { color: cfg.color, size: 6.5, symbol: cfg.symbol },
+                                hovertemplate: `${cfg.name}<br>Offset: %{x} ms<br>Amp: %{y} mV<extra></extra>`
+                            });
+                        }
+                    }
+
+                    // Finally plotting the stacked Beats
+                    const overlayLayout = {
+                        title: {
+                            text: '<b>Consequitive beats showing RR Distances</b>',
+                            color: '#f2f4f8', family: 'monospace'
+                        },
+                        xaxis: { title: 'Relative Wave Offset (ms)', range: [-200, 1200], gridcolor: '#2e3440' },
+                        yaxis: { title: 'Potential Voltage Amplitude (mV)', gridcolor: '#2e3440' },
+                        plot_bgcolor: '#1c1e24',
+                        paper_bgcolor: '#1c1e24',
+                        showlegend: true,
+                        legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 },
+                        hovermode: 'closest'
+                    };
+
+
+                    Plotly.newPlot('stacked-beats-on-beats-overlay-container', finalPlotTraces, overlayLayout);
+                    console.log("Stacked overlay rendering assembly successfully finalized.");
+                }
+
+                // STACKED N-BEATS
+                if (showStacked_n_RR_Beats && payload.features) {
+                    updateStackedChart(serverPayload = payload, beatsToStack = 2, samplingRate = 300, current_config)
+                    //down below, rather  than creating a new custom data type object, we're passing the entire payload.
+                    // The function will figure it out
+                    // runVolatilityIndexPlot(serverPayload = payload, beatsToStack = 2, samplingRate = 300)
+                }
+
+                // BEATS VIX INDICATOR
+                if (showBeatsVIX && payload.features) {
+                    runVolatilityIndexPlot(serverPayload = payload, beatsToStack = 2, samplingRate = 300, current_config)
+                }
+
+
+                // showStackedWaveletsOnWavelets        
+                if (showStackedWaveletsOnWavelets          // This condition signifies that we'd need:  and  
+                     && payload.features                       // 1. payload.features for R peaks
+                    && payload.wavelets                       // 2. payload.wavelets for wavelet info
+                    && Object.keys(payload.wavelets).length > 0 // 3. payload.wavelets for wavelet data
+                    ) { 
+                        console.log("wavelets info inside checkbox check statement ", payload.wavelets)
+                   // runStackedWaveletsOnWavelets(serverPayload = payload, beatsToStack = 2, samplingRate = 300, current_config)
+                   updateStackedWaveletChart(
+                    serverPayload    = payload,       // The payload containing serverPayload.wavelet_bands AND serverPayload.data
+                    selectedBandName = 'detail_band_D1',    // e.g., 'detail_band_D1', 'baseline_wander_A5', etc.
+                    beatsToStack     = 2, 
+                    samplingRate     = 300, 
+                    currentConfig    = current_config
+                )
+                
+                }
+
+                console.log(current_config)
+            })
+            .catch(err => console.error("Error executing unified stream pipeline:", err));
+    }
+
+
+    /**
+             * Binds cross-chart sync routines on mouse interaction and zoom loops.
+             * Includes an operational guard flag to prevent recursive infinite loops.
+             */
+    let isSyncing = false; // prevent infinite zoom loops
+
+    function synchronizeCharts(chartId1, chartId2) {
+        const chart1 = document.getElementById(chartId1);
+        const chart2 = document.getElementById(chartId2);
+
+        if (!chart1 || !chart2 || !chart1.data || !chart2.data) return;
+
+        // ==========================================
+        // 1. HOVER SYNCHRONIZATION
+        // ==========================================
+        chart1.on('plotly_hover', function (eventData) {
+            if (!eventData || !eventData.points || eventData.points.length === 0) return;
+
+            const xVal = eventData.points[0].x;
+            const targetTraces = chart2.data.map((_, index) => {
+                return { curveNumber: index, xval: xVal };
+            });
+
+            Plotly.Fx.hover(chart2, targetTraces, ['xy']);
+        });
+
+        chart1.on('plotly_unhover', function () {
+            Plotly.Fx.hover(chart2, []);
+        });
+
+        // ==========================================
+        // 2. ZOOM & PAN SYNCHRONIZATION (New)
+        // ==========================================
+        chart1.on('plotly_relayout', function (eventData) {
+            // If we are already in a synchronization loop, break out immediately
+            if (isSyncing) return;
+
+            // Check if the event contains X-axis zoom/pan range changes
+            if (eventData['xaxis.range[0]'] !== undefined || eventData['xaxis.autorange'] !== undefined) {
+                isSyncing = true; // Set guard
+
+                let updatePayload = {};
+
+                if (eventData['xaxis.autorange'] === true) {
+                    // User double-clicked to reset zoom
+                    updatePayload = { 'xaxis.autorange': true };
+                } else {
+                    // User dragged a box to zoom into a slice
+                    updatePayload = {
+                        'xaxis.range[0]': eventData['xaxis.range[0]'],
+                        'xaxis.range[1]': eventData['xaxis.range[1]']
+                    };
+                }
+
+                // Update the target chart layout and turn off the guard flag when complete
+                Plotly.relayout(chart2, updatePayload).then(() => {
+                    isSyncing = false;
+                });
+            }
+        });
+    }
+
+
+    // Automatic boot execution when HTML layer finishes initializing
+    document.addEventListener("DOMContentLoaded", () => {
+        //updateSampleDropdown();
+
+        updateSampleDropdown(false);
+        document.getElementById('record-selector').addEventListener('scroll', function (e) {
+            const el = e.target;
+            const triggerThreshold = el.scrollHeight - el.scrollTop <= el.clientHeight + 10;
+
+            if (triggerThreshold && !isRecordLoading) {
+                updateSampleDropdown(true); // Fire appending mode
+            }
+        });
+
+
+        updatePeakDetectionDropdown();
+
+
+        // Placing the button's event listener setup inside DOMContentLoaded ensures execution safety.
+        // It guarantees the browser completes its HTML parsing pass and builds the elements in memory before JavaScript looks for them. 
+        // If we ran this setup code raw in the script file without waiting, it would execute instantly, grab a handful of null values, and crash before the page even finishes rendering.
+        // This architectural checkpoint ensures all UI nodes are fully registered in RAM, preventing a critical runtime exception—and saving Tuld from another margin call.
+
+        const stampButton = document.getElementById("rubber-stamp-btn");
+        if (stampButton) {
+            stampButton.addEventListener("click", async () => {
+
+
+                const currentRecordId = document.getElementById('record-selector').value;
+
+                // getting the signature of the current confguraton
+                const currentScale = document.getElementById("scale-selector").value;
+                const useFilter = document.getElementById('toggle-filter').checked;
+                const useCancel = document.getElementById('toggle-cancel').checked;
+                const orientation = document.getElementById('orientation-status-badge');
+                const orientationValue = orientation ? orientation.textContent.trim() : "Unknown";
+
+                const current_config = `currentScale:${currentScale}-useFilter:${useFilter}-CancelQRS:${useCancel}-Orientation:${orientationValue}`
+
+
+
+
+                if (!currentRecordId) {
+                    alert("❌ Please select a valid record first, mate");
+                    return;
+                }
+
+                console.log("got Past current record check...")
+                // Disable button briefly to prevent double-submitting during disk IO
+                stampButton.disabled = true;
+
+                // Trigger the POST request to Flask
+                await executeTuldRubberStamp(currentRecordId, current_config);
+
+                // Re-enable the button
+                stampButton.disabled = false;
+
+            });
+
+        }
+
+        // Helper function to shift the dropdown and trigger the pipeline
+        function navigateRecord(direction) {
+            const recordSelector = document.getElementById('record-selector');
+            if (!recordSelector) {
+                console.error("Record selector element not found.");
+                return;
+            }
+
+            // 1. Get the currently selected index
+            const currentIndex = recordSelector.selectedIndex;
+            const totalOptions = recordSelector.options.length;
+
+            // Verify we actually have options to navigate
+            if (totalOptions === 0) {
+                alert("❌ No records available to navigate.");
+                return;
+            }
+
+            let newIndex = currentIndex;
+
+            // 2. Calculate the next or previous index
+            if (direction === 'next') {
+                newIndex = currentIndex + 1;
+                // Prevent going past the last item
+                if (newIndex >= totalOptions) {
+                    alert("ℹ️ You are already on the last record.");
+                    return;
+                }
+            } else if (direction === 'prev') {
+                newIndex = currentIndex - 1;
+                // Prevent going past the first item
+                if (newIndex < 0) {
+                    alert("ℹ️ You are already on the first record.");
+                    return;
+                }
+            }
+
+            // 3. Update the dropdown selection to the new value
+            recordSelector.selectedIndex = newIndex;
+
+            // 4. Update your text badge immediately to show progress
+            const navBadge = document.getElementById("report-navigation-status-badge");
+            if (navBadge) {
+                navBadge.innerText = `Viewing Report: #${recordSelector.value}`;
+            }
+
+
+            console.log(`Loading pipeline for new record: ${recordSelector.value}`);
+            loadEcgPipeline();
+
+        }
+
+        //  PREVIOUS REPORT BUTTON LOGIC
+        const prevButton = document.getElementById("prev-Record-btn");
+        if (prevButton) {
+            prevButton.addEventListener("click", () => {
+                prevButton.disabled = true;
+
+                // Execute the navigation logic
+                navigateRecord('prev');
+
+                // global event dispatch for other event Listeners
+                window.dispatchEvent(new CustomEvent('navPrevReportRequested'));
+
+                prevButton.disabled = false;
+            });
+        }
+
+        //  NEXT REPORT BUTTON LOGIC
+        const nextButton = document.getElementById("next-Record-btn");
+        if (nextButton) {
+            nextButton.addEventListener("click", () => {
+                nextButton.disabled = true;
+
+                // Execute the navigation logic
+                navigateRecord('next');
+
+                // global event dispatch for other event Listeners 
+                window.dispatchEvent(new CustomEvent('navNextReportRequested'));
+
+                nextButton.disabled = false;
+            });
+        }
+
+
+
+    });
+</script>
