@@ -8,6 +8,32 @@
      notch/Dynamic Island area and S20's punch-hole camera area. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
 
+<!-- ── 120Hz UNLOCK TECHNIQUES FOR SAMSUNG/ANDROID ────────────────────
+     Samsung One UI caps web content at 60Hz by default even on 120Hz
+     displays. Multiple techniques combined give the best chance of
+     unlocking the full refresh rate.
+
+     What each does:
+     1. HandheldFriendly      -- signals mobile-optimised content
+     2. CSS animation trick   -- some Samsung firmware ONLY grants 120Hz
+                                 when a CSS animation is running on page.
+                                 A 1px invisible element runs opacity:1→1
+                                 continuously (zero visual impact).
+     3. will-change: transform on animated elements (see shorts_feed.css)
+                             -- promotes elements to GPU compositor layers,
+                                signals animation intent to the browser
+     4. Continuous rAF loop  -- already present (sweep animation). Chrome
+                                detects animation-heavy pages and may grant
+                                higher refresh automatically.
+
+     HONEST NOTE: Samsung's adaptive refresh rate policy is enforced at
+     the firmware level. These are hints, not guarantees. If the OS is
+     in power saving mode or adaptive battery is on, 60Hz wins regardless.
+     Settings → Device care → Battery → Adaptive power saving → OFF
+     is the most reliable way to unlock 120Hz for testing.
+────────────────────────────────────────────────────────────────────── -->
+<meta name="HandheldFriendly" content="true">
+
 <!-- PWA / ADD TO HOME SCREEN
      These tags make the app look and behave like a native app when added
      to the home screen on both iOS Safari and Android Chrome. -->
@@ -48,6 +74,32 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='shorts/shorts_feed.css') }}">
 <style>
     body { margin: 0; background: var(--bg, #000000); color: #fff; font-family: sans-serif; }
+
+    /* ── 120Hz CSS ANIMATION TRICK ─────────────────────────────────────
+       A hidden 1×1px element running a continuous CSS animation.
+       Some Samsung One UI firmware versions only enable 120Hz when
+       the browser detects an active CSS animation on the page.
+       opacity: 0.9999 → 1.0000 is visually identical but technically
+       an animation -- the browser can't optimise it away. Zero GPU cost
+       since it's a single pixel outside the visible area. */
+    @keyframes _hz_unlock { from { opacity: 0.9999; } to { opacity: 1; } }
+    #_hz_unlock_el {
+        position: fixed; width: 1px; height: 1px;
+        top: -2px; left: -2px; pointer-events: none;
+        animation: _hz_unlock 1ms linear infinite;
+        will-change: opacity;
+    }
+
+    /* ── GPU LAYER PROMOTION ────────────────────────────────────────────
+       will-change: transform tells the browser these elements will
+       animate, promoting them to compositor layers. This is what signals
+       "this is an animation-heavy page" to Samsung's display scheduler.
+       Combined with the rAF loop already running, this gives the strongest
+       possible hint that 120Hz is warranted. */
+    .journey-feed, .journey-card, .chart {
+        will-change: transform;
+        transform: translateZ(0); /* force GPU layer even before animation starts */
+    }
 
     /* Safe area insets -- required when viewport-fit=cover is set.
        Without these, content clips behind:
@@ -186,6 +238,8 @@
 </style>
 </head>
 <body>
+    <!-- Hidden 120Hz unlock element -- see CSS above -->
+    <div id="_hz_unlock_el" aria-hidden="true"></div>
     <main id="feed" class="journey-feed"></main>
 
     <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
@@ -363,6 +417,21 @@
                 </span>`;
             }
 
+            // Infer display Hz from actual rAF interval rather than
+            // window.screen.refresh which is non-standard and only works
+            // in Firefox -- Chrome on Android returns undefined.
+            // The rAF interval IS the display frame period, so:
+            // displayHz = round(1000 / frameIntervalMs) to nearest standard rate.
+            function inferDisplayHz(intervalMs) {
+                if (!intervalMs || intervalMs <= 0) return '?';
+                const raw = 1000 / intervalMs;
+                // Snap to nearest standard refresh rate
+                const standards = [24, 30, 48, 60, 90, 120, 144, 165, 240];
+                return standards.reduce((a, b) =>
+                    Math.abs(b - raw) < Math.abs(a - raw) ? b : a
+                );
+            }
+
             function updateHud() {
                 // FPS -- measured from actual rAF calls
                 const now = performance.now();
@@ -373,18 +442,24 @@
                     lastFpsTime = now;
                 }
 
-                // Find the active sweep -- look for a control with recent activity
+                // Find the most recently active sweep -- the card with the
+                // highest lastElapsedMs that's still running. This is the
+                // card actually on screen, not the last card that called
+                // runAndRender() (which could be a card that just scrolled
+                // off or a preload).
                 let sweepInfo = null;
-                activeSweepControl.forEach((control, sampleId) => {
-                    if (!sweepInfo || control.lastElapsedMs > 0) {
-                        sweepInfo = { sampleId, ...control };
+                let activeSampleId = null;
+                activeSweepControl.forEach((control, sid) => {
+                    if (!sweepInfo || control.lastElapsedMs > sweepInfo.lastElapsedMs) {
+                        sweepInfo = control;
+                        activeSampleId = sid;
                     }
                 });
 
                 // Signal info from cache
                 let signalInfo = null;
                 if (sweepInfo) {
-                    const cached = fetchedSignalCache.get(sweepInfo.sampleId);
+                    const cached = fetchedSignalCache.get(activeSampleId);
                     if (cached) signalInfo = cached;
                 }
 
@@ -423,6 +498,9 @@
                 const canvasActive = globalThis._DEV_CANVAS_GLOW !== undefined;
 
                 hud.innerHTML = [
+                    stat('display Hz',      `${inferDisplayHz(frameIntervalMs)}Hz`,    inferDisplayHz(frameIntervalMs) >= 90 ? '#2dd4bf' : '#9aa1ab'),
+                    stat('card',           activeSampleId || '--', '#555'),
+                    stat('stage',          globalThis._DEV_ACTIVE_STAGE !== undefined ? `[${globalThis._DEV_ACTIVE_STAGE}] ${journeyJson.stages[globalThis._DEV_ACTIVE_STAGE]?.stageId || ''}` : '--', '#555'),
                     stat('renderer',        globalThis._DEV_ACTIVE_RENDERER  || '--', '#e8f4f8'),
                     stat('algorithm',       globalThis._DEV_ACTIVE_ALGORITHM || '--', '#e8f4f8'),
                     stat('FPS measured',    `${measuredFps}`,                         measuredFps >= 100 ? '#2dd4bf' : measuredFps >= 55 ? '#2dd4bf' : measuredFps >= 30 ? '#d9a441' : '#ff4d4d'),
