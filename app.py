@@ -9,7 +9,7 @@ from flask import Flask, Blueprint, jsonify, request, send_from_directory, redir
       
 from Blueprints.statistical_analytics_bp import statistical_analytics_bp 
 from Blueprints.shorts_bp import shorts_bp
-from Blueprints.dwt_bp import dwt_bp
+#from Blueprints.dwt_bp import dwt_bp
 from Blueprints.journey_bp import journey_bp
 from Blueprints.reels_bp import reels_bp   # dummy blueprint to prove that that reels engine works and is compeltely agnostic of the Dataset, DSPEngine and RenderingEngine 
  
@@ -386,7 +386,7 @@ app.register_blueprint(statistical_analytics_bp, url_prefix='/statistical_analyt
 
 app.register_blueprint(shorts_bp, url_prefix='/shorts')
 
-app.register_blueprint(dwt_bp)
+#app.register_blueprint(dwt_bp)
 
 app.register_blueprint(journey_bp)
 
