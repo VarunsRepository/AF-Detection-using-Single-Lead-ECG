@@ -121,32 +121,30 @@
     }
     .journey-feed {
         height: 100vh;
+        height: 100dvh;
         overflow-y: scroll;
         scroll-snap-type: y mandatory;
-        scrollbar-width: none; /* Firefox */
-        -ms-overflow-style: none; /* older Edge/IE */
-    }
-    /* Chrome/Safari/newer Edge -- scroll/swipe still works fully, only the
-       visible track+thumb are hidden. Matches how real Shorts/Reels-style
-       apps feel: no visible scrollbar breaking the edge-to-edge, immersive
-       card experience. */
-    .journey-feed::-webkit-scrollbar {
-        display: none;
-    }
-    .journey-card {
-        height: 100vh;
-        scroll-snap-align: start;
-        padding: 20px;
-        box-sizing: border-box;
-        overflow-y: auto; /* safety net for unusually dense content -- scrollbar itself hidden below, same reasoning as .journey-feed */
-        position: relative; /* anchors .stage-rail's position:absolute against the CARD, not the viewport */
-        display: flex;
-        flex-direction: column;
+        scroll-behavior: smooth;
+        -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
         -ms-overflow-style: none;
     }
-    .journey-card::-webkit-scrollbar {
-        display: none;
+    .journey-feed::-webkit-scrollbar { display: none; }
+
+    .journey-card {
+        height: 100vh;
+        height: 100dvh;
+        min-height: 100vh;
+        min-height: 100dvh;
+        scroll-snap-align: start;
+        scroll-snap-stop: always;
+        flex-shrink: 0;
+        padding: 20px;
+        box-sizing: border-box;
+        overflow: hidden;
+        position: relative;
+        display: flex;
+        flex-direction: column;
     }
     /* Three stacking zones -- journey_scroll_feed.js places each of
        title/caption/description/chart into ONE of these, based on the
@@ -305,9 +303,13 @@
     <script src="{{ url_for('static', filename='shorts/core/dsp_registry.js') }}"></script>
     <script src="{{ url_for('static', filename='shorts/core/rendering_registry.js') }}"></script>
 
-    <!-- Server-resolved: only the DSP algorithms this journey actually needs.
-         Was hardcoded (all 3 filter files always, regardless of journey).
-         Now: dsp_store.resolve(stages) in journey_bp.py returns only what's needed. -->
+    <!-- Data registry + adapters -- must load before DSP/RE files so
+         fetchAndNormalise() exists when journey_interpreter.js calls it -->
+    <script src="{{ url_for('static', filename='shorts/core/data_registry.js') }}"></script>
+    <script src="{{ url_for('static', filename='shorts/adapters/single_to_arrays.js') }}"></script>
+    <script src="{{ url_for('static', filename='shorts/adapters/multi_to_arrays.js') }}"></script>
+
+    <!-- Server-resolved: only the DSP algorithms this journey actually needs. -->
     {% for url in dsp_entrypoints %}
     <script src="{{ url }}"></script>
     {% endfor %}
@@ -317,25 +319,37 @@
     <script src="{{ url }}"></script>
     {% endfor %}
 
+    <!-- Analytics -- must load before journey_scroll_feed.js and
+         journey_interpreter.js, which call trackEvent()/registerSampleMeta().
+         Both guard with typeof, so a failed load degrades to no analytics
+         rather than breaking the feed. -->
+    <script src="{{ url_for('static', filename='shorts/core/event_collector.js') }}"></script>
+
     <script src="{{ url_for('static', filename='shorts/core/dispatcher.js') }}"></script>
     <script src="{{ url_for('static', filename='shorts/core/journey_interpreter.js') }}"></script>
     <script src="{{ url_for('static', filename='shorts/core/journey_scroll_feed.js') }}"></script>
 
     <script>
+        // Register data sources for this page -- resolved server-side so
+        // only sources actually needed by this batch are registered.
+        {% for config in data_source_configs %}
+        registerDataSource({{ config.sourceId | tojson }}, {{ config | tojson }});
+        {% endfor %}
+
         const journeyJson = {
-            globalThemes: {{ journey_themes | tojson }},
-            journeyRules: {{ journey_rules | tojson }},
-            stages: {{ journey_stages | tojson }},
-            uiShell: {{ journey_ui_shell | tojson }},
+            globalThemes:   {{ journey_themes | tojson }},
+            journeyRules:   {{ journey_rules | tojson }},
+            stages:         {{ journey_stages | tojson }},
+            uiShell:        {{ journey_ui_shell | tojson }},
             playbackConfig: {{ journey_playback_config | tojson }},
-            layout: {{ journey_layout | tojson }},
+            layout:         {{ journey_layout | tojson }},
         };
+
+        // Mixed batch -- null for /journey/<name>, list for /shorts
+        const shortsBatch = {{ (shorts_batch | tojson) if shorts_batch else 'null' }};
 
         // If a different sample endpoint base was provided (e.g., for reels/fitness),
         // override the default before the feed starts fetching.
-        {% if sample_endpoint_base %}
-        globalSampleEndpointBase = "{{ sample_endpoint_base }}";
-        {% endif %}
 
         applyCurrentTheme(); // must run before the feed starts -- buildChartLayout() and the glow filter both read CSS variables this sets, and would otherwise resolve to empty strings on the very first render
 
@@ -509,11 +523,15 @@
                     }
                 });
 
-                // Signal info from cache
+                // Signal info from the data_registry envelope cache.
+                // Shape changed with the data registry: the old
+                // fetchedSignalCache held {signal, fs}; the envelope holds
+                // {y, fs, arrays, ...} where y IS the primary array.
+                // Normalised here so the stats below read one shape.
                 let signalInfo = null;
-                if (sweepInfo) {
-                    const cached = fetchedSignalCache.get(activeSampleId);
-                    if (cached) signalInfo = cached;
+                if (sweepInfo && typeof getCachedEnvelope === "function") {
+                    const env = getCachedEnvelope(activeSampleId);
+                    if (env) signalInfo = { signal: env.y, fs: env.fs };
                 }
 
                 // Samples traversed per second
@@ -583,6 +601,7 @@
         startJourneyScrollFeed({
             apiEndpoint: "{{ journey_api_endpoint }}",
             journeyJson: journeyJson,
+            shortsBatch: shortsBatch,
             feedContainer: document.getElementById("feed"),
         });
     </script>

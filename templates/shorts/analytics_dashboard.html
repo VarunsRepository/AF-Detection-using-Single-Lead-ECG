@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feed Analytics</title>
+<style>
+    :root {
+        --bg:      #0b0d10;
+        --panel:   #14181d;
+        --line:    #232a32;
+        --text:    #d6dde5;
+        --dim:     #78828e;
+        --accent:  #5cc24a;
+        --warn:    #d9a441;
+        --bad:     #e05555;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; padding: 24px;
+        background: var(--bg); color: var(--text);
+        font: 13px/1.5 "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+    }
+    h1 { font-size: 17px; margin: 0 0 4px; font-weight: 600; }
+    h2 {
+        font-size: 12px; margin: 30px 0 10px; color: var(--dim);
+        text-transform: uppercase; letter-spacing: 0.09em; font-weight: 600;
+    }
+    .sub { color: var(--dim); font-size: 12px; margin-bottom: 18px; }
+    .cards { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+    .kpi {
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: 7px; padding: 12px 16px; min-width: 116px;
+    }
+    .kpi .n { font-size: 21px; font-weight: 600; }
+    .kpi .l { color: var(--dim); font-size: 11px; margin-top: 2px; }
+    table {
+        width: 100%; border-collapse: collapse;
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: 7px; overflow: hidden;
+    }
+    th {
+        text-align: left; padding: 8px 11px; font-size: 11px;
+        color: var(--dim); text-transform: uppercase;
+        letter-spacing: 0.05em; border-bottom: 1px solid var(--line);
+        font-weight: 600; white-space: nowrap;
+    }
+    td {
+        padding: 7px 11px; border-bottom: 1px solid rgba(35,42,50,0.5);
+        white-space: nowrap;
+    }
+    tr:last-child td { border-bottom: none; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .good { color: var(--accent); }
+    .mid  { color: var(--warn); }
+    .poor { color: var(--bad); }
+    .muted { color: var(--dim); }
+    .empty { color: var(--dim); padding: 16px; text-align: center; }
+    button {
+        background: transparent; color: var(--text);
+        border: 1px solid var(--line); border-radius: 5px;
+        padding: 5px 11px; font: inherit; font-size: 12px; cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); color: var(--accent); }
+    .row { display: flex; align-items: center; gap: 10px; }
+    .scroll { max-height: 420px; overflow-y: auto; border-radius: 7px; }
+    code {
+        background: rgba(255,255,255,0.05); padding: 1px 5px;
+        border-radius: 3px; font-size: 11px;
+    }
+</style>
+</head>
+<body>
+
+<div class="row" style="justify-content:space-between;">
+    <div>
+        <h1>Feed Analytics</h1>
+        <div class="sub">
+            Anonymous session events. No IP, no user-agent string, no identity.
+        </div>
+    </div>
+    <button onclick="loadAll()">Refresh</button>
+</div>
+
+<div class="cards" id="kpis"></div>
+
+<h2>Journey &times; Label &mdash; the pairing view</h2>
+<div class="sub">
+    The one aggregate neither dimension shows alone. A journey that works
+    on AFib records but not noisy ones is invisible in journey-level stats.
+</div>
+<div id="pairing"></div>
+
+<h2>Device</h2>
+<div class="sub">
+    Same journey can perform very differently by platform. Average watch
+    time separates &ldquo;didn't finish&rdquo; from &ldquo;bailed immediately&rdquo;.
+</div>
+<div id="device"></div>
+
+<h2>Journeys</h2>
+<div id="journey"></div>
+
+<h2>Most replayed records</h2>
+<div class="sub">High replay usually means an interesting signal.</div>
+<div id="samples"></div>
+
+<h2>Sessions</h2>
+<div class="sub">Click a session id to filter the event stream below.</div>
+<div class="scroll" id="sessions"></div>
+
+<h2>Event stream <span id="streamFilter" class="muted"></span></h2>
+<div class="scroll" id="events"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+// Local time, not the raw ISO string -- server_ts is stored UTC.
+function fmtTime(iso) {
+    if (!iso) return "--";
+    const d = new Date(iso.endsWith("Z") || iso.includes("+") ? iso : iso + "Z");
+    return isNaN(d) ? iso
+        : d.toLocaleString(undefined, { month:"short", day:"numeric",
+                                        hour:"2-digit", minute:"2-digit",
+                                        second:"2-digit" });
+}
+function rateClass(pct) {
+    return pct >= 70 ? "good" : pct >= 40 ? "mid" : "poor";
+}
+function table(el, cols, rows, rowFn) {
+    if (!rows || rows.length === 0) {
+        el.innerHTML = '<div class="empty">No data yet &mdash; browse /feed to generate events.</div>';
+        return;
+    }
+    el.innerHTML = `<table><thead><tr>${
+        cols.map(c => `<th>${c}</th>`).join("")
+    }</tr></thead><tbody>${
+        rows.map(rowFn).join("")
+    }</tbody></table>`;
+}
+
+async function loadAll(sessionFilter = null) {
+    try {
+        const [sum, sess, evs] = await Promise.all([
+            fetch("/shorts/analytics/summary").then(r => r.json()),
+            fetch("/shorts/analytics/sessions").then(r => r.json()),
+            fetch("/shorts/analytics/events?limit=150"
+                  + (sessionFilter ? `&session=${encodeURIComponent(sessionFilter)}` : ""))
+                .then(r => r.json()),
+        ]);
+
+        const totalEntered   = (sum.by_journey || [])
+            .reduce((a, r) => a + (r.entered || 0), 0);
+        const totalCompleted = (sum.by_journey || [])
+            .reduce((a, r) => a + (r.completed || 0), 0);
+        const overall = totalEntered ? Math.round(100 * totalCompleted / totalEntered) : 0;
+
+        $("kpis").innerHTML = [
+            ["events",           sum.total_events ?? 0],
+            ["sessions",         (sess.sessions || []).length],
+            ["cards entered",    totalEntered],
+            ["completion",       overall + "%"],
+        ].map(([l, n]) =>
+            `<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`
+        ).join("");
+
+        table($("pairing"),
+            ["journey", "label", "entered", "completed", "rate", "replays"],
+            sum.by_pairing,
+            r => {
+                const pct = r.entered ? Math.round(100 * r.completed / r.entered) : 0;
+                return `<tr><td>${r.journey_name}</td><td>${r.sample_label}</td>
+                    <td class="num">${r.entered}</td>
+                    <td class="num">${r.completed}</td>
+                    <td class="num ${rateClass(pct)}">${pct}%</td>
+                    <td class="num">${r.replays}</td></tr>`;
+            });
+
+        table($("device"),
+            ["journey", "platform", "os", "browser", "entered", "rate", "avg watch"],
+            sum.by_device,
+            r => {
+                const pct = r.entered ? Math.round(100 * r.completed / r.entered) : 0;
+                const secs = r.avg_elapsed_ms != null
+                    ? (r.avg_elapsed_ms / 1000).toFixed(1) + "s" : "--";
+                return `<tr><td>${r.journey_name}</td><td>${r.platform}</td>
+                    <td>${r.os_family}</td><td>${r.browser}</td>
+                    <td class="num">${r.entered}</td>
+                    <td class="num ${rateClass(pct)}">${pct}%</td>
+                    <td class="num">${secs}</td></tr>`;
+            });
+
+        table($("journey"),
+            ["journey", "entered", "completed", "rate", "replays", "distinct samples"],
+            sum.by_journey,
+            r => {
+                const pct = r.entered ? Math.round(100 * r.completed / r.entered) : 0;
+                return `<tr><td>${r.journey_name}</td>
+                    <td class="num">${r.entered}</td>
+                    <td class="num">${r.completed}</td>
+                    <td class="num ${rateClass(pct)}">${pct}%</td>
+                    <td class="num">${r.replays}</td>
+                    <td class="num">${r.distinct_samples}</td></tr>`;
+            });
+
+        table($("samples"),
+            ["sample", "label", "views", "replays"],
+            sum.top_samples,
+            r => `<tr><td>${r.sample_id}</td><td>${r.sample_label ?? "--"}</td>
+                  <td class="num">${r.views}</td>
+                  <td class="num ${r.replays > 0 ? "good" : "muted"}">${r.replays}</td></tr>`);
+
+        table($("sessions"),
+            ["started", "session", "device", "cards", "stages done", "replays", "events"],
+            sess.sessions,
+            r => `<tr>
+                <td class="muted">${fmtTime(r.started_at)}</td>
+                <td><a href="#" style="color:var(--accent)"
+                       onclick="filterSession('${r.session_id}');return false;"
+                    >${(r.session_id || "").slice(0, 8)}</a></td>
+                <td class="muted">${r.platform ?? "?"} / ${r.os_family ?? "?"} / ${r.browser ?? "?"}</td>
+                <td class="num">${r.cards_seen}</td>
+                <td class="num">${r.stages_completed}</td>
+                <td class="num">${r.replays}</td>
+                <td class="num muted">${r.events}</td></tr>`);
+
+        table($("events"),
+            ["server time", "session", "event", "journey", "sample", "label",
+             "stage", "elapsed", "device"],
+            evs.events,
+            r => `<tr>
+                <td class="muted">${fmtTime(r.server_ts)}</td>
+                <td class="muted">${(r.session_id || "").slice(0, 8)}</td>
+                <td>${r.event}</td>
+                <td>${r.journey_name ?? "--"}</td>
+                <td>${r.sample_id ?? "--"}</td>
+                <td>${r.sample_label ?? "--"}</td>
+                <td class="num">${r.stage_index ?? "--"}</td>
+                <td class="num">${r.elapsed_ms != null ? (r.elapsed_ms/1000).toFixed(1)+"s" : "--"}</td>
+                <td class="muted">${r.platform ?? "--"}</td></tr>`);
+
+        $("streamFilter").textContent = sessionFilter
+            ? `— filtered to ${sessionFilter.slice(0,8)} (click Refresh to clear)` : "";
+
+    } catch (err) {
+        $("kpis").innerHTML =
+            `<div class="empty">Could not load analytics: ${err}</div>`;
+    }
+}
+
+function filterSession(id) { loadAll(id); }
+
+loadAll();
+</script>
+</body>
+</html>

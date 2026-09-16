@@ -1,0 +1,29 @@
+{% extends "shorts/_journey_base.html" %}
+
+{% block title %}ECG Shorts{% endblock %}
+
+{% block journey_scripts %}
+<!-- ECG's OWN filters, registries, and stage-BLOCK definitions -- nothing
+     here is loaded by any other journey. A "heart attack detection"
+     journey needing ST-elevation analysis would never touch this block
+     at all; it would have its own, listing st_elevation_filter.js instead
+     of any of these. -->
+<script src="{{ url_for('static', filename='shorts/filters/pan_tompkins_filter.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/filters/hamilton_tompkins_filter.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/peak_detector_registry.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/filters/baseline_correction_filter.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/filters/savitzky_golay_filter.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/prefilter_registry.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/filters/hrv_metrics_filter.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/journeys/ecg/ecg_stage_blocks.js') }}"></script>
+{% endblock %}
+
+{% block journey_bootstrap %}
+<!-- The RECIPE -- which blocks, in what order -- sent from the server as
+     plain data (journeys_catalog.py's "ecg" entry), not code. Only after
+     this loads does shorts_feed.js call loadJourneyFromRecipe(), which
+     turns it into real registerStage() calls by resolving each block name
+     against ecg_stage_blocks.js's registrations above. -->
+<script>window.JOURNEY_RECIPE = {{ journey_recipe | tojson }};</script>
+<script src="{{ url_for('static', filename='shorts/shorts_feed.js') }}"></script>
+{% endblock %}
