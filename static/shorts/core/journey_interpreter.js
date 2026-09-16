@@ -142,18 +142,29 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         return colorSpec;
     }
 
-    // Builds the segment row ONCE (one segment per stage) -- doesn't
-    // depend on which stage is current, so this only ever needs to run
-    // a single time, not on every stage transition.
+    // Builds the dot row ONCE (one dot per stage) -- doesn't depend on
+    // which stage is current, so this only ever runs a single time.
+    //
+    // The recipe's progressBar colours are applied as CSS custom
+    // properties on the container rather than inline styles on each dot.
+    // Inline `background` on a segment would fill the dot's centre and
+    // destroy the hollow/filled distinction the dots rely on; scoping the
+    // colours to the container lets the CSS decide WHERE each one applies
+    // (border for pending, fill for completed/current).
     function buildProgressBar() {
         const shell = journeyJson.uiShell;
         if (!shell || !shell.showProgressBar || !progressBarEl) return;
+
+        progressBarEl.style.setProperty("--dot-active",
+            resolveColor(shell.progressBar.activeColor));
+        progressBarEl.style.setProperty("--dot-inactive",
+            resolveColor(shell.progressBar.inactiveColor));
+
         progressBarEl.innerHTML = "";
         journeyJson.stages.forEach(() => {
             const segment = document.createElement("div");
             segment.className = "segment";
-            segment.style.background = resolveColor(shell.progressBar.inactiveColor);
-            segment.innerHTML = `<div class="fill" style="background:${resolveColor(shell.progressBar.activeColor)}"></div>`;
+            segment.innerHTML = `<div class="fill"></div>`;
             progressBarEl.appendChild(segment);
         });
     }
@@ -198,13 +209,18 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         const ds = stageJson.dataSource;
 
         if (ds.mode === "HTTP_REST") {
-            const raw = await fetchSignal(sampleId);
-            if (!raw) return null;
-            return { t: raw.signal.map((_, i) => i / raw.fs), y: raw.signal, fs: raw.fs };
+            // Use data_registry.js fetchAndNormalise -- resolves endpoint
+            // and adapter from the registered sourceId, returns the
+            // standard envelope {y, fs, t, arrays, raw, meta}.
+            // Backward compatible: data.y is always the primary array,
+            // so all existing DSP algorithms work unchanged.
+            const sourceId = ds.sourceId || "ecg_single"; // default for old recipes
+            const envelope = await fetchAndNormalise(sampleId, sourceId);
+            return envelope;
         }
 
         if (ds.mode === "PREVIOUS_STAGE_PIPELINE") {
-            const exported = stageOutputs[ds.outputKey]; // outputKey is the real lookup key (matches stageOutput.exportKey); stageId is just which stage, for error messages
+            const exported = stageOutputs[ds.outputKey];
             if (!exported) {
                 console.error(`Journey: output "${ds.outputKey}" from stage "${ds.stageId}" isn't available yet -- has that stage run?`);
                 return null;
@@ -217,7 +233,7 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             return value;
         }
 
-        console.error(`Journey: unsupported dataSource.mode "${ds.mode}" -- only HTTP_REST and PREVIOUS_STAGE_PIPELINE are wired up in this proof`);
+        console.error(`Journey: unsupported dataSource.mode "${ds.mode}"`);
         return null;
     }
 
@@ -249,6 +265,16 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
 
     async function buildStage(index) {
         const stageJson = journeyJson.stages[index];
+
+        // Analytics: which stage, of which journey, on which sample.
+        // typeof-guarded so the interpreter still runs if
+        // event_collector.js isn't loaded (e.g. a bare test page).
+        if (typeof trackEvent === "function") {
+            trackEvent("stage_started", sampleId, {
+                stage_index: index,
+                stage_id:    stageJson?.stageId ?? null,
+            });
+        }
 
         const cached = dspOutputCache.get(index);
         const data = cached ? cached.data : await resolveDataSource(stageJson);
@@ -377,6 +403,16 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 updateProgressBar(currentStageIndex, actualDuration);
                 if (!isPaused && journeyJson.journeyRules.autoAdvance && currentStageIndex < journeyJson.stages.length - 1) {
                     autoAdvanceEndTime = performance.now() + actualDuration;
+                    // Analytics: stage ran to completion (as opposed to being
+                    // skipped by a tap or a card exit).
+                    if (typeof trackEvent === "function") {
+                        setTimeout(() => trackEvent("stage_completed", sampleId, {
+                            stage_index: index,
+                            stage_id:    stageJson?.stageId ?? null,
+                            elapsed_ms:  actualDuration,
+                        }), actualDuration);
+                    }
+
                     autoAdvanceTimer = setTimeout(() => goToStage(currentStageIndex + 1), actualDuration);
                 }
 
