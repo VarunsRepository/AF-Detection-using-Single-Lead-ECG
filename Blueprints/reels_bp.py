@@ -15,7 +15,8 @@ This proves separation of concerns.
 
 from flask import Blueprint, render_template
 from Services.Dsp_Store import DspAlgorithmStore
-from Services.Rendering_Store  import RenderingStore
+from Services.Rendering_Store import RenderingStore
+from Services.data_source_store  import data_source_store
 
 reels_bp = Blueprint('reels', __name__, url_prefix='/reels')
 
@@ -38,6 +39,36 @@ rendering_store = RenderingStore()
 rendering_store.register("chart_v1",
     entrypoint="/static/shorts/renderers/chart_v1.js",
     label="ECG Sweep", description="Progressively-revealed waveform")
+
+# Fitness data lives at a different endpoint base than ECG. That used to
+# be expressed by overriding globalSampleEndpointBase via a template
+# variable; it is now a registered data source that the recipe names via
+# dataSource.sourceId -- the same mechanism any other source uses.
+# Shared store -- previously this blueprint built its OWN DataSourceStore,
+# so a source registered here was invisible to journey_bp and vice versa.
+# Sources are global to the app, like routes.
+#
+# provider instead of a hand-written route: the generic
+# /api/data/<source_id>/<sample_id> in journey_bp serves this.
+def _fitness_provider(sample_id: str) -> dict:
+    import random
+    return {
+        "signal": [random.uniform(0.5, 0.95) for _ in range(2500)],
+        "fs": 500,
+        "meta": {"videoType": "form_check", "record_id": sample_id},
+    }
+
+
+data_source_store.register("fitness_pose",
+    provider      = _fitness_provider,
+    adapter       = "single_to_arrays",
+    primary_field = "signal",
+    fs_field      = "fs",
+    label         = "Fitness pose stream",
+    description   = "Mock pose-confidence signal standing in for video frames",
+    schema        = {"fields": ["y", "fs", "t", "arrays.signal"],
+                     "fs": 500, "domain": "fitness.pose"})
+
 
 # A completely different "journey" — imagine a fitness app showing workout form videos
 FITNESS_RECIPE = {
@@ -79,7 +110,8 @@ FITNESS_RECIPE = {
         {
             "stageId": "form_check_1",
             "dataSource": {
-                "mode": "HTTP_REST"
+                "mode": "HTTP_REST",
+                "sourceId": "fitness_pose"
             },
             "dspEngine": {
                 "availableAlgorithms": [
@@ -110,7 +142,8 @@ FITNESS_RECIPE = {
         {
             "stageId": "form_check_2",
             "dataSource": {
-                "mode": "HTTP_REST"
+                "mode": "HTTP_REST",
+                "sourceId": "fitness_pose"
             },
             "dspEngine": {
                 "availableAlgorithms": [
@@ -150,8 +183,9 @@ def reels_only():
     Same journey_page.html template, same journey_scroll_feed.js,
     but a completely different recipe and endpoint base.
     """
-    dsp_entrypoints = dsp_store.resolve(FITNESS_RECIPE['stages'])
-    rendering_entrypoints = rendering_store.resolve(FITNESS_RECIPE['stages'])
+    dsp_entrypoints       = dsp_store.resolve(FITNESS_RECIPE['stages'])
+    rendering_entrypoints  = rendering_store.resolve(FITNESS_RECIPE['stages'])
+    data_source_configs    = data_source_store.resolve_for_stages(FITNESS_RECIPE['stages'])
 
     return render_template(
         'shorts/journey_page.html',
@@ -162,9 +196,10 @@ def reels_only():
         journey_playback_config=FITNESS_RECIPE['playbackConfig'],
         journey_layout=FITNESS_RECIPE['layout'],
         journey_api_endpoint=FITNESS_RECIPE['api_endpoint'],
-        sample_endpoint_base="/reels/api/fitness/samples",
         dsp_entrypoints=dsp_entrypoints,
         rendering_entrypoints=rendering_entrypoints,
+        data_source_configs=data_source_configs,
+        shorts_batch=None,
     )
 
 
