@@ -16,7 +16,14 @@ import catalog
 journey_store = catalog.journey_store
 
 journey_store.register_journey("ecg", {
-    "version": 2,  # bump this whenever the recipe changes -- store will update while preserving feedback_score
+    # v3: added pan_tompkins_py to stage 1's availableAlgorithms.
+    #
+    # BUMP THIS ON EVERY RECIPE CHANGE. register_journey() compares the
+    # incoming version against journeystore.json and SKIPS the update if
+    # they match -- so an edited recipe at an unchanged version is
+    # silently ignored, and the cached copy keeps serving. The startup log
+    # says "up to date -- skipping" when that happens.
+    "version": 3,
     "label": "AFib Detection",
     "description": "Peak detection and HRV analysis on real ECG recordings.",
     "template": "shorts/journey_page.html",
@@ -46,8 +53,13 @@ journey_store.register_journey("ecg", {
             "stageId": "stage_01_peak_detection",
             "dataSource": {"mode": "HTTP_REST", "sourceId": "ecg_single"},
             "dspEngine": {
+                # The algorithm rail button cycles this list in order.
+                # pan_tompkins and pan_tompkins_py are the SAME algorithm
+                # from two implementations -- tapping between them on one
+                # record is the comparison this app exists to make easy.
                 "availableAlgorithms": [
                     {"id": "pan_tompkins", "isDefault": True},
+                    {"id": "pan_tompkins_py", "isDefault": False},
                     {"id": "hamilton_tompkins", "isDefault": False},
                 ],
                 "parameters": {"invertSignal": False},
