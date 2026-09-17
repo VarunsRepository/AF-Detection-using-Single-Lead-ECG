@@ -105,15 +105,36 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch, f
         titleEl.className   = "stage-title";
         titleEl.textContent = "Loading...";
 
+        // Tapping the title reveals caption + description; tapping again
+        // hides them. The class goes on the ZONE rather than on either
+        // text element, because both appear together and the zone is what
+        // grows -- CSS then animates one max-height instead of two.
+        //
+        // stopPropagation matters: the card's own click handler treats a
+        // left tap as restart and a right tap as next-stage, so without it
+        // opening the text would also skip the stage.
+        titleEl.addEventListener("click", (e) => {
+            e.stopPropagation();
+            // Toggle the zone the title is in, whichever that is. Every
+            // current recipe puts title/caption/description in "bottom",
+            // but layout is recipe-controlled and could split them -- so
+            // toggle both the title's own zone and the caption's, rather
+            // than assuming they are the same element.
+            const zones = new Set([
+                titleEl.closest(".layout-zone"),
+                captionEl.closest(".layout-zone"),
+                descriptionEl.closest(".layout-zone"),
+            ].filter(Boolean));
+            const opening = !titleEl.closest(".layout-zone")
+                                    ?.classList.contains("text-expanded");
+            zones.forEach(z => z.classList.toggle("text-expanded", opening));
+        });
+
         const captionEl = document.createElement("p");
         captionEl.className = "stage-caption";
 
         const descriptionEl = document.createElement("p");
         descriptionEl.className = "stage-description";
-        descriptionEl.addEventListener("click", (e) => {
-            e.stopPropagation();
-            descriptionEl.classList.toggle("expanded");
-        });
 
         const chartEl = document.createElement("div");
         chartEl.className = "chart";

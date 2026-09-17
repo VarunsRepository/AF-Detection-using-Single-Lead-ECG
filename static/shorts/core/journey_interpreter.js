@@ -70,10 +70,66 @@ function buildSpeedIcon(speedValue) {
 // an icon-represented action) -- for these, showing the CURRENT value as
 // text is clearer than any generic icon could be. Each maps to the
 // matching "get" method on the same target.
-// No entries currently -- kept as a mechanism in case a future button
-// genuinely needs its current value shown as text, but every existing
-// rail button now uses a real icon instead (see RAIL_ICONS above).
-const VALUE_DISPLAY_METHODS = {};
+// Buttons whose CURRENT VALUE is the useful thing to display, rather
+// than a generic icon.
+//
+// WHY: switching algorithm used to change the picture while telling you
+// nothing about what you had switched TO. The whole premise of this app
+// is understanding through comparison -- and a comparison where you
+// cannot see which two things are being compared teaches nothing. The
+// information existed (dspEngine.getActiveAlgorithm()) but only in the
+// dev HUD behind ?dev=1.
+//
+// The rail button is the right place for it: it already exists, and it
+// answers "what am I using" in the same place you go to change it --
+// the same pattern camera apps use for lens buttons.
+//
+// labelMap turns a registry id into something that fits an ~40px button.
+// An unmapped id falls back to a truncation, so a new algorithm shows
+// something sensible before anyone remembers to add a short label.
+const VALUE_DISPLAY_METHODS = {
+    switchAlgorithm: {
+        getMethod: "getActiveAlgorithm",
+        suffix:    "",
+        labelMap: {
+            pan_tompkins:      "PT",
+            pan_tompkins_py:   "PT2",   // superscript "py" rendered too small to read
+            hamilton_tompkins: "HT",
+            db4_wavelet:       "DB4",
+            poincare_standard: "PC",
+            aes128_encrypt:    "AES",
+            passthrough:       "RAW",
+            null_dsp:          "NUL",
+        },
+    },
+    switchRenderer: {
+        getMethod: "getActiveRenderer",
+        suffix:    "",
+        labelMap: {
+            chart_v1:            "SVG",
+            chart_v1_canvas:     "2D",
+            chart_v1_webgl:      "GL",
+            scatter_density:     "PC",
+            rr_tachogram:        "RR",
+            dwt_comparison_view: "DWT",
+            aes_state_grid:      "HEX",
+            null_renderer:       "NUL",
+        },
+    },
+};
+
+// Fall back to something readable rather than nothing: strip any known
+// suffix, then take the initials of the remaining words.
+// "some_new_filter" -> "SNF"
+function shortenId(id) {
+    if (!id) return "?";
+    return id.split(/[_-]/)
+             .filter(Boolean)
+             .map(w => w[0])
+             .join("")
+             .toUpperCase()
+             .slice(0, 4);
+}
 
 function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, titleEl, captionEl, progressBarEl, descriptionEl) {
     let currentStageIndex = 0;
@@ -342,6 +398,13 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         }
         runAndRender(cached ? cached.dspOutput : null);
 
+        // Collapse the text overlay on every stage change. Without this,
+        // text left open on stage 1 stays open over stage 2's render --
+        // and the user never asked to read stage 2's description.
+        if (titleEl) {
+            titleEl.closest(".layout-zone")?.classList.remove("text-expanded");
+        }
+
         if (titleEl) titleEl.textContent = stageJson.uiFillers.title;
         if (captionEl) captionEl.textContent = stageJson.uiFillers.caption;
         if (descriptionEl) descriptionEl.textContent = stageJson.uiFillers.description || "";
@@ -358,7 +421,12 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 if (valueDisplay) {
                     const targetObj = context[control.action.target];
                     const currentValue = targetObj[valueDisplay.getMethod]();
-                    btn.textContent = currentValue + valueDisplay.suffix;
+                    const short = valueDisplay.labelMap?.[currentValue]
+                                  ?? shortenId(currentValue);
+                    btn.textContent = short + valueDisplay.suffix;
+                    // Full id in the tooltip -- the button has room for
+                    // three characters, not "hamilton_tompkins".
+                    btn.title = `${control.ui.label}: ${currentValue}`;
                 } else if (control.action.method === "cycleSpeed") {
                     // Dynamic, not a static RAIL_ICONS lookup -- the number
                     // of chevrons reflects the CURRENT speed value, read

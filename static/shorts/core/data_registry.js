@@ -98,19 +98,3 @@ function getSamplesEndpoint(sourceId) {
     const base = config.endpointTemplate.split("/{id}")[0];
     return base + "s";
 }
-
-// Look up an already-fetched envelope without triggering a fetch.
-// Returns null if this sample hasn't been loaded yet.
-//
-// sourceId is optional: the dev HUD knows which sample is on screen but
-// not which source it came from, so omitting it matches the first cache
-// entry for that sampleId. Callers that know the source should pass it.
-function getCachedEnvelope(sampleId, sourceId = null) {
-    if (sourceId) {
-        return dataEnvelopeCache.get(`${sampleId}::${sourceId}`) ?? null;
-    }
-    for (const [key, envelope] of dataEnvelopeCache) {
-        if (key.startsWith(`${sampleId}::`)) return envelope;
-    }
-    return null;
-}
