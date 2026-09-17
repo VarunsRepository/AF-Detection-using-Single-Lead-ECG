@@ -24,26 +24,25 @@ html, body {
 }
 
 /* ---------------------------------------------------------------------
-   VERTICAL AXIS -- native scroll-snap. This is the ONLY axis that
-   responds to touch/wheel scrolling directly.
+   VERTICAL AXIS -- velocity scroll driven by JS touch handlers in
+   journey_scroll_feed.js. overflow-y:hidden because card position is
+   controlled via transform:translateY() not native scroll.
+   touch-action:pan-y lets the browser know vertical gestures are
+   intentional -- prevents scroll interference on Android.
    --------------------------------------------------------------------- */
 .feed {
     height: 100vh;
-    height: 100dvh; /* dvh accounts for mobile browser toolbars showing/hiding;
-                        100vh alone causes content to jump or get clipped as
-                        Safari/Chrome's address bar collapses on scroll */
-    overflow-y: scroll;
-    scroll-snap-type: y mandatory;
-    scroll-behavior: smooth;
-    -webkit-overflow-scrolling: touch; /* smoother momentum scrolling on iOS */
+    height: 100dvh;
+    overflow-y: hidden;
+    touch-action: pan-y;
+    will-change: transform;
 }
 
 .card {
     height: 100vh;
     height: 100dvh;
     width: 100%;
-    scroll-snap-align: start;
-    scroll-snap-stop: always; /* prevents flicking past multiple cards at once */
+    /* scroll-snap-align removed -- JS handles snapping */
     position: relative;
     display: flex;
     flex-direction: column;
@@ -408,48 +407,86 @@ html, body {
    --------------------------------------------------------------------- */
 .stage-bar {
     display: flex;
-    gap: 4px;
+    gap: 7px;
     padding: 12px 16px 8px;
+    justify-content: center;   /* dots centre; the old bar spanned full width */
+    align-items: center;
 }
 
+/* ── STORY DOTS ──────────────────────────────────────────────────────────
+   Replaces the segmented bar. One dot per stage:
+
+       completed  filled        past stages
+       current    ring filling  time within THIS stage
+       pending    hollow        not reached
+
+   WHY dots instead of a bar: the bar showed time but not conceptual
+   position -- "how far through this stage" without "which layer of the
+   idea am I on". Dots make stage position the primary reading, while the
+   current dot still carries the timing via its filling ring.
+
+   Class names (.segment, .fill, .completed, .current) are UNCHANGED so
+   buildProgressBar() and updateProgressBar() need no edits -- only the
+   rendering differs.
+   --------------------------------------------------------------------- */
 .segment {
-    flex: 1;
-    height: 3px;
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 2px;
+    flex: 0 0 auto;            /* was flex:1 -- dots are fixed size, not stretched */
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: transparent;
+    /* --dot-inactive / --dot-active are set on .stage-bar by
+       buildProgressBar() from the recipe's uiShell.progressBar colours.
+       Fallbacks keep the dots visible if a recipe omits them. */
+    border: 1.5px solid var(--dot-inactive, rgba(255, 255, 255, 0.35));
     cursor: pointer;
     overflow: hidden;
+    position: relative;
+    transition: width 0.25s ease, border-color 0.25s ease;
 }
 
+/* The fill is a disc inside the dot, revealed by scaleX from the left --
+   the same transform-based approach the bar used, so it stays
+   GPU-composited and never triggers layout. */
 .segment .fill {
-    height: 100%;
-    width: 100%; /* CHANGED: always full width now -- "empty" is represented by scaleX(0) below, not width:0% */
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: var(--dot-active, var(--accent));
     transform: scaleX(0);
-    transform-origin: left; /* so scaleX grows outward from the left edge, matching a left-to-right fill, not from the center */
-    background: var(--accent);
+    transform-origin: left;
 }
 
+.segment.completed {
+    border-color: var(--dot-active, var(--accent));
+}
 .segment.completed .fill {
     transform: scaleX(1);
 }
 
+/* Current dot is wider and brighter, so the eye lands on it immediately. */
+.segment.current {
+    width: 20px;
+    border-radius: 5px;
+    border-color: var(--dot-active, var(--accent));
+}
 .segment.current .fill {
+    border-radius: 3.5px;   /* slightly tighter than the 5px border so the
+                               fill's corners sit inside it cleanly */
     animation-name: fillBar;
     animation-timing-function: linear;
     animation-fill-mode: forwards;
-    /* Duration is set inline, per-stage, by JS (see getStageDuration() and
-       showStage() in shorts_feed.js) -- no fixed value here on purpose,
-       since different stages now run for different lengths of time. */
+    /* Duration set inline per-stage by updateProgressBar() -- stages have
+       different lengths, so no fixed value here. */
 }
 
-/* transform:scaleX(), not width -- animating width forces a browser layout
-   recalculation on EVERY frame of the animation. Since this runs
-   simultaneously with the sweep's own per-frame Plotly redraw, that was
-   real, avoidable competition for the same frame budget. transform is
-   GPU-composited: no layout, no reflow, effectively free by comparison. */
+/* transform:scaleX(), not width -- animating width forces a layout
+   recalculation on EVERY frame. This runs alongside the sweep's own
+   per-frame canvas redraw, so that was real competition for the same
+   frame budget. transform is GPU-composited: no layout, no reflow. */
 @keyframes fillBar {
     from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
+    to   { transform: scaleX(1); }
 }
 
 .card-footer {
@@ -521,6 +558,19 @@ html, body {
     align-items: center;
     justify-content: center;
     position: relative; /* anchors the swatch-dot badge, see below */
+}
+
+/* Text labels on value-showing buttons (algorithm, renderer). These
+   display their CURRENT value -- "PT", "GL" -- rather than a generic
+   icon, so you can see what you switched TO without opening the dev HUD.
+   Sized to fit ~3 characters inside the 46px circle; the full id is in
+   the tooltip. */
+.rail-btn {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1;
 }
 
 .rail-btn:active {
@@ -734,7 +784,7 @@ html, body {
     padding: 8px 14px;
     border-radius: 8px;
     z-index: 35;
-    opacity: 0.5;
+    opacity: 0;
     pointer-events: none;
     transition: opacity 0.4s ease;
 }
