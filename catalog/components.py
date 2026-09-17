@@ -15,6 +15,10 @@ dsp_store = DspAlgorithmStore()
 dsp_store.register("pan_tompkins",
     entrypoint="/static/shorts/filters/pan_tompkins_filter.js",
     label="Pan-Tompkins", description="Real-time ECG peak detection")
+dsp_store.register("pan_tompkins_py",
+    entrypoint="/static/shorts/filters/pan_tompkins_python_port.js",
+    label="Pan-Tompkins (Python port)",
+    description="Ported from a Python reference; also emits P/Q/S/T wave points")
 dsp_store.register("hamilton_tompkins",
     entrypoint="/static/shorts/filters/hamilton_tompkins_filter.js",
     label="Hamilton-Tompkins", description="Alternative ECG peak detection")

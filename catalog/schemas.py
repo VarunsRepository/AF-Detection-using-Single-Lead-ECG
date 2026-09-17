@@ -21,6 +21,18 @@ schema_registry.declare("pan_tompkins",
                            "finalOutput.peakIndices", "finalOutput.rrIntervalsMs"],
                 "domain": "biomedical.ecg"})
 
+# Identical requires to pan_tompkins -- it is the same algorithm. The
+# provides list is LONGER because the port emits wavePoints and threshold
+# as well. That is safe: schema checking asks whether a consumer's
+# required fields are present, so extra fields never break a pairing.
+schema_registry.declare("pan_tompkins_py",
+    requires = {"fields": ["y", "fs"], "fs_required": True,
+                "domains": ["biomedical.ecg"]},
+    provides = {"fields": ["interimOutputs", "finalOutput.filteredSignal",
+                           "finalOutput.peakIndices", "finalOutput.rrIntervalsMs",
+                           "finalOutput.wavePoints", "finalOutput.threshold"],
+                "domain": "biomedical.ecg"})
+
 schema_registry.declare("hamilton_tompkins",
     requires = {"fields": ["y", "fs"], "fs_required": True,
                 "domains": ["biomedical.ecg"]},
