@@ -168,68 +168,138 @@
        regardless of text length. Content that overflows clips cleanly.
        This matches real Shorts/Reels behavior: the text overlay is a
        fixed-height region, not a flexbox item that reflows. */
+    /* ── BOTTOM TEXT OVERLAY ─────────────────────────────────────────────
+       Collapsed by default: ONLY the title shows. Tapping it reveals the
+       caption and description; tapping again hides them.
+
+       WHY: the text block was reserving up to 140px at the bottom of
+       every card whether or not anyone was reading it -- on a 490px-tall
+       phone viewport that is nearly 30% of the screen taken from the
+       render, permanently. The plot is the point of the card; the prose
+       is reference. Collapsed, the overlay costs one line.
+
+       The zone is position:absolute and grows UPWARD (bottom-anchored,
+       justify-content:flex-end), so expanding it never reflows the chart
+       above -- it overlays. That is why max-height can change freely
+       without the render resizing underneath it.
+       ------------------------------------------------------------------ */
     .layout-zone[data-zone="bottom"] {
         position: absolute;
         bottom: 20px;
         left: 20px;
-        right: 80px; /* leave space for rail buttons on the right */
-        max-height: 140px; /* cap total height -- adapts to content */
+        right: 80px;            /* clear of the rail buttons */
+        max-height: 45vh;       /* ceiling only -- the zone sizes to its
+                                   VISIBLE children, so collapsed it is
+                                   just the title's own height.
+                                   Capping the zone itself does NOT work:
+                                   with justify-content:flex-end a small
+                                   max-height pushes the title out of the
+                                   box instead of clipping to it. */
+        /* COLLAPSED: overflow hidden and touch-action:none, so this
+           absolutely-positioned overlay never captures a swipe. With
+           overflow-y:auto here the zone becomes a scrollable element
+           covering the lower third of the card -- a touch starting in
+           that region is claimed by it, and since collapsed there is
+           nothing to scroll, the feed stops responding entirely.
+           Scrolling is enabled only when expanded, below. */
         overflow: hidden;
+        touch-action: none;
         display: flex;
         flex-direction: column;
         justify-content: flex-end;
         gap: 4px;
+        scrollbar-width: none;
+        /* Text overlays the render, so expanded it needs a backdrop --
+           a pale plot behind pale text is unreadable. Collapsed there is
+           only one line and the gradient would be more intrusive than
+           the problem it solves, so it fades in with the text. */
+        padding: 10px 12px 8px;
+        margin: 0 -12px -8px;
+        border-radius: 8px;
+        background: linear-gradient(to top,
+                    rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.72) 55%,
+                    rgba(0,0,0,0) 100%);
+        opacity: 1;
+        transition: background 0.28s ease;
+    }
+    /* EXPANDED: now it may genuinely need to scroll (a long description),
+       so give it back overflow and its own touch handling. */
+    .layout-zone[data-zone="bottom"].text-expanded {
+        overflow-y: auto;
+        touch-action: pan-y;
+    }
+    .layout-zone[data-zone="bottom"]::-webkit-scrollbar { display: none; }
+    .layout-zone[data-zone="bottom"].text-expanded::-webkit-scrollbar {
+        display: none;
     }
 
-    /* Title -- always fully visible, never clipped */
+    /* Title -- always visible, and the tap target that toggles the rest.
+       Two lines maximum so a long title cannot itself eat the screen. */
     .journey-card .stage-title {
         flex-shrink: 0;
         display: -webkit-box;
-        -webkit-line-clamp: 2;
+        -webkit-line-clamp: 2;  /* a CEILING, not a fixed height -- "Ten
+                                   Rounds" still takes one line. One line
+                                   would truncate "Four Steps Per Round"
+                                   to "Four Steps Per...", losing the
+                                   thing the title is there to say. */
         -webkit-box-orient: vertical;
         overflow: hidden;
-    }
-
-    /* Caption -- always visible, max 2 lines */
-    .journey-card .stage-caption {
-        flex-shrink: 0;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-    }
-
-    /* Description -- collapsed to 2 lines by default, expandable on tap.
-       A fade gradient signals there's more text without hard-clipping. */
-    .journey-card .stage-description {
-        flex-shrink: 1;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        position: relative;
         cursor: pointer;
-        transition: max-height 0.3s ease;
+        position: relative;
+        padding-right: 20px;    /* room for the chevron */
+        /* The zone above sets touch-action:none so it cannot swallow a
+           swipe. That would also kill the tap, so the title re-enables
+           its own touch handling -- tap works, swipe passes through
+           everywhere else in the zone. */
+        touch-action: manipulation;
     }
-    .journey-card .stage-description.expanded {
-        display: block;
-        -webkit-line-clamp: unset;
-        overflow: visible;
-    }
-    /* Fade gradient on collapsed description */
-    .journey-card .stage-description::after {
+
+    /* Chevron: the only hint that there is more to read. Rotates when
+       open. Without it the title looks like plain text and nobody taps. */
+    .journey-card .stage-title::after {
         content: '';
         position: absolute;
-        bottom: 0; left: 0; right: 0;
-        height: 1.2em;
-        background: linear-gradient(transparent, var(--bg, #000));
-        pointer-events: none;
-        opacity: 1;
-        transition: opacity 0.2s;
+        right: 2px;
+        top: 0.55em;
+        width: 6px; height: 6px;
+        border-right:  2px solid currentColor;
+        border-bottom: 2px solid currentColor;
+        transform: rotate(45deg);
+        opacity: 0.45;
+        transition: transform 0.28s ease, opacity 0.2s ease;
     }
-    .journey-card .stage-description.expanded::after {
+    .layout-zone[data-zone="bottom"].text-expanded .stage-title::after {
+        transform: rotate(-135deg);
+        opacity: 0.75;
+    }
+
+    /* Caption and description -- hidden until the title is tapped.
+       visibility (not just opacity) so they are removed from the
+       accessibility tree and cannot be tab-focused while hidden. */
+    /* Hidden text takes NO layout space. visibility:hidden alone would
+       keep the boxes reserved and the zone would stay tall -- the whole
+       point is to give that space back to the render. max-height:0 with
+       overflow:hidden collapses them while still allowing a height
+       transition when they open. */
+    .journey-card .stage-caption,
+    .journey-card .stage-description {
+        flex-shrink: 0;
+        max-height: 0;
         opacity: 0;
+        overflow: hidden;
+        margin: 0;
+        transition: max-height 0.28s ease, opacity 0.2s ease;
     }
+    .layout-zone[data-zone="bottom"].text-expanded .stage-caption {
+        max-height: 6em;
+        opacity: 1;
+    }
+    .layout-zone[data-zone="bottom"].text-expanded .stage-description {
+        max-height: 30vh;
+        opacity: 1;
+    }
+
     .journey-card .chart {
         width: 100%;
         flex: 1; /* shrinks to fit whatever space remains when sharing a zone with title/description -- was a rigid height:400px, which could push total content past 100vh once multiple elements shared one zone, triggering the card's overflow-y:auto scrollbar */
