@@ -16,7 +16,7 @@ This proves separation of concerns.
 from flask import Blueprint, render_template
 from Services.Dsp_Store import DspAlgorithmStore
 from Services.Rendering_Store import RenderingStore
-from Services.data_source_store  import data_source_store
+from Services.data_source_store import data_source_store
 
 reels_bp = Blueprint('reels', __name__, url_prefix='/reels')
 
