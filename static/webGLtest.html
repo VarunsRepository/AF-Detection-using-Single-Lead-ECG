@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebGPU 250k Particle Stress Test</title>
+  <style>
+    body { margin: 0; background: #050608; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: monospace; color: #00ffcc; overflow: hidden; }
+    canvas { border: 1px solid #1a2634; border-radius: 6px; box-shadow: 0 0 30px rgba(0, 255, 204, 0.15); }
+    #stats { position: absolute; top: 20px; left: 20px; background: rgba(10, 15, 24, 0.85); padding: 12px 18px; border: 1px solid #00ffcc33; border-radius: 6px; font-size: 13px; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div id="stats">
+    <div>Active Particles: <b id="pCount">250,000</b></div>
+    <div>Frame Rate: <b id="fpsVal">-- FPS</b></div>
+    <div>Frame Delta: <b id="dtVal">-- ms</b></div>
+  </div>
+  <canvas id="gpuCanvas" width="1024" height="768"></canvas>
+
+  <script type="module">
+    async function init() {
+      if (!navigator.gpu) {
+        alert("WebGPU is not supported on this browser.");
+        return;
+      }
+
+      const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+      const device = await adapter.requestDevice();
+
+      const canvas = document.getElementById("gpuCanvas");
+      const context = canvas.getContext("webgpu");
+      const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
+
+      context.configure({
+        device,
+        format: presentationFormat,
+        alphaMode: "premultiplied",
+      });
+
+      const NUM_PARTICLES = 250000;
+      document.getElementById("pCount").innerText = NUM_PARTICLES.toLocaleString();
+
+      // 1. Particle Memory Layout: 4 x float32 per particle [posX, posY, velX, velY]
+      const particleData = new Float32Array(NUM_PARTICLES * 4);
+      for (let i = 0; i < NUM_PARTICLES; i++) {
+        const idx = i * 4;
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 0.1 + Math.random() * 0.7;
+        
+        particleData[idx] = Math.cos(angle) * dist;     // posX
+        particleData[idx + 1] = Math.sin(angle) * dist; // posY
+        particleData[idx + 2] = -Math.sin(angle) * 0.3; // velX
+        particleData[idx + 3] = Math.cos(angle) * 0.3;  // velY
+      }
+
+      const particleBuffer = device.createBuffer({
+        size: particleData.byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      });
+      device.queue.writeBuffer(particleBuffer, 0, particleData);
+
+      // Uniforms: [time, dt, well1X, well1Y, well2X, well2Y, padding, padding]
+      const uniformBuffer = device.createBuffer({
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+
+      // 2. Compute Shader WGSL (Heavy Math Loop)
+      const computeShaderCode = `
+        struct Uniforms {
+          time : f32,
+          dt : f32,
+          well1 : vec2<f32>,
+          well2 : vec2<f32>,
+        };
+
+        struct Particle {
+          pos : vec2<f32>,
+          vel : vec2<f32>,
+        };
+
+        @group(0) @binding(0) var<uniform> u : Uniforms;
+        @group(0) @binding(1) var<storage, read_write> particles : array<Particle>;
+
+        @compute @workgroup_size(256)
+        fn computeMain(@builtin(global_invocation_id) id : vec3<u32>) {
+          let idx = id.x;
+          if (idx >= arrayLength(&particles)) { return; }
+
+          var p = particles[idx].pos;
+          var v = particles[idx].vel;
+
+          // Compute distance vectors to two dynamic gravity centers
+          let d1 = u.well1 - p;
+          let d2 = u.well2 - p;
+          
+          let dist1Sq = max(dot(d1, d1), 0.002);
+          let dist2Sq = max(dot(d2, d2), 0.002);
+
+          // Inverse-square gravitational pull forces
+          let f1 = normalize(d1) * (0.15 / dist1Sq);
+          let f2 = normalize(d2) * (0.15 / dist2Sq);
+
+          // Update velocity and apply damping drag
+          v += (f1 + f2) * u.dt;
+          v *= 0.994; 
+          p += v * u.dt;
+
+          // Boundary bounce constraint
+          if (abs(p.x) > 1.2) { v.x = -v.x; p.x = sign(p.x) * 1.2; }
+          if (abs(p.y) > 1.2) { v.y = -v.y; p.y = sign(p.y) * 1.2; }
+
+          particles[idx].pos = p;
+          particles[idx].vel = v;
+        }
+      `;
+
+      // 3. Render Shader WGSL
+      const renderShaderCode = `
+        struct Particle {
+          pos : vec2<f32>,
+          vel : vec2<f32>,
+        };
+
+        @group(0) @binding(0) var<storage, read> particles : array<Particle>;
+
+        struct VertexOutput {
+          @builtin(position) pos : vec4<f32>,
+          @location(0) speed : f32,
+        };
+
+        @vertex
+        fn vsMain(@builtin(instance_index) iIdx : u32, @builtin(vertex_index) vIdx : u32) -> VertexOutput {
+          let p = particles[iIdx];
+          let speed = length(p.vel);
+
+          // Point expanding geometry offsets
+          var offsets = array<vec2<f32>, 6>(
+            vec2(-0.0015, -0.0015), vec2(0.0015, -0.0015), vec2(-0.0015, 0.0015),
+            vec2(-0.0015, 0.0015),  vec2(0.0015, -0.0015), vec2(0.0015, 0.0015)
+          );
+
+          var out : VertexOutput;
+          out.pos = vec4<f32>(p.pos + offsets[vIdx], 0.0, 1.0);
+          out.speed = speed;
+          return out;
+        }
+
+        @fragment
+        fn fsMain(in : VertexOutput) -> @location(0) vec4<f32> {
+          // Color particle based on velocity intensity (Blue -> Cyan -> Orange)
+          let t = clamp(in.speed * 1.5, 0.0, 1.0);
+          let col = mix(vec3<f32>(0.0, 0.4, 1.0), vec3<f32>(1.0, 0.3, 0.05), t);
+          return vec4<f32>(col, 0.65);
+        }
+      `;
+
+      const computeModule = device.createShaderModule({ code: computeShaderCode });
+      const renderModule = device.createShaderModule({ code: renderShaderCode });
+
+      // 4. Pipelines & Bind Groups Layout
+      const computeBindGroupLayout = device.createBindGroupLayout({
+        entries: [
+          { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+          { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }
+        ]
+      });
+
+      const computePipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout({ bindGroupLayouts: [computeBindGroupLayout] }),
+        compute: { module: computeModule, entryPoint: "computeMain" }
+      });
+
+      const computeBindGroup = device.createBindGroup({
+        layout: computeBindGroupLayout,
+        entries: [
+          { binding: 0, resource: { buffer: uniformBuffer } },
+          { binding: 1, resource: { buffer: particleBuffer } }
+        ]
+      });
+
+      const renderBindGroupLayout = device.createBindGroupLayout({
+        entries: [
+          { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } }
+        ]
+      });
+
+      const renderPipeline = device.createRenderPipeline({
+        layout: device.createPipelineLayout({ bindGroupLayouts: [renderBindGroupLayout] }),
+        vertex: { module: renderModule, entryPoint: "vsMain" },
+        fragment: {
+          module: renderModule,
+          entryPoint: "fsMain",
+          targets: [{
+            format: presentationFormat,
+            blend: {
+              color: { srcFactor: "src-alpha", dstFactor: "one", operation: "add" }, // Additive glow
+              alpha: { srcFactor: "one", dstFactor: "one", operation: "add" }
+            }
+          }]
+        },
+        primitive: { topology: "triangle-list" }
+      });
+
+      const renderBindGroup = device.createBindGroup({
+        layout: renderBindGroupLayout,
+        entries: [
+          { binding: 0, resource: { buffer: particleBuffer } }
+        ]
+      });
+
+      // 5. Execution Loop
+      let lastTime = performance.now();
+      let frameCount = 0;
+      let lastFpsUpdate = performance.now();
+
+      const fpsEl = document.getElementById("fpsVal");
+      const dtEl = document.getElementById("dtVal");
+
+      function frame(now) {
+        const dt = Math.min((now - lastTime) / 1000, 0.033);
+        lastTime = now;
+        const time = now / 1000;
+
+        // Animate two gravity wells in orbiting figures
+        const w1X = Math.sin(time * 1.2) * 0.45;
+        const w1Y = Math.cos(time * 0.9) * 0.45;
+        const w2X = Math.sin(time * -1.5 + 2.0) * 0.55;
+        const w2Y = Math.cos(time * -1.1) * 0.55;
+
+        device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([time, dt, w1X, w1Y, w2X, w2Y, 0, 0]));
+
+        const commandEncoder = device.createCommandEncoder();
+
+        // Pass 1: Compute Pass (250,000 Particle Physics Updates)
+        const computePass = commandEncoder.beginComputePass();
+        computePass.setPipeline(computePipeline);
+        computePass.setBindGroup(0, computeBindGroup);
+        computePass.dispatchWorkgroups(Math.ceil(NUM_PARTICLES / 256));
+        computePass.end();
+
+        // Pass 2: Render Pass (1.5 Million Vertices)
+        const renderPass = commandEncoder.beginRenderPass({
+          colorAttachments: [{
+            view: context.getCurrentTexture().createView(),
+            clearValue: { r: 0.02, g: 0.02, b: 0.03, a: 1.0 },
+            loadOp: "clear",
+            storeOp: "store"
+          }]
+        });
+        renderPass.setPipeline(renderPipeline);
+        renderPass.setBindGroup(0, renderBindGroup);
+        renderPass.draw(6, NUM_PARTICLES);
+        renderPass.end();
+
+        device.queue.submit([commandEncoder.finish()]);
+
+        // Performance Metrics
+        frameCount++;
+        if (now - lastFpsUpdate >= 500) {
+          fpsEl.innerText = `${Math.round((frameCount * 1000) / (now - lastFpsUpdate))} FPS`;
+          dtEl.innerText = `${(dt * 1000).toFixed(2)} ms`;
+          frameCount = 0;
+          lastFpsUpdate = now;
+        }
+
+        requestAnimationFrame(frame);
+      }
+
+      requestAnimationFrame(frame);
+    }
+
+    init();
+  </script>
+</body>
+</html>
