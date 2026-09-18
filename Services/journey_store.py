@@ -129,7 +129,13 @@ class JourneyStore:
                     errors.append(f"stage \"{stage_id}\" references stage \"{ref_stage_id}\", which doesn't exist or comes AFTER it (forward reference)")
                 elif ref_output_key not in export_keys_available:
                     errors.append(f"stage \"{stage_id}\" references outputKey \"{ref_output_key}\", which no earlier stage exports")
-                elif ref_field not in export_keys_available.get(ref_output_key, set()):
+                # consumedField is OPTIONAL: omitting it means the stage
+                # consumes the WHOLE export rather than one field, which a
+                # multi-field consumer (stacked_beats needs filteredSignal,
+                # peakIndices and wavePoints) has to do. Only validate the
+                # field when one is actually named.
+                elif ref_field is not None and \
+                     ref_field not in export_keys_available.get(ref_output_key, set()):
                     errors.append(f"stage \"{stage_id}\" references field \"{ref_field}\", which \"{ref_output_key}\" doesn't export")
 
             elif mode not in ("HTTP_REST",):
