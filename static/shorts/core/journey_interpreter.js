@@ -136,6 +136,10 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
     const stageOutputs = {}; // stageId -> its exported output, per stageOutput.exportKey
     const dspOutputCache = new Map(); // stageIndex -> already-computed dspOutput, populated by preloadNextStage
     const dspEngines = new Map(); // stageIndex -> persistent dspEngine instance, survives stage navigation
+    // Sample rate from the most recent HTTP_REST resolve. Pipeline
+    // stages inherit it: their input is an exported array, which carries
+    // no sample rate of its own.
+    let lastResolvedFs = null;
     let autoAdvanceTimer = null;
     let autoAdvanceEndTime = null; // absolute performance.now() timestamp the current timer should fire at -- used to compute remaining time when pausing
     let autoAdvanceRemainingMs = null; // set only while paused
@@ -272,6 +276,9 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             // so all existing DSP algorithms work unchanged.
             const sourceId = ds.sourceId || "ecg_single"; // default for old recipes
             const envelope = await fetchAndNormalise(sampleId, sourceId);
+            // Remembered so a later PREVIOUS_STAGE_PIPELINE stage can
+            // inherit it -- exported fields are bare arrays with no fs.
+            if (envelope?.fs) lastResolvedFs = envelope.fs;
             return envelope;
         }
 
@@ -281,6 +288,29 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 console.error(`Journey: output "${ds.outputKey}" from stage "${ds.stageId}" isn't available yet -- has that stage run?`);
                 return null;
             }
+
+            // Omitting consumedField passes the WHOLE export, wrapped so it
+            // looks like a normal envelope to the DSPE.
+            //
+            // WHY: the single-field form is right when a stage consumes
+            // one array (Poincare wants rrIntervalsMs and nothing else).
+            // But a stage like stacked_beats needs filteredSignal AND
+            // peakIndices AND optionally wavePoints -- three fields from
+            // one upstream stage. Forcing that through consumedField would
+            // mean either three pipeline stages or a DSPE that reaches
+            // into journey state, and both are worse than this.
+            //
+            // fs is carried over because the exported fields are arrays
+            // with no sample rate of their own, and a downstream stage
+            // converting samples to milliseconds needs it.
+            if (!ds.consumedField) {
+                return {
+                    finalOutput: exported,
+                    fs: lastResolvedFs,
+                    y: exported.filteredSignal ?? null,
+                };
+            }
+
             const value = exported[ds.consumedField];
             if (value === undefined) {
                 console.error(`Journey: stage "${ds.stageId}"'s export ("${ds.outputKey}") doesn't contain field "${ds.consumedField}"`);
@@ -444,13 +474,42 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             btn.addEventListener("click", () => {
                 dispatch(control.action, context);
 
-                // If the user switched algorithm, the cached DSP output
-                // for this stage is now stale -- it was computed with the
-                // PREVIOUS algorithm. Clear it so runAndRender() calls
-                // dspEngine.process() fresh with the new algorithm rather
-                // than serving the old cached output.
-                if (control.action.method === "switchAlgorithm") {
-                    dspOutputCache.delete(currentStageIndex);
+                // Anything that changes what this stage COMPUTES makes
+                // its cached output stale, and also makes every LATER
+                // stage stale -- because a pipeline stage consumes this
+                // one's export.
+                //
+                // Two bugs lived here:
+                //
+                //   1. Only switchAlgorithm cleared the cache.
+                //      setParameter -- which is what the Invert button
+                //      dispatches -- did not, so inverting re-ran the
+                //      renderer against the SAME cached DSP output.
+                //
+                //   2. Only the CURRENT stage was cleared. With
+                //      preloadNextStage on, the next stage has ALREADY
+                //      been computed from this stage's pre-change output.
+                //      Inverting at stage 1 then navigating to stage 2
+                //      showed the old, un-inverted beats -- and inverting
+                //      a second time changed nothing either, because the
+                //      stale entry was never evicted.
+                //
+                // Clearing forward rather than everything: earlier stages
+                // do not depend on this one, so their cache is still
+                // valid and recomputing them would be wasted work.
+                const RECOMPUTE_METHODS = ["switchAlgorithm", "setParameter"];
+                if (RECOMPUTE_METHODS.includes(control.action.method)) {
+                    for (const idx of [...dspOutputCache.keys()]) {
+                        if (idx >= currentStageIndex) dspOutputCache.delete(idx);
+                    }
+                    // stageOutputs feeds PREVIOUS_STAGE_PIPELINE stages.
+                    // Leaving stale exports there means a later stage
+                    // reads pre-change data even after its own cache is
+                    // cleared.
+                    for (let i = currentStageIndex; i < journeyJson.stages.length; i++) {
+                        const key = journeyJson.stages[i]?.stageOutput?.exportKey;
+                        if (key) delete stageOutputs[key];
+                    }
                 }
 
                 runAndRender();
