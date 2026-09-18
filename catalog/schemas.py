@@ -40,6 +40,23 @@ schema_registry.declare("hamilton_tompkins",
                            "finalOutput.peakIndices", "finalOutput.rrIntervalsMs"],
                 "domain": "biomedical.ecg"})
 
+# Consumes a peak-detection stage's output rather than raw signal --
+# which is why it requires filteredSignal/peakIndices, not y/fs.
+# wavePoints is NOT required: pan_tompkins emits only R, the Python port
+# emits all five, and this stage degrades to R-only markers rather than
+# failing when they are absent.
+schema_registry.declare("stacked_beats",
+    requires = {"fields": ["finalOutput.filteredSignal", "finalOutput.peakIndices"],
+                "fs_required": False, "domains": ["biomedical.ecg"]},
+    provides = {"fields": ["interimOutputs", "finalOutput.beats",
+                           "finalOutput.meanBeat", "finalOutput.stats",
+                           "finalOutput.rrIntervalsMs",
+                           "finalOutput.filteredSignal", "finalOutput.peakIndices"],
+                "domain": "biomedical.ecg"})
+
+schema_registry.declare("stacked_beats_view",
+    requires = {"fields": ["finalOutput.beats", "finalOutput.meanBeat"]})
+
 schema_registry.declare("db4_wavelet",
     requires = {"fields": ["y", "fs"], "fs_required": True},
     provides = {"fields": ["interimOutputs", "finalOutput.decomposition"]})

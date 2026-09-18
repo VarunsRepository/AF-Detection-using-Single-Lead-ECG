@@ -25,6 +25,10 @@ dsp_store.register("hamilton_tompkins",
 dsp_store.register("aes128_encrypt",
     entrypoint="/static/shorts/filters/aes128_filter.js",
     label="AES-128", description="Key expansion and encryption, verified against FIPS-197")
+dsp_store.register("stacked_beats",
+    entrypoint="/static/shorts/filters/stacked_beats_filter.js",
+    label="Stacked Beats",
+    description="Slices the signal into R-centred windows so every beat overlays")
 dsp_store.register("db4_wavelet",
     entrypoint="/static/shorts/filters/db4_filter.js",
     label="DB4 Wavelet", description="Daubechies-4 multi-level decomposition")
@@ -52,6 +56,9 @@ rendering_store.register("chart_v1_canvas",
 rendering_store.register("aes_state_grid",
     entrypoint="/static/shorts/renderers/aes_state_grid.js",
     label="AES State Grid", description="4x4 byte grid stepping through interim states")
+rendering_store.register("stacked_beats_view",
+    entrypoint="/static/shorts/renderers/stacked_beats_view.js",
+    label="Stacked Beats", description="All beats overlaid on one axis, aligned at the R-apex")
 rendering_store.register("chart_v1_webgl",
     entrypoint="/static/shorts/renderers/chart_v1_webgl.js",
     label="ECG Sweep (WebGL)", description="WebGL GPU vertex buffer -- single draw call per frame, fastest possible")

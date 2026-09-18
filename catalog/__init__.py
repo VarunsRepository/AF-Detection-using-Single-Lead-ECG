@@ -40,6 +40,7 @@ from catalog import schemas                      # noqa: E402,F401
 from catalog.journeys import ecg                 # noqa: E402,F401
 from catalog.journeys import dwt                 # noqa: E402,F401
 from catalog.journeys import aes                 # noqa: E402,F401
+from catalog.journeys import beats               # noqa: E402,F401
 from catalog.journeys import test_journeys       # noqa: E402,F401
 
 __all__ = ["journey_store", "dsp_store", "rendering_store"]
