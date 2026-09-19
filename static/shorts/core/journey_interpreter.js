@@ -364,6 +364,7 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
 
         const cached = dspOutputCache.get(index);
         const data = cached ? cached.data : await resolveDataSource(stageJson);
+        globalThis.__bootSplash?.step("running the algorithm");
         if (data == null) {
             chartContainer.innerHTML = `<p style="color:#ff4d4d; padding:20px;">Could not resolve this stage's input data (check console).</p>`;
             return;

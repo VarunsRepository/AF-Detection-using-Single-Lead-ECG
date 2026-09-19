@@ -72,6 +72,11 @@ async function fetchAndNormalise(sampleId, sourceId) {
     }
 
     try {
+        // Narrate the slowest step. Fetching a 9,000-sample record over a
+        // slow connection is where most of the wait actually is, and an
+        // unchanging "Loading" during it reads as stuck.
+        globalThis.__bootSplash?.step("fetching signal");
+
         const url = config.endpointTemplate.replace("{id}", sampleId);
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Server returned ${res.status} for ${url}`);
@@ -97,4 +102,20 @@ function getSamplesEndpoint(sourceId) {
     // /shorts/api/sample/{id}/raw → /shorts/api/samples
     const base = config.endpointTemplate.split("/{id}")[0];
     return base + "s";
+}
+
+// Look up an already-fetched envelope without triggering a fetch.
+// Returns null if this sample hasn't been loaded yet.
+//
+// sourceId is optional: the dev HUD knows which sample is on screen but
+// not which source it came from, so omitting it matches the first cache
+// entry for that sampleId. Callers that know the source should pass it.
+function getCachedEnvelope(sampleId, sourceId = null) {
+    if (sourceId) {
+        return dataEnvelopeCache.get(`${sampleId}::${sourceId}`) ?? null;
+    }
+    for (const [key, envelope] of dataEnvelopeCache) {
+        if (key.startsWith(`${sampleId}::`)) return envelope;
+    }
+    return null;
 }

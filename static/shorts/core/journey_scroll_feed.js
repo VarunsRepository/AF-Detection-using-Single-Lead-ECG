@@ -192,9 +192,11 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch, f
         try {
             const { samples, total } = await fetchSamplesPage(0);
             totalAvailable = total;
+            globalThis.__bootSplash?.step("building cards");
 
             if (samples.length === 0) {
                 feedContainer.innerHTML = '<p style="color:#747d8c;text-align:center;margin-top:40vh;">No records found.</p>';
+                globalThis.__bootSplash?.dismiss();
                 return;
             }
 
@@ -217,6 +219,7 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch, f
         } catch (err) {
             console.error("Failed to load sample list:", err);
             feedContainer.innerHTML = '<p style="color:#a32638;text-align:center;margin-top:40vh;">Could not load records.</p>';
+            globalThis.__bootSplash?.dismiss();
         }
     }
 
@@ -301,6 +304,10 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch, f
                     );
                     activeJourneys.set(sampleId, journey);
                     journey.start();
+
+                    // First journey running -- there is now something on
+                    // screen, so the splash has done its job.
+                    globalThis.__bootSplash?.dismiss();
                 }
                 track("card_entered", sampleId);
                 // Card is on screen -- are we near the end of what's loaded?
