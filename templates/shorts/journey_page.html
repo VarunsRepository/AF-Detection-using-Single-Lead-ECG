@@ -107,6 +107,56 @@
          Android: the punch-hole camera (top) and navigation gestures (bottom)
        env(safe-area-inset-*) resolves to 0 on desktop browsers so this
        has no effect outside a real device. */
+    /* ── BOOT SPLASH ─────────────────────────────────────────────────
+       Inline rather than in shorts_feed.css so it is styled by the time
+       the HTML paints -- an external stylesheet is a render-blocking
+       request, which is the very delay this exists to cover. */
+    #boot-splash {
+        position: fixed; inset: 0; z-index: 9999;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 14px;
+        background: var(--bg, #000);
+        color: var(--accent, #5cc24a);
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        transition: opacity 0.45s ease, visibility 0.45s;
+    }
+    #boot-splash.done { opacity: 0; visibility: hidden; }
+
+    .boot-ecg { width: min(62vw, 260px); height: auto; }
+
+    /* Dash-offset animation: the trace draws itself, then repeats.
+       Pure CSS, so it keeps running while the main thread is blocked
+       parsing Plotly -- exactly when a JS-driven spinner would freeze. */
+    .boot-ecg path {
+        stroke-dasharray: 340;
+        stroke-dashoffset: 340;
+        animation: boot-trace 1.6s ease-in-out infinite;
+        filter: drop-shadow(0 0 4px currentColor);
+    }
+    @keyframes boot-trace {
+        0%   { stroke-dashoffset: 340; opacity: 0.35; }
+        55%  { stroke-dashoffset: 0;   opacity: 1; }
+        100% { stroke-dashoffset: -340; opacity: 0.35; }
+    }
+
+    .boot-label {
+        font-size: 13px; font-weight: 600; letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+    .boot-sub {
+        /* #78828e at 11px on black is under 3:1 contrast -- legible in
+           a design tool, not on a phone in daylight. Lifted to #9aa4b0
+           and given a little more size. */
+        font-size: 12px; color: #9aa4b0; letter-spacing: 0.03em;
+        min-height: 16px;
+    }
+
+    /* Respect a reduced-motion preference -- a repeating trace is
+       exactly the kind of animation that setting exists for. */
+    @media (prefers-reduced-motion: reduce) {
+        .boot-ecg path { animation: none; stroke-dashoffset: 0; }
+    }
+
     .journey-feed {
         padding-top: env(safe-area-inset-top);
         padding-bottom: env(safe-area-inset-bottom);
@@ -119,6 +169,56 @@
     .stage-rail {
         margin-bottom: env(safe-area-inset-bottom);
     }
+    /* ── BOOT SPLASH ─────────────────────────────────────────────────
+       Inline rather than in shorts_feed.css so it is styled by the time
+       the HTML paints -- an external stylesheet is a render-blocking
+       request, which is the very delay this exists to cover. */
+    #boot-splash {
+        position: fixed; inset: 0; z-index: 9999;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 14px;
+        background: var(--bg, #000);
+        color: var(--accent, #5cc24a);
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        transition: opacity 0.45s ease, visibility 0.45s;
+    }
+    #boot-splash.done { opacity: 0; visibility: hidden; }
+
+    .boot-ecg { width: min(62vw, 260px); height: auto; }
+
+    /* Dash-offset animation: the trace draws itself, then repeats.
+       Pure CSS, so it keeps running while the main thread is blocked
+       parsing Plotly -- exactly when a JS-driven spinner would freeze. */
+    .boot-ecg path {
+        stroke-dasharray: 340;
+        stroke-dashoffset: 340;
+        animation: boot-trace 1.6s ease-in-out infinite;
+        filter: drop-shadow(0 0 4px currentColor);
+    }
+    @keyframes boot-trace {
+        0%   { stroke-dashoffset: 340; opacity: 0.35; }
+        55%  { stroke-dashoffset: 0;   opacity: 1; }
+        100% { stroke-dashoffset: -340; opacity: 0.35; }
+    }
+
+    .boot-label {
+        font-size: 13px; font-weight: 600; letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+    .boot-sub {
+        /* #78828e at 11px on black is under 3:1 contrast -- legible in
+           a design tool, not on a phone in daylight. Lifted to #9aa4b0
+           and given a little more size. */
+        font-size: 12px; color: #9aa4b0; letter-spacing: 0.03em;
+        min-height: 16px;
+    }
+
+    /* Respect a reduced-motion preference -- a repeating trace is
+       exactly the kind of animation that setting exists for. */
+    @media (prefers-reduced-motion: reduce) {
+        .boot-ecg path { animation: none; stroke-dashoffset: 0; }
+    }
+
     .journey-feed {
         height: 100vh;
         height: 100dvh;
@@ -359,6 +459,34 @@
 </style>
 </head>
 <body>
+    <!--
+      LOADING SPLASH
+
+      Placed FIRST in <body> and styled inline above, so the browser can
+      paint it before Plotly (~1MB), the core scripts, the samples API
+      call, the signal fetch and the first DSP run have happened. On a
+      slow connection that chain is several seconds of blank screen
+      otherwise -- and a blank screen reads as broken rather than busy.
+
+      It removes itself when the first journey actually starts, not on
+      DOMContentLoaded: the scripts being ready is not the same as there
+      being something to look at.
+
+      The ECG line animates via pure CSS, so it runs even while the main
+      thread is blocked parsing Plotly -- which is exactly when a JS
+      spinner would freeze.
+    -->
+    <div id="boot-splash" role="status" aria-live="polite">
+        <svg viewBox="0 0 200 60" class="boot-ecg" aria-hidden="true">
+            <path d="M0,30 L45,30 L52,30 L56,12 L62,48 L68,26 L74,30 L110,30
+                     L117,30 L121,12 L127,48 L133,26 L139,30 L200,30"
+                  fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="boot-label" id="boot-label">Loading</div>
+        <div class="boot-sub" id="boot-sub">preparing the signal</div>
+    </div>
+
     <!-- Hidden 120Hz unlock element -- see CSS above -->
     <div id="_hz_unlock_el" aria-hidden="true"></div>
     <main id="feed" class="journey-feed"></main>
@@ -667,6 +795,40 @@
             updateHud();
             setInterval(updateHud, 200);
         }
+
+        // ── Splash control ──────────────────────────────────────────
+        // Exposed globally so journey_scroll_feed can dismiss it at the
+        // moment the first card's journey starts -- which is when there
+        // is genuinely something to look at. Dismissing on
+        // DOMContentLoaded would hand the user a blank card instead.
+        //
+        // The substeps exist because several seconds of an unchanging
+        // "Loading" reads as stuck. Naming what is happening makes the
+        // same wait feel shorter, and is honest about where the time goes.
+        globalThis.__bootSplash = (() => {
+            const el   = document.getElementById("boot-splash");
+            const sub  = document.getElementById("boot-sub");
+            let   done = false;
+            return {
+                step(text) { if (!done && sub) sub.textContent = text; },
+                dismiss() {
+                    if (done || !el) return;
+                    done = true;
+                    el.classList.add("done");
+                    // Removed rather than left hidden: it sits at
+                    // z-index 9999 over the feed, and a stale overlay
+                    // that swallows taps would be worse than no splash.
+                    setTimeout(() => el.remove(), 600);
+                },
+            };
+        })();
+
+        // Safety net. If something throws between here and the first
+        // journey starting, the splash would otherwise cover the page
+        // for ever -- a hidden error is worse than a visible broken feed.
+        setTimeout(() => globalThis.__bootSplash?.dismiss(), 12000);
+
+        globalThis.__bootSplash.step("fetching records");
 
         startJourneyScrollFeed({
             apiEndpoint: "{{ journey_api_endpoint }}",
