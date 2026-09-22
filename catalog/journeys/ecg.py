@@ -23,7 +23,7 @@ journey_store.register_journey("ecg", {
     # they match -- so an edited recipe at an unchanged version is
     # silently ignored, and the cached copy keeps serving. The startup log
     # says "up to date -- skipping" when that happens.
-    "version": 3,
+    "version": 5,   # v5: pan_tompkins_wasm on the rail
     "label": "AFib Detection",
     "description": "Peak detection and HRV analysis on real ECG recordings.",
     "template": "shorts/journey_page.html",
@@ -58,8 +58,13 @@ journey_store.register_journey("ecg", {
                 # from two implementations -- tapping between them on one
                 # record is the comparison this app exists to make easy.
                 "availableAlgorithms": [
-                    {"id": "pan_tompkins", "isDefault": True},
-                    {"id": "pan_tompkins_py", "isDefault": False},
+                    {"id": "pan_tompkins", "isDefault": False},
+                    {"id": "pan_tompkins_py", "isDefault": True},
+                    # NOT the default, deliberately. The module initialises
+                    # asynchronously, so on a cold load the first card can
+                    # render before it has registered. As a rail option it
+                    # is only reached by a tap, long after init finishes.
+                    {"id": "pan_tompkins_wasm", "isDefault": False},
                     {"id": "hamilton_tompkins", "isDefault": False},
                 ],
                 "parameters": {"invertSignal": False},
@@ -80,6 +85,12 @@ journey_store.register_journey("ecg", {
                 {"ui": {"label": "Speed"}, "action": {"target": "journey", "method": "cycleSpeed", "payload": {"options": [0.5, 1.0, 1.5, 2.0]}}},
                 {"ui": {"label": "Theme", "icon": "icon_theme"}, "action": {"target": "journey", "method": "cycleTheme", "payload": {}}},
             ],
+            # 14s for a 30s record is ~2.1x real-time. Without this the
+            # stage fell back to STAGE_DURATION_MS (8000) -- 3.75x, fast
+            # enough that beats blur past before the eye settles. The
+            # sweep shows a 3s window, so at 14s the leading edge crosses
+            # the visible width about every 1.4s.
+            "baseDurationMs": 14000,
             "stageOutput": {"exportKey": "stage_01_processed_data", "exportedFields": ["rrIntervalsMs", "peakIndices"]},
         },
         {
