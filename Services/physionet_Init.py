@@ -58,11 +58,23 @@ class PhysioNetRegistryManager:
         if os.path.exists(self.csv_path):
             return
 
-        print("\n" + "="*55) #prints ============================= 
+        print("\n" + "="*55)
         print("[REGISTRY ENGINE] Fetching raw file matrix via download stream...")
-        print("="*55) #prints ============================= 
-        
-        url = "https://physionet.org/files/challenge-2017/1.0.0/REFERENCE-v2.csv?download"
+        print("="*55)
+
+        # The URL was "https://physionet.org" -- the HOMEPAGE, with no path.
+        # urlretrieve happily saved that HTML as REFERENCE-v2.csv, the parser
+        # found no N/A/O/~ labels in it, and every record came back
+        # unclassified with nothing logged to say why.
+        #
+        # NOTE: a FREE PythonAnywhere account only reaches whitelisted
+        # domains, through a proxy, so there this returns the proxy's error
+        # page -- HTML again -- even with a correct URL. On a paid account
+        # outbound access is unrestricted and this works; the guard below
+        # still checks what arrived, because a 200 response proves nothing
+        # about the body.
+        url = ("https://physionet.org/files/challenge-2017/1.0.0/"
+               "REFERENCE-v2.csv?download")
         try:
             opener = urllib.request.build_opener()
             opener.addheaders = [
@@ -70,6 +82,19 @@ class PhysioNetRegistryManager:
             ]
             urllib.request.install_opener(opener)
             urllib.request.urlretrieve(url, self.csv_path)
+
+            # Verify what actually arrived. A blocked or redirected request
+            # returns HTML with a 200, so "the download succeeded" proves
+            # nothing -- the file has to be inspected.
+            with open(self.csv_path, "r", encoding="utf-8", errors="ignore") as fh:
+                head = fh.readline()
+            if "<" in head or "," not in head:
+                os.remove(self.csv_path)
+                raise IOError(
+                    f"[REGISTRY ENGINE] Download did not return CSV (first line: "
+                    f"{head[:60]!r}). On PythonAnywhere free tier outbound "
+                    f"requests are proxied and physionet.org is not whitelisted "
+                    f"-- upload REFERENCE-v2.csv to {self.csv_path} manually.")
             print("[REGISTRY ENGINE] Raw download stream pipe closed successfully.")
         except Exception as e:
             raise IOError(f"[REGISTRY ENGINE] CRITICAL: Download failed: {e}")
@@ -105,6 +130,16 @@ class PhysioNetRegistryManager:
                 else:
                     metrics["skipped"] += 1
                     
+        # Zero parsed rows means the file is not the reference CSV. Silence
+        # here is what let an HTML page masquerade as a label source: every
+        # record stayed playable and every one reported no class.
+        if metrics["success"] == 0:
+            print("\n[REGISTRY ENGINE] *** NO LABELS PARSED *** from "
+                  f"{self.csv_path} ({metrics['total_lines']} lines read). "
+                  "Every record will report as unclassified. First lines:")
+            for row in metrics["previews"]:
+                print(f"    {row[:80]!r}")
+
         return compiled_map, metrics
 
     def _print_diagnostic_logs(self, metrics: dict) -> None:
@@ -329,4 +364,3 @@ class PhysioNetRegistryManager:
         """Total number of playable records, so the frontend knows when it's
         genuinely reached the end and should stop requesting more pages."""
         return len(self.list_playable_records())
- 
