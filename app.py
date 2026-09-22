@@ -12,7 +12,7 @@ from Blueprints.shorts_bp import shorts_bp
 #from Blueprints.dwt_bp import dwt_bp
 from Blueprints.journey_bp import journey_bp
 from Blueprints.reels_bp import reels_bp   # dummy blueprint to prove that that reels engine works and is compeltely agnostic of the Dataset, DSPEngine and RenderingEngine 
- 
+from Blueprints.rust_WASM_bp import frontend_bp 
 
 # to get of pre-computed Statistical RR-analytics features 
 from Services.ECG_Feature_Manager import ECG_Signal_Feature_Manager 
@@ -392,11 +392,12 @@ app.register_blueprint(journey_bp)
 
 app.register_blueprint(reels_bp)
 
+app.register_blueprint(frontend_bp, url_prefix='/rust_frontend')
 
 # think of it as the main() function of this web-sites programs  
 if __name__ == '__main__':
     # run  the app on the entire LAN, site is accessible by Phone/Tablets/etc any device on the same WiFi 
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(host='0.0.0.0', port=8080, debug=False)
     
     # Run the app only on the local machine
     #app.run(port=8080, debug=True)
