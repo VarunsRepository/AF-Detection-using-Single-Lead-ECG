@@ -42,19 +42,25 @@ registerRenderingAlgorithm("chart_v1_canvas", {
         canvas.style.cssText = "width:100%; height:100%; display:block;";
         container.appendChild(canvas);
 
-        // Lightweight axis layer -- plain DOM, no Plotly needed
-        const axisLayer = buildAxisLayer(totalDurationS, filteredSignal);
-        container.appendChild(axisLayer);
-
-        // Dev overrides -- only active when ?dev=1 is in the URL
+        // Dev overrides -- only active when ?dev=1 is in the URL.
+        // These MUST be declared before any canvas sizing below uses them.
         const useGlow = globalThis._DEV_CANVAS_GLOW ?? true;
         const useDPR  = globalThis._DEV_CANVAS_DPR  ?? devicePixelRatio;
 
-        // ResizeObserver keeps canvas pixel dimensions in sync with
-        // container CSS dimensions -- same reason chart_v1 uses
-        // responsive:true in Plotly.
+        // Set canvas size immediately from container's current dimensions.
+        // With CSS scroll-snap cards are laid out even when off-screen,
+        // so offsetWidth/offsetHeight are correct here.
+        const initW = container.offsetWidth  || 800;
+        const initH = container.offsetHeight || 300;
+        canvas.width  = Math.round(initW * useDPR);
+        canvas.height = Math.round(initH * useDPR);
+        canvas.style.width  = initW + "px";
+        canvas.style.height = initH + "px";
+
+        // ResizeObserver keeps canvas in sync on rotation / resize
         const ro = new ResizeObserver(entries => {
             const { width, height } = entries[0].contentRect;
+            if (width === 0 || height === 0) return;
             canvas.width  = Math.round(width  * useDPR);
             canvas.height = Math.round(height * useDPR);
             canvas.style.width  = width  + "px";
@@ -62,7 +68,8 @@ registerRenderingAlgorithm("chart_v1_canvas", {
         });
         ro.observe(container);
 
-        // ── Read theme ──────────────────────────────────────────────────
+        const axisLayer = buildAxisLayer(totalDurationS, filteredSignal);
+        container.appendChild(axisLayer);
         const rootStyle    = getComputedStyle(document.documentElement);
         const traceColor   = THEMES[themeIndex].traceColor || "#e8f4f8";
         const glowColor    = rootStyle.getPropertyValue("--ecg-glow-color").trim()
@@ -75,7 +82,11 @@ registerRenderingAlgorithm("chart_v1_canvas", {
             const ctx    = canvas.getContext("2d");
             const W      = canvas.width;
             const H      = canvas.height;
-            const MARGIN = { top: 10, right: 10, bottom: 28, left: 44 };
+            // left was 44 -- a gutter reserved for y-axis labels OUTSIDE
+            // the plot. On a 390px phone that is 11% of the width spent on
+            // five short numbers. The labels now sit INSIDE the plot
+            // (buildAxisLayer), so the trace runs nearly edge to edge.
+            const MARGIN = { top: 10, right: 6, bottom: 24, left: 6 };
             const plotW  = W - MARGIN.left - MARGIN.right;
             const plotH  = H - MARGIN.top  - MARGIN.bottom;
 
@@ -215,7 +226,7 @@ function buildAxisLayer(totalDurationS, signal) {
     const yMin   = Math.min(...signal) - 0.05;
     const yMax   = Math.max(...signal) + 0.05;
     const steps  = 4;
-    const MARGIN_BOTTOM = 28;
+    const MARGIN_BOTTOM = 24;   // must match MARGIN in the draw loop
     const MARGIN_TOP    = 10;
 
     for (let g = 0; g <= steps; g++) {
@@ -224,7 +235,12 @@ function buildAxisLayer(totalDurationS, signal) {
         const label  = document.createElement("span");
         label.style.cssText = `
             position: absolute;
-            left: 4px;
+            /* INSIDE the plot now, not in a left gutter. The text shadow
+               keeps it readable where the trace passes behind it -- a
+               solid background chip would punch holes in the waveform,
+               which matters more than the label does. */
+            left: 6px;
+            text-shadow: 0 0 4px #000, 0 0 8px #000;
             top: calc(${MARGIN_TOP}px + ${pct * 100}% - ${MARGIN_TOP + MARGIN_BOTTOM}px * ${pct} - 6px);
             font-size: 9px;
         `;
@@ -234,7 +250,10 @@ function buildAxisLayer(totalDurationS, signal) {
 
     // X-axis label
     const xLabel = document.createElement("span");
-    xLabel.style.cssText = "position:absolute; bottom:4px; right:8px; font-size:9px;";
+    // Bottom-LEFT, not bottom-right: the rail buttons occupy the
+    // bottom-right corner and were sitting on top of this.
+    xLabel.style.cssText = "position:absolute; bottom:2px; left:6px; "
+                         + "font-size:9px; text-shadow:0 0 4px #000;";
     xLabel.textContent = `${totalDurationS.toFixed(1)}s`;
     layer.appendChild(xLabel);
 
