@@ -6,7 +6,7 @@ No Flask, no browser needed -- just proves the store correctly accepts a
 valid recipe and correctly rejects a broken one.
 """
 
-from Journey_Store import JourneyStore
+from Services.journey_store import JourneyStore
 
 store = JourneyStore(cache_dir="data_cache_test")
 
