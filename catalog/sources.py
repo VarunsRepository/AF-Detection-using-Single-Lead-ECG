@@ -11,6 +11,28 @@
 
 from Services.data_source_store import data_source_store
 
+# record_id -> label ("N" | "A" | "O" | "~"), built once on first use.
+# The registry exposes labels only through its paginated listing, so the
+# whole table is pulled once and cached rather than paged per request.
+_ECG_LABELS: dict = {}
+
+
+def _ecg_label(sample_id: str):
+    global _ECG_LABELS
+    if not _ECG_LABELS:
+        try:
+            from Blueprints.shorts_bp import registry
+            rows = registry.list_playable_records_with_labels(
+                       limit=registry.count_playable_records(), offset=0)
+            _ECG_LABELS = {r["record_id"]: r.get("label") for r in rows}
+        except Exception as e:
+            # A missing label must not break playback -- the card shows
+            # "unclassified" instead of the record failing to load.
+            print(f"[DATA] could not build ECG label map: {e}")
+            _ECG_LABELS = {"__failed__": None}
+    return _ECG_LABELS.get(sample_id)
+
+
 def _ecg_provider(sample_id: str) -> dict:
     """
     One PhysioNet record as JSON. This is the whole of what used to be a
@@ -22,7 +44,8 @@ def _ecg_provider(sample_id: str) -> dict:
     """
     from Blueprints.shorts_bp import registry, HARDCODED_FS
     signal = registry.get_individual_record_wfdb(sample_id)
-    return {"signal": signal.tolist(), "fs": HARDCODED_FS}
+    return {"signal": signal.tolist(), "fs": HARDCODED_FS,
+            "meta": {"record_id": sample_id, "label": _ecg_label(sample_id)}}
 
 
 def _ecg_lister(limit: int, offset: int) -> dict:
@@ -43,7 +66,8 @@ data_source_store.register("ecg_single",
     fs_field      = "fs",
     label         = "Single-lead ECG",
     description   = "PhysioNet 2017 record, 300 Hz",
-    schema        = {"fields": ["y", "fs", "t", "arrays.signal"],
+    schema        = {"fields": ["y", "fs", "t", "arrays.signal",
+                                "meta.label", "meta.record_id"],
                      "fs": 300, "domain": "biomedical.ecg"})
 
 
