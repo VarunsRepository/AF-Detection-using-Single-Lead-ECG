@@ -140,6 +140,21 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
     // stages inherit it: their input is an exported array, which carries
     // no sample rate of its own.
     let lastResolvedFs = null;
+    // Carried alongside fs for the same reason: an exported field is a
+    // bare array, so a later stage that needs the record's LABEL (which
+    // lives in meta, not in the signal) has no other way to reach it.
+    let lastResolvedMeta = {};
+
+    // meta recorded PER EXPORT, keyed by exportKey.
+    //
+    // WHY NOT just lastResolvedMeta: that holds the meta of the most
+    // recent HTTP fetch in the journey, which is only the right answer
+    // when there is exactly one fetch. A journey with two HTTP stages
+    // (the spectrum journey already has two) would hand a pipeline stage
+    // consuming stage 1's export the meta belonging to stage 2 --
+    // silently, since both are valid-looking objects. Binding meta to
+    // the export makes "whose meta is this" unambiguous.
+    const stageOutputMeta = {};
     let autoAdvanceTimer = null;
     let autoAdvanceEndTime = null; // absolute performance.now() timestamp the current timer should fire at -- used to compute remaining time when pausing
     let autoAdvanceRemainingMs = null; // set only while paused
@@ -279,6 +294,7 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             // Remembered so a later PREVIOUS_STAGE_PIPELINE stage can
             // inherit it -- exported fields are bare arrays with no fs.
             if (envelope?.fs) lastResolvedFs = envelope.fs;
+            if (envelope?.meta) lastResolvedMeta = envelope.meta;
             return envelope;
         }
 
@@ -307,6 +323,10 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 return {
                     finalOutput: exported,
                     fs: lastResolvedFs,
+                    // The meta of the stage being CONSUMED, not of the
+                    // last fetch. Falls back for exports written before
+                    // meta was tracked.
+                    meta: stageOutputMeta[ds.outputKey] ?? lastResolvedMeta,
                     y: exported.filteredSignal ?? null,
                 };
             }
@@ -346,6 +366,7 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 exported[field] = dspOutput.finalOutput[field];
             });
             stageOutputs[stageJson.stageOutput.exportKey] = exported;
+            stageOutputMeta[stageJson.stageOutput.exportKey] = data?.meta ?? {};
         }
     }
 
@@ -425,6 +446,7 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                     exported[field] = dspOutput.finalOutput[field];
                 });
                 stageOutputs[stageJson.stageOutput.exportKey] = exported;
+                stageOutputMeta[stageJson.stageOutput.exportKey] = data?.meta ?? {};
             }
         }
         runAndRender(cached ? cached.dspOutput : null);
