@@ -117,3 +117,23 @@ dsp("pan_tompkins_wasm",
                            "finalOutput.peakIndices", "finalOutput.rrIntervalsMs",
                            "finalOutput.wavePoints", "finalOutput.threshold"],
                 "domain": "biomedical.ecg"})
+
+
+# The closing card of the ECG journey: the record's REFERENCE class.
+# Not a classifier -- it reads the PhysioNet answer key and shows it
+# beside the measurements the peak-detection stage produced.
+dsp("sample_class",
+    entrypoint="/static/shorts/filters/sample_class_filter.js",
+    label="Reference class",
+    description="Looks up the PhysioNet 2017 annotation for this record",
+    requires = {"fields": ["meta.label"], "fs_required": False,
+                "domains": ["biomedical.ecg"]},
+    provides = {"fields": ["interimOutputs", "finalOutput.classId",
+                           "finalOutput.className", "finalOutput.bpm",
+                           "finalOutput.rmssd"],
+                "domain": "biomedical.ecg"})
+
+renderer("class_card_view",
+    entrypoint="/static/shorts/renderers/class_card_view.js",
+    label="Class card", description="Measurements, then the reference class",
+    requires = {"fields": ["finalOutput.className"]})
