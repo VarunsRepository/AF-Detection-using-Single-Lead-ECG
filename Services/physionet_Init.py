@@ -62,7 +62,7 @@ class PhysioNetRegistryManager:
         print("[REGISTRY ENGINE] Fetching raw file matrix via download stream...")
         print("="*55) #prints ============================= 
         
-        url = "https://physionet.org"
+        url = "https://physionet.org/files/challenge-2017/1.0.0/REFERENCE-v2.csv?download"
         try:
             opener = urllib.request.build_opener()
             opener.addheaders = [
