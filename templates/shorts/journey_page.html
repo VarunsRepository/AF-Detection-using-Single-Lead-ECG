@@ -70,8 +70,33 @@
 <title>Journey Feed</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{{ url_for('static', filename='shorts/shorts_feed.css') }}">
+<!--
+  NON-BLOCKING STYLESHEETS
+
+  Both of these used to be plain rel="stylesheet", which is RENDER-BLOCKING:
+  the browser paints nothing -- not even the loading splash, whose styles
+  are inline -- until both have downloaded. That is why the splash only
+  appeared a few seconds in.
+
+  preload + onload fetches them in parallel without blocking first paint.
+  The feed is briefly unstyled while they arrive, but the splash covers
+  the whole screen during exactly that window, so the flash is never seen.
+  The splash is not dismissed until shorts_feed.css has applied (see
+  __feedCss below), so it cannot uncover an unstyled feed.
+-->
+<script>window.__feedCss = { ready: false, cb: null };</script>
+<link rel="preload" as="style"
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap"
+      onload="this.onload=null; this.rel='stylesheet'">
+<link rel="preload" as="style"
+      href="{{ url_for('static', filename='shorts/shorts_feed.css') }}"
+      onload="this.onload=null; this.rel='stylesheet';
+              window.__feedCss.ready = true;
+              window.__feedCss.cb && window.__feedCss.cb();">
+<noscript>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='shorts/shorts_feed.css') }}">
+</noscript>
 <style>
     body { margin: 0; background: var(--bg, #000000); color: #fff; font-family: sans-serif; }
 
@@ -183,12 +208,16 @@
         .boot-bar span { animation: none; width: 100%; opacity: 0.5; }
     }
 
-    .journey-feed {
-        padding-top: env(safe-area-inset-top);
-        padding-bottom: env(safe-area-inset-bottom);
-        padding-left: env(safe-area-inset-left);
-        padding-right: env(safe-area-inset-right);
-    }
+    /* NO safe-area padding on the feed itself.
+       Each card is 100dvh, so padding here made every card taller than
+       its own container -- and in an installed PWA the bottom inset
+       (~34px for the home indicator) showed as dead space under the
+       cards. Left/right insets also stole width on notched phones.
+
+       The render should be FULL BLEED and run under the indicator; only
+       things the finger touches or the eye reads need to stay clear of
+       it, so the insets move to those elements individually below. */
+    .journey-feed { padding: 0; }
 
     /* Stage rail sits above the home indicator on iPhone --
        add bottom safe area so buttons aren't clipped. */
@@ -265,7 +294,7 @@
         scroll-snap-align: start;
         scroll-snap-stop: always;
         flex-shrink: 0;
-        padding: 20px;
+        padding: 0;
         box-sizing: border-box;
         overflow: hidden;
         position: relative;
@@ -284,10 +313,19 @@
     }
     .layout-zone[data-zone="center"] {
         flex: 1 1 auto;
+        /* The plot runs FULL BLEED. The card's 20px side padding used to
+           inset it, costing ~10% of a 390px phone's width for no reason
+           -- the trace is the content, not a boxed figure. Zones that
+           need side margins (the text overlay) set their own padding. */
+        padding-left: 0;
+        padding-right: 0;
         justify-content: center;
         min-height: 0;
-        /* leave room at bottom for the fixed text overlay */
-        padding-bottom: 130px;
+        /* Room for the collapsed text overlay only (~45px tall plus its
+           offset). It was 130px, sized for the old always-expanded text
+           block -- on a phone that was ~15% of the card height reserved
+           for nothing. Expanded text simply overlays the plot. */
+        padding-bottom: 80px;
     }
     /* Bottom zone -- fixed position anchored to card's bottom edge.
        Height is fixed (130px) so it never shifts between stages
@@ -309,11 +347,24 @@
        above -- it overlays. That is why max-height can change freely
        without the render resizing underneath it.
        ------------------------------------------------------------------ */
+    /* Story dots sit at the very top -- keep them below the notch. */
+    .stage-bar { padding-top: calc(12px + env(safe-area-inset-top)); }
+
     .layout-zone[data-zone="bottom"] {
         position: absolute;
-        bottom: 20px;
-        left: 20px;
-        right: 80px;            /* clear of the rail buttons */
+        /* EDGE TO EDGE. This used to be right:80px to dodge the rail,
+           which left the bar visibly stopping short of the screen edge.
+           It does not need to dodge when collapsed: the rail is anchored
+           at bottom:100px and grows UPWARD, while the collapsed title
+           occupies roughly bottom 12-90px -- entirely beneath it. Only
+           the EXPANDED text rises into the rail's column, and that case
+           is handled below with padding, not by narrowing the bar. */
+        bottom: calc(12px + env(safe-area-inset-bottom));
+        left: 0;
+        right: 0;
+        /* Below the rail (z-index 40), so wherever the two could ever
+           meet, the buttons stay on top and stay tappable. */
+        z-index: 30;
         max-height: 45vh;       /* ceiling only -- the zone sizes to its
                                    VISIBLE children, so collapsed it is
                                    just the title's own height.
@@ -335,17 +386,14 @@
         justify-content: flex-end;
         gap: 4px;
         scrollbar-width: none;
-        /* Text overlays the render, so expanded it needs a backdrop --
-           a pale plot behind pale text is unreadable. Collapsed there is
-           only one line and the gradient would be more intrusive than
-           the problem it solves, so it fades in with the text. */
-        padding: 10px 12px 8px;
-        margin: 0 -12px -8px;
-        border-radius: 8px;
-        background: linear-gradient(to top,
-                    rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.72) 55%,
-                    rgba(0,0,0,0) 100%);
-        opacity: 1;
+        /* No backdrop while collapsed -- just the title, floating.
+           A permanent dark band behind one line read as an unfinished
+           box. The backdrop appears only when expanded (rule below),
+           where the text genuinely needs contrast against the render. */
+        padding: 10px 20px 8px;
+        margin: 0;
+        border-radius: 0;
+        background: transparent;
         transition: background 0.28s ease;
     }
     /* EXPANDED: now it may genuinely need to scroll (a long description),
@@ -353,6 +401,13 @@
     .layout-zone[data-zone="bottom"].text-expanded {
         overflow-y: auto;
         touch-action: pan-y;
+        /* Expanded, the text grows up into the rail's column. The BAR
+           stays full width; only the text is kept out from under the
+           buttons -- 12px rail inset + 46px button + breathing room. */
+        padding-right: 76px;
+        background: linear-gradient(to top,
+                    rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.72) 60%,
+                    rgba(0,0,0,0) 100%);
     }
     .layout-zone[data-zone="bottom"]::-webkit-scrollbar { display: none; }
     .layout-zone[data-zone="bottom"].text-expanded::-webkit-scrollbar {
@@ -379,6 +434,9 @@
            its own touch handling -- tap works, swipe passes through
            everywhere else in the zone. */
         touch-action: manipulation;
+        /* Carries its own contrast now that there is no band behind
+           it while collapsed. */
+        text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.6);
     }
 
     /* Chevron: the only hint that there is more to read. Rotates when
@@ -403,23 +461,45 @@
     /* Caption and description -- hidden until the title is tapped.
        visibility (not just opacity) so they are removed from the
        accessibility tree and cannot be tab-focused while hidden. */
-    /* Hidden text takes NO layout space. visibility:hidden alone would
-       keep the boxes reserved and the zone would stay tall -- the whole
-       point is to give that space back to the render. max-height:0 with
-       overflow:hidden collapses them while still allowing a height
-       transition when they open. */
-    .journey-card .stage-caption,
-    .journey-card .stage-description {
+    /* Hidden text takes NO layout space.
+
+       SPECIFICITY IS LOAD-BEARING HERE. A reset rule further down this
+       file (".journey-card .stage-caption { position:static; opacity:1 }",
+       which undoes shorts_feed.css's old absolute positioning) has the
+       same specificity and comes LATER, so it silently won over earlier
+       collapse rules: the caption stayed opaque, its 8px padding leaked
+       through max-height:0, and the title lost position:relative so the
+       chevron anchored to the whole zone instead of the title.
+
+       Scoping these to .layout-zone[data-zone="bottom"] makes them
+       strictly more specific, so they win regardless of source order. */
+    .layout-zone[data-zone="bottom"] .stage-title {
+        position: relative;     /* anchor for the chevron */
+    }
+    .layout-zone[data-zone="bottom"] .stage-caption,
+    .layout-zone[data-zone="bottom"] .stage-description {
         flex-shrink: 0;
         max-height: 0;
         opacity: 0;
         overflow: hidden;
         margin: 0;
-        transition: max-height 0.28s ease, opacity 0.2s ease;
+        /* max-height does not contain padding -- without zeroing it,
+           the caption's 8px padding shows as a sliver while "hidden". */
+        padding-top: 0;
+        padding-bottom: 0;
+        transition: max-height 0.28s ease, opacity 0.2s ease,
+                    padding 0.28s ease;
     }
     .layout-zone[data-zone="bottom"].text-expanded .stage-caption {
         max-height: 6em;
         opacity: 1;
+        /* No box of its own. shorts_feed.css gives the caption a dark
+           rounded panel; beside an unboxed description that looked
+           half-finished. One backdrop behind the whole block instead. */
+        background: transparent;
+        border: 0;
+        padding: 0;
+        font-weight: 500;
     }
     .layout-zone[data-zone="bottom"].text-expanded .stage-description {
         max-height: 30vh;
@@ -528,8 +608,18 @@
     <script src="{{ url_for('static', filename='shorts/adapters/multi_to_arrays.js') }}"></script>
 
     <!-- Server-resolved: only the DSP algorithms this journey actually needs. -->
+    {#
+      *.module.js entrypoints load as ES modules. Needed for WASM
+      wrappers: wasm-pack emits `export` syntax and an async initialiser,
+      both of which require type="module".
+
+      Keyed on a filename suffix rather than .mjs because .mjs is not
+      served as JavaScript by every host -- PythonAnywhere's static
+      mapping among them -- and a module script with the wrong MIME type
+      is refused outright. .module.js is plain .js to every server.
+    #}
     {% for url in dsp_entrypoints %}
-    <script src="{{ url }}"></script>
+    <script {% if url.endswith('.module.js') %}type="module" {% endif %}src="{{ url }}"></script>
     {% endfor %}
 
     <!-- Server-resolved: only the renderers this journey actually needs. -->
@@ -837,8 +927,15 @@
                 // connection ever makes the stages worth narrating, this
                 // is the one place to turn it back on.
                 step(_text) { /* intentionally silent */ },
-                dismiss() {
+                dismiss(force = false) {
                     if (done || !el) return;
+                    // Never uncover an unstyled feed. If the first journey
+                    // starts before shorts_feed.css has applied, defer until
+                    // it does.
+                    if (!force && !window.__feedCss.ready) {
+                        window.__feedCss.cb = () => this.dismiss();
+                        return;
+                    }
                     done = true;
                     el.classList.add("done");
                     // Removed rather than left hidden: it sits at
@@ -852,7 +949,7 @@
         // Safety net. If something throws between here and the first
         // journey starting, the splash would otherwise cover the page
         // for ever -- a hidden error is worse than a visible broken feed.
-        setTimeout(() => globalThis.__bootSplash?.dismiss(), 12000);
+        setTimeout(() => globalThis.__bootSplash?.dismiss(true), 12000);
 
         startJourneyScrollFeed({
             apiEndpoint: "{{ journey_api_endpoint }}",
