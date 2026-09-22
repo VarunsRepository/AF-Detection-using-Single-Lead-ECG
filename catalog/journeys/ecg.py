@@ -23,7 +23,7 @@ journey_store.register_journey("ecg", {
     # they match -- so an edited recipe at an unchanged version is
     # silently ignored, and the cached copy keeps serving. The startup log
     # says "up to date -- skipping" when that happens.
-    "version": 5,   # v5: pan_tompkins_wasm on the rail
+    "version": 6,   # v6: reference-class closing stage
     "label": "AFib Detection",
     "description": "Peak detection and HRV analysis on real ECG recordings.",
     "template": "shorts/journey_page.html",
@@ -58,8 +58,8 @@ journey_store.register_journey("ecg", {
                 # from two implementations -- tapping between them on one
                 # record is the comparison this app exists to make easy.
                 "availableAlgorithms": [
-                    {"id": "pan_tompkins", "isDefault": False},
-                    {"id": "pan_tompkins_py", "isDefault": True},
+                    {"id": "pan_tompkins", "isDefault": True},
+                    {"id": "pan_tompkins_py", "isDefault": False},
                     # NOT the default, deliberately. The module initialises
                     # asynchronously, so on a cold load the first card can
                     # render before it has registered. As a rail option it
@@ -145,6 +145,44 @@ journey_store.register_journey("ecg", {
                 {"ui": {"label": "Theme", "icon": "icon_theme"}, "action": {"target": "journey", "method": "cycleTheme", "payload": {}}},
             ],
             "baseDurationMs": 8000,
+        },
+        # ── Stage 4: the answer key ────────────────────────────────
+        # Deliberately LAST. The earlier stages ask what is in the signal;
+        # this one says what the record is actually called, after you have
+        # had a chance to form your own view. Shown first it would tell
+        # the viewer what to see before they looked.
+        #
+        # Takes the WHOLE export (no consumedField) because it needs
+        # rrIntervalsMs for the supporting numbers, and the record's label
+        # rides in meta, which pipeline stages now inherit.
+        {
+            "stageId": "stage_04_reference_class",
+            "dataSource": {
+                "mode": "PREVIOUS_STAGE_PIPELINE",
+                "stageId": "stage_01_peak_detection",
+                "outputKey": "stage_01_processed_data",
+            },
+            "dspEngine": {
+                "availableAlgorithms": [{"id": "sample_class", "isDefault": True}],
+                "parameters": {},
+            },
+            "renderingEngine": {
+                "availableRenderers": [{"id": "class_card_view", "isDefault": True}],
+                "config": {},
+            },
+            "uiFillers": {
+                "title": "What This Record Is",
+                "caption": "The cardiologist's label for this recording",
+                "description": "This class comes from the PhysioNet 2017 reference annotations -- a human expert's call, not something this app computed. The numbers above it are measured from the beats you just watched, so you can see how far they agree.",
+            },
+            "railControls": [
+                {"ui": {"label": "Speed"},
+                 "action": {"target": "journey", "method": "cycleSpeed",
+                            "payload": {"options": [0.5, 1.0, 1.5, 2.0]}}},
+                {"ui": {"label": "Theme", "icon": "icon_theme"},
+                 "action": {"target": "journey", "method": "cycleTheme", "payload": {}}},
+            ],
+            "baseDurationMs": 10000,
         },
     ],
 })
