@@ -30,17 +30,30 @@ journey_store = JourneyStore(cache_dir="data_cache")
 # 1. Data sources -- providers and their schemas
 from catalog import sources                      # noqa: E402,F401
 
-# 2. Algorithms and renderers -- which JS file each lives in
-from catalog.components import dsp_store, rendering_store   # noqa: E402
-
-# 3. Contracts -- what each component needs and emits
-from catalog import schemas                      # noqa: E402,F401
+# 2. Components, BY DOMAIN. Each pack registers its algorithms and
+#    renderers together with their contracts -- one call per component
+#    instead of an entry in a components file plus a matching one in a
+#    schemas file, with nothing keeping the two ids in sync.
+from catalog.registry import dsp_store, rendering_store, undeclared  # noqa: E402
+from catalog.packs import ecg      as _pack_ecg      # noqa: E402,F401
+from catalog.packs import crypto   as _pack_crypto   # noqa: E402,F401
+from catalog.packs import testing  as _pack_testing  # noqa: E402,F401
 
 # 4. Recipes -- these reference everything above, so they come last
 from catalog.journeys import ecg                 # noqa: E402,F401
 from catalog.journeys import dwt                 # noqa: E402,F401
 from catalog.journeys import aes                 # noqa: E402,F401
 from catalog.journeys import beats               # noqa: E402,F401
+from catalog.journeys import spectrum            # noqa: E402,F401
+from catalog.journeys import spn                 # noqa: E402,F401
 from catalog.journeys import test_journeys       # noqa: E402,F401
+
+# Components registered without a contract. Reported at startup because
+# "all contracts valid" reads identically whether a pipeline was checked
+# and passed, or was never checked at all.
+_undeclared = undeclared()
+if _undeclared:
+    print(f"[SCHEMA] {len(_undeclared)} component(s) have no declared "
+          f"contract and are UNVALIDATED: {', '.join(_undeclared)}")
 
 __all__ = ["journey_store", "dsp_store", "rendering_store"]
