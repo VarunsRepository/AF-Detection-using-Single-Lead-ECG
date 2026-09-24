@@ -46,6 +46,7 @@ from catalog.journeys import aes                 # noqa: E402,F401
 from catalog.journeys import beats               # noqa: E402,F401
 from catalog.journeys import spectrum            # noqa: E402,F401
 from catalog.journeys import spn                 # noqa: E402,F401
+from catalog.journeys import sha1                # noqa: E402,F401
 from catalog.journeys import test_journeys       # noqa: E402,F401
 
 # Components registered without a contract. Reported at startup because
