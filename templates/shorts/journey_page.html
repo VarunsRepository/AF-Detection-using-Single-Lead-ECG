@@ -956,6 +956,14 @@
             journeyJson: journeyJson,
             shortsBatch: shortsBatch,
             feedContainer: document.getElementById("feed"),
+            // Set by ?sample= on a shared link; null on a normal visit.
+            // The server has already confirmed it exists, so a stale link
+            // arrives as null rather than as a card that cannot load.
+            // "is defined" guard: journey_page.html is rendered by several
+            // routes (/feed, /seed, /reels/...) and only /journey/<name>
+            // passes this. An undefined variable is not JSON-serialisable,
+            // so without the guard those routes would 500.
+            startSample: {{ (start_sample if start_sample is defined else None) | tojson }},
         });
     </script>
 </body>
