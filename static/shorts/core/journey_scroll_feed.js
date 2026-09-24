@@ -10,7 +10,8 @@ const DEFAULT_LAYOUT = {
     plot: "center", railControls: "bottom",
 };
 
-async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch, feedContainer }) {
+async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
+                                        feedContainer, startSample = null }) {
 
     const PAGE_SIZE = 10;
     let loadedCount    = 0;
@@ -188,8 +189,60 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch, f
     }
 
     // ── Fetch and build initial cards ─────────────────────────────────────
+    // A CURATED batch names its own sample per card, so cards can come
+    // from DIFFERENT sources -- an ECG record, then an AES block, then a
+    // 16-bit SPN block. The paginated path cannot do that: it draws every
+    // card from one apiEndpoint, which binds the whole feed to a single
+    // source. A tour across domains is exactly the case that breaks.
+    //
+    // Curated feeds are FIXED LENGTH by nature (someone chose the cards),
+    // so pagination is skipped rather than looping the same tour forever.
+    const isCurated = Array.isArray(batchPattern)
+                      && batchPattern.length > 0
+                      && batchPattern.every(e => e && e.sampleId);
+
+    function loadCuratedCards() {
+        batchPattern.forEach((entry, i) => {
+            const card = buildCard(entry.sampleId, i);
+            cardIndexMap.set(entry.sampleId, i);
+            regMeta(entry.sampleId, {
+                label:       entry.label ?? null,
+                journeyName: entry.journey,
+                cardIndex:   i,
+            });
+            feedContainer.appendChild(card);
+            // NOT observed here. cardObserver is declared further down and
+            // this runs during the awaited loadFeedCards() above it -- the
+            // const would still be in its temporal dead zone. The loop
+            // that runs just after the observer is created picks up every
+            // card already in the DOM, which is exactly these.
+        });
+        nextCardIndex  = batchPattern.length;
+        totalAvailable = batchPattern.length;
+        loadedCount    = batchPattern.length;   // nothing left to page in
+    }
+
     async function loadFeedCards() {
+        if (isCurated) { loadCuratedCards(); return; }
         try {
+            // A SHARED LINK lands on a specific card (?sample=A00042) and
+            // then continues with the normal list. The shared card is
+            // built FIRST so it is what the viewer sees on arrival, and
+            // page 0 follows underneath -- arriving from a link is often
+            // a first visit, and dropping someone at record 4,312 of
+            // 8,528 makes everything after it arbitrary.
+            if (startSample) {
+                const card = buildCard(startSample, nextCardIndex);
+                cardIndexMap.set(startSample, nextCardIndex);
+                regMeta(startSample, {
+                    label:       null,
+                    journeyName: getJourneyNameForCard(nextCardIndex),
+                    cardIndex:   nextCardIndex,
+                });
+                nextCardIndex++;
+                feedContainer.appendChild(card);
+            }
+
             const { samples, total } = await fetchSamplesPage(0);
             totalAvailable = total;
             globalThis.__bootSplash?.step("building cards");
@@ -201,6 +254,12 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch, f
             }
 
             samples.forEach(({ record_id, label }) => {
+                // Skip the shared card if page 0 also contains it. Two
+                // cards with the same sampleId is not a double render --
+                // the second never STARTS, because the feed treats that
+                // sample as already playing and renders a blank card.
+                if (record_id === startSample) return;
+
                 const card = buildCard(record_id, nextCardIndex);
                 cardIndexMap.set(record_id, nextCardIndex);
                 // label ("N"|"A"|"O"|"~") comes from the samples API and
@@ -224,7 +283,7 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch, f
     }
 
     async function loadMoreCards(sentinel) {
-        if (isLoadingMore) return;
+        if (isCurated || isLoadingMore) return;
         if (totalAvailable !== null && loadedCount >= totalAvailable) return;
         isLoadingMore = true;
         try {
@@ -277,6 +336,9 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch, f
 
     const PRELOAD_MARGIN = 3;   // begin loading 3 cards before the end
 
+    // No-ops for a curated feed: loadedCount already equals the total, but
+    // being explicit means a future change to that bookkeeping cannot
+    // silently start paging a fixed tour.
     function maybeLoadMore(sampleId) {
         const cardIdx = cardIndexMap.get(sampleId);
         if (cardIdx === undefined) return;
