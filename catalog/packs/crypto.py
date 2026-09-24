@@ -44,3 +44,23 @@ renderer("spn_bits_view",
     label="SPN Bits",
     description="All 16 bits as cells; permutation drawn as wires",
     requires = {"fields": ["interimOutputs"]})
+
+
+# SHA-1. A HASH, not a cipher: no key, no inverse, any input length
+# collapses to 160 bits. Domain "crypto.sha1" keeps cipher blocks out of
+# it -- a plaintext/key pair is not a message.
+dsp("sha1_hash",
+    entrypoint="/static/shorts/filters/sha1_filter.js",
+    label="SHA-1",
+    description="80 rounds in four groups; verified against FIPS-180 digests",
+    requires = {"fields": ["arrays.message"], "fs_required": False,
+                "domains": ["crypto.sha1"]},
+    provides = {"fields": ["interimOutputs", "finalOutput.digest",
+                           "finalOutput.blocks", "finalOutput.avalancheBits"],
+                "fs": None, "domain": "crypto.sha1"})
+
+renderer("sha1_state_view",
+    entrypoint="/static/shorts/renderers/sha1_state_view.js",
+    label="SHA-1 state",
+    description="Five 32-bit words as bit rows; changed bits outlined",
+    requires = {"fields": ["interimOutputs"]})
