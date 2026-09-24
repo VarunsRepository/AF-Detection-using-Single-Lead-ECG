@@ -50,12 +50,14 @@ class DataSourceStore:
         self._registry: dict[str, dict] = {}
         self._providers: dict[str, Callable] = {}
         self._listers: dict[str, Callable] = {}
+        self._statuses: dict[str, Callable] = {}
         self._lock = threading.Lock()
 
     def register(self,
         source_id: str,
         provider: Callable[[str], dict] | None = None,
         lister: Callable[[int, int], dict] | None = None,
+        status: Callable[[], dict] | None = None,
         endpoint_template: str | None          = None,
         adapter: str                           = "single_to_arrays",
         primary_field: str                     = "signal",
@@ -117,6 +119,8 @@ class DataSourceStore:
                 self._providers[source_id] = provider
             if lister is not None:
                 self._listers[source_id] = lister
+            if status is not None:
+                self._statuses[source_id] = status
 
     def get(self, source_id: str) -> dict | None:
         return self._registry.get(source_id)
@@ -128,6 +132,15 @@ class DataSourceStore:
     def get_lister(self, source_id: str) -> Callable | None:
         """Used by the generic /api/data/<source>/samples route."""
         return self._listers.get(source_id)
+
+    def get_status(self, source_id: str) -> Callable | None:
+        """
+        Optional self-diagnostic, served by /api/data/<source>/status.
+        For anything a source builds lazily -- caches, lookup tables --
+        whose failure would otherwise be invisible because the source
+        keeps working with degraded data.
+        """
+        return self._statuses.get(source_id)
 
     def get_schema(self, source_id: str) -> dict | None:
         cfg = self._registry.get(source_id)
