@@ -44,6 +44,26 @@ def journey(journey_name):
     rendering_entrypoints = rendering_store.resolve(package["stages"])
     data_source_configs   = data_source_store.resolve_for_stages(package["stages"])
 
+    # ── shared-link landing card ────────────────────────────────────
+    # ?sample=A00042 starts the feed on that card and then continues
+    # with the normal list. Validated HERE rather than in the browser:
+    # a stale link -- a deleted record, a typo, someone else's install --
+    # should degrade to an ordinary feed, not to a card that sits there
+    # failing to fetch. A link outliving its data is normal.
+    start_sample = request.args.get("sample")
+    if start_sample:
+        source_id = (package["stages"][0].get("dataSource", {}) or {}).get("sourceId")
+        provider  = data_source_store.get_provider(source_id) if source_id else None
+        if provider is None:
+            start_sample = None
+        else:
+            try:
+                provider(start_sample)
+            except Exception as e:
+                print(f'[JOURNEY] shared sample "{start_sample}" is not available '
+                      f'in "{source_id}" ({type(e).__name__}) -- starting normally')
+                start_sample = None
+
     return render_template(
         package["template"],
         journey_stages=package["stages"],
@@ -53,6 +73,7 @@ def journey(journey_name):
         journey_ui_shell=package["uiShell"],
         journey_playback_config=package["playbackConfig"],
         journey_layout=package["layout"],
+        start_sample=start_sample,
         dsp_entrypoints=dsp_entrypoints,
         rendering_entrypoints=rendering_entrypoints,
         data_source_configs=data_source_configs,
@@ -155,6 +176,112 @@ def shorts():
 
 
 # ---------------------------------------------------------------------------
+# Seed feed -- one card per journey, across every domain
+# ---------------------------------------------------------------------------
+
+# (journey name, source id). The ECG entries draw their sample from the
+# live record list; the cipher entries name a specific block, because
+# those samples are hand-authored and a particular one is the point --
+# aes_fips197 is the FIPS-197 worked example, spn_classic the standard
+# SPN demonstration.
+SEED_TOUR = [
+    ("ecg",            "ecg_single", None),
+    ("beats",          "ecg_single", None),
+    ("spectrum",       "ecg_single", None),
+    ("dwt",            "ecg_single", None),
+    ("aes_round",      "aes_block",  "aes_fips197"),
+    # A DIFFERENT block from aes_round above -- see the uniqueness note.
+    # It also reads better: key expansion depends on the KEY, so a tour
+    # stop showing a different key produces a visibly different schedule.
+    ("aes_expansion",  "aes_block",  "aes_ascii"),
+    ("spn",            "spn_block",  "spn_classic"),
+    ("sha1",           "sha1_message", "sha1_abc"),
+]
+
+
+@journey_bp.route('/seed')
+def seed_feed():
+    """
+    A tour: one card per journey, spanning every domain the engine runs.
+
+    CURATED, not paginated. The normal feed draws every card's sample from
+    ONE endpoint, which ties the whole feed to a single source -- fine for
+    8,528 ECG records, impossible for a tour where card 1 is an ECG
+    recording and card 5 is an AES block. So each pattern entry carries
+    its own sampleId and the client skips pagination entirely
+    (see isCurated in journey_scroll_feed.js).
+
+    Entries whose journey or sample is unavailable are DROPPED rather than
+    failing the page -- a tour missing one stop is still a tour.
+
+    EVERY sampleId MUST BE UNIQUE ACROSS THE TOUR. The feed keys a running
+    journey by sampleId ("if (!activeJourneys.has(sampleId))"), so a second
+    card with the same sample is treated as already playing and never
+    starts -- it just sits there blank, with no error anywhere. Two stops
+    originally shared aes_fips197 and card 6 silently refused to load.
+    The check below turns that into a log line instead of a mystery.
+    """
+    # ECG sample ids come from the live list, so the tour works on any
+    # install regardless of which records were uploaded.
+    ecg_ids = []
+    lister = data_source_store.get_lister("ecg_single")
+    if lister:
+        try:
+            ecg_ids = [s["record_id"] for s in lister(8, 0).get("samples", [])]
+        except Exception as e:
+            print(f"[SEED] could not list ECG records: {e}")
+
+    recipes, pattern, ecg_cursor = {}, [], 0
+    for journey, source_id, fixed_sample in SEED_TOUR:
+        package = journey_store.build_journey(journey)
+        if not package:
+            print(f'[SEED] journey "{journey}" is not registered -- skipping')
+            continue
+
+        if fixed_sample is not None:
+            sample_id = fixed_sample
+        else:
+            if ecg_cursor >= len(ecg_ids):
+                print(f'[SEED] no ECG record left for "{journey}" -- skipping')
+                continue
+            sample_id = ecg_ids[ecg_cursor]
+            ecg_cursor += 1
+
+        recipes[journey] = package
+        pattern.append({"journey": journey, "sampleId": sample_id})
+
+    seen = {}
+    for entry in pattern:
+        if entry["sampleId"] in seen:
+            print(f'[SEED] WARNING: "{entry["sampleId"]}" is used by both '
+                  f'"{seen[entry["sampleId"]]}" and "{entry["journey"]}". '
+                  f'The feed keys journeys by sampleId, so the second card '
+                  f'will render BLANK. Give each tour stop its own sample.')
+        seen[entry["sampleId"]] = entry["journey"]
+
+    if not pattern:
+        abort(500, description="No journeys available for the seed tour.")
+
+    batch_stages = [s for r in recipes.values() for s in r["stages"]]
+    primary = recipes[pattern[0]["journey"]]
+
+    return render_template(
+        "shorts/journey_page.html",
+        journey_stages=primary["stages"],
+        journey_themes=primary["globalThemes"],
+        journey_rules=primary["journeyRules"],
+        journey_api_endpoint=primary["api_endpoint"],
+        journey_ui_shell=primary["uiShell"],
+        journey_playback_config=primary["playbackConfig"],
+        journey_layout=primary["layout"],
+        dsp_entrypoints=dsp_store.resolve(batch_stages),
+        rendering_entrypoints=rendering_store.resolve(batch_stages),
+        data_source_configs=data_source_store.resolve_for_stages(batch_stages),
+        shorts_batch={"recipes": recipes, "pattern": pattern},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Generic data route -- ONE route for every provider-backed source.
 # Adding a data source no longer means adding a route.
 # ---------------------------------------------------------------------------
@@ -175,6 +302,19 @@ def get_source_data(source_id, sample_id):
         # A broken provider must not take the app down -- report it and
         # let the card show an error rather than the feed dying.
         print(f'[DATA] provider "{source_id}" failed for "{sample_id}": {e}')
+        return jsonify({"error": str(e)}), 500
+
+
+@journey_bp.route('/api/data/<source_id>/status')
+def source_status(source_id):
+    """Whatever the source can say about its own health. 404 if it
+    offers nothing -- most sources have no lazily-built state."""
+    fn = data_source_store.get_status(source_id)
+    if fn is None:
+        return jsonify({"error": f'source "{source_id}" reports no status'}), 404
+    try:
+        return jsonify(fn())
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
