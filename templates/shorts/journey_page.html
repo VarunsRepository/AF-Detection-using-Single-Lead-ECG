@@ -217,6 +217,51 @@
        The render should be FULL BLEED and run under the indicator; only
        things the finger touches or the eye reads need to stay clear of
        it, so the insets move to those elements individually below. */
+    /* ── END OF FEED ─────────────────────────────────────────────────
+       Appended once every card is loaded. A feed that simply stops
+       leaves the viewer tugging at a dead scroll wondering whether more
+       is coming; this says so.
+
+       72vh rather than a full screen: it is a snap point, so it must be
+       tall enough for the container to settle on, but a whole blank
+       screen after the last card reads as an error page.
+       ------------------------------------------------------------------ */
+    .feed-end {
+        height: 72vh;
+        scroll-snap-align: start;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        color: #6b7480;
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        text-align: center;
+        padding: 0 32px;
+    }
+    .feed-end .dot {
+        width: 12px; height: 12px; border-radius: 50%;
+        background: var(--accent, #5cc24a);
+        animation: feed-bounce 1.15s cubic-bezier(.5,.05,.5,.95) infinite;
+    }
+    /* Squash at the bottom of the fall, so it reads as weight rather
+       than a circle sliding up and down. */
+    @keyframes feed-bounce {
+        0%, 100% { transform: translateY(-16px) scaleY(1); }
+        45%      { transform: translateY(0) scaleY(1); }
+        55%      { transform: translateY(2px) scaleY(0.7) scaleX(1.25); }
+        70%      { transform: translateY(-10px) scaleY(1); }
+    }
+    .feed-end .end-title {
+        font-size: 13px; font-weight: 600; letter-spacing: 0.06em;
+        color: #9aa4b0; text-transform: uppercase;
+    }
+    .feed-end .end-sub { font-size: 11px; line-height: 1.6; }
+
+    @media (prefers-reduced-motion: reduce) {
+        .feed-end .dot { animation: none; }
+    }
+
     .journey-feed { padding: 0; }
 
     /* Stage rail sits above the home indicator on iPhone --
@@ -272,6 +317,51 @@
        exactly the kind of animation that setting exists for. */
     @media (prefers-reduced-motion: reduce) {
         .boot-ecg path { animation: none; stroke-dashoffset: 0; }
+    }
+
+    /* ── END OF FEED ─────────────────────────────────────────────────
+       Appended once every card is loaded. A feed that simply stops
+       leaves the viewer tugging at a dead scroll wondering whether more
+       is coming; this says so.
+
+       72vh rather than a full screen: it is a snap point, so it must be
+       tall enough for the container to settle on, but a whole blank
+       screen after the last card reads as an error page.
+       ------------------------------------------------------------------ */
+    .feed-end {
+        height: 72vh;
+        scroll-snap-align: start;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        color: #6b7480;
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        text-align: center;
+        padding: 0 32px;
+    }
+    .feed-end .dot {
+        width: 12px; height: 12px; border-radius: 50%;
+        background: var(--accent, #5cc24a);
+        animation: feed-bounce 1.15s cubic-bezier(.5,.05,.5,.95) infinite;
+    }
+    /* Squash at the bottom of the fall, so it reads as weight rather
+       than a circle sliding up and down. */
+    @keyframes feed-bounce {
+        0%, 100% { transform: translateY(-16px) scaleY(1); }
+        45%      { transform: translateY(0) scaleY(1); }
+        55%      { transform: translateY(2px) scaleY(0.7) scaleX(1.25); }
+        70%      { transform: translateY(-10px) scaleY(1); }
+    }
+    .feed-end .end-title {
+        font-size: 13px; font-weight: 600; letter-spacing: 0.06em;
+        color: #9aa4b0; text-transform: uppercase;
+    }
+    .feed-end .end-sub { font-size: 11px; line-height: 1.6; }
+
+    @media (prefers-reduced-motion: reduce) {
+        .feed-end .dot { animation: none; }
     }
 
     .journey-feed {
