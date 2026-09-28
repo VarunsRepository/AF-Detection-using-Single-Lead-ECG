@@ -262,6 +262,57 @@
         .feed-end .dot { animation: none; }
     }
 
+    /* ── PLAYBACK INDICATOR ──────────────────────────────────────────
+       Follows the Shorts convention, where the two states mean
+       different things:
+
+         PAUSED   a large play glyph that STAYS -- it is not a
+                  confirmation, it is an affordance saying "tap to
+                  resume", and it must persist for as long as that is
+                  true.
+         RESUMED  the glyph fades out. The action is self-evident from
+                  the animation restarting, so it only needs dismissing.
+
+       No dark circle behind it: at this size a translucent glyph with a
+       drop shadow reads cleanly over both a bright trace and a black
+       background, and a plate would sit on top of the render.
+       ------------------------------------------------------------------ */
+    .playback-flash {
+        position: absolute;
+        top: 50%; left: 50%;
+        width: 76px; height: 76px;
+        margin: -38px 0 0 -38px;
+        display: flex; align-items: center; justify-content: center;
+        pointer-events: none;
+        z-index: 45;
+        opacity: 0;
+    }
+    .playback-flash svg {
+        width: 72px; height: 72px;
+        fill: rgba(255, 255, 255, 0.92);
+        filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.75));
+    }
+    /* Paused: appear, then hold. */
+    .playback-flash.paused {
+        animation: playback-in 0.18s ease-out forwards;
+    }
+    /* Resumed: hold briefly, then go. */
+    .playback-flash.playing {
+        animation: playback-out 0.55s ease-out forwards;
+    }
+    @keyframes playback-in {
+        from { opacity: 0; transform: scale(0.82); }
+        to   { opacity: 1; transform: scale(1); }
+    }
+    @keyframes playback-out {
+        0%   { opacity: 0.95; transform: scale(1); }
+        100% { opacity: 0;    transform: scale(1.5); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .playback-flash.paused  { animation: none; opacity: 1; }
+        .playback-flash.playing { animation: playback-out 0.3s steps(2) forwards; }
+    }
+
     .journey-feed { padding: 0; }
 
     /* Stage rail sits above the home indicator on iPhone --
@@ -364,6 +415,46 @@
         .feed-end .dot { animation: none; }
     }
 
+    /* ── PLAY / PAUSE FLASH ──────────────────────────────────────────
+       A brief centre-screen confirmation that a tap registered.
+
+       WHY IT IS NEEDED: with the progress bar reduced to story dots,
+       pausing has almost no visible effect -- the sweep simply stops,
+       which is indistinguishable from the animation having finished or
+       the card having frozen. Some acknowledgement of the tap is the
+       difference between "paused" and "broken".
+
+       It is deliberately BRIEF and non-interactive: pointer-events none,
+       so it can never swallow the next tap, and gone in under a second
+       so it does not become furniture.
+       ------------------------------------------------------------------ */
+    .playback-flash {
+        position: absolute;
+        top: 50%; left: 50%;
+        width: 78px; height: 78px;
+        margin: -39px 0 0 -39px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(2px);
+        display: flex; align-items: center; justify-content: center;
+        pointer-events: none;
+        z-index: 45;
+        opacity: 0;
+    }
+    .playback-flash svg { width: 34px; height: 34px; fill: #e8f4f8; }
+    /* Restarting the animation needs the class removed and re-added with
+       a reflow between -- see the JS. */
+    .playback-flash.show { animation: playback-pop 0.72s ease-out forwards; }
+    @keyframes playback-pop {
+        0%   { opacity: 0;    transform: scale(0.72); }
+        18%  { opacity: 0.95; transform: scale(1); }
+        60%  { opacity: 0.9;  transform: scale(1); }
+        100% { opacity: 0;    transform: scale(1.28); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .playback-flash.show { animation: playback-pop 0.72s steps(2) forwards; }
+    }
+
     .journey-feed {
         height: 100vh;
         height: 100dvh;
@@ -377,6 +468,10 @@
     .journey-feed::-webkit-scrollbar { display: none; }
 
     .journey-card {
+        /* Positioning context for the play/pause flash, which is centred
+           on the CARD rather than the viewport -- otherwise it would sit
+           mid-screen across two half-scrolled cards. */
+        position: relative;
         height: 100vh;
         height: 100dvh;
         min-height: 100vh;
