@@ -196,6 +196,10 @@ SEED_TOUR = [
     ("aes_expansion",  "aes_block",  "aes_ascii"),
     ("spn",            "spn_block",  "spn_classic"),
     ("sha1",           "sha1_message", "sha1_abc"),
+    ("simd",           "simd_vectors", "simd_basic"),
+    ("ets",            "ets_scenario", "ets_nadh"),
+    ("photosynthesis", "photo_scenario", "photo_c4_hot"),
+    ("pathway",        "pathway_model", "path_tca"),
 ]
 
 
