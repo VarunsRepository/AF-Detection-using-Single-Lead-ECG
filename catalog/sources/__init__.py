@@ -14,3 +14,5 @@
 
 from catalog.sources import ecg     # noqa: F401
 from catalog.sources import crypto  # noqa: F401
+from catalog.sources import compute # noqa: F401
+from catalog.sources import biology
