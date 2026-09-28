@@ -433,7 +433,11 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         // the auto-advance timer AND the progress bar fill -- all three
         // must agree, or you get exactly the bug caught earlier (animation
         // visually finishes while auto-advance keeps waiting).
-        const actualDuration = (stageJson.baseDurationMs || STAGE_DURATION_MS) / journeyTarget.getSpeed();
+        // `let`, not `const`: the speed control changes this AFTER the
+        // stage is built, and the renderer captured the old value when it
+        // started its sweep. Tapping speed used to change only the icon
+        // while the animation carried on at its original pace.
+        let actualDuration = (stageJson.baseDurationMs || STAGE_DURATION_MS) / journeyTarget.getSpeed();
 
         function runAndRender(precomputedOutput) {
             const dspOutput = precomputedOutput || dspEngine.process(data);
@@ -663,7 +667,19 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                         d.btn.title = `${d.labelBase}: ${shownNow}`;
                     }
 
-                    // Changing the renderer or the algorithm can change
+                    // Speed changes the DURATION the renderer was handed, so
+                // the stage is re-rendered at the new pace. It restarts
+                // from the beginning of the stage -- honest and
+                // predictable, where resuming mid-sweep at a new speed
+                // would need the sweep loop to rescale its own clock.
+                if (control.action.method === "cycleSpeed") {
+                    actualDuration = (stageJson.baseDurationMs || STAGE_DURATION_MS)
+                                   / journeyTarget.getSpeed();
+                    updateProgressBar(index, actualDuration);
+                    runAndRender(index);
+                }
+
+                // Changing the renderer or the algorithm can change
                 // WHICH controls exist, so the rail is rebuilt. Not for
                 // setParameter: that changes a value, not the option set,
                 // and rebuilding would discard the button being clicked.
@@ -752,8 +768,39 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
     // Pauses/resumes THREE things together, so they can't drift apart:
     // the sweep animation itself, the auto-advance timer, and the
     // progress bar's visual fill.
+    // Centre-screen confirmation that the tap landed. Lives on the
+    // card, so it cannot appear over a different short if the user
+    // scrolls while it is fading.
+    function flashPlayback(paused) {
+        const card = chartContainer?.closest(".journey-card");
+        if (!card) return;
+        let el = card.querySelector(".playback-flash");
+        if (!el) {
+            el = document.createElement("div");
+            el.className = "playback-flash";
+            el.setAttribute("aria-hidden", "true");
+            card.appendChild(el);
+        }
+
+        // PAUSED shows a PLAY glyph -- the icon names the action
+        // available, not the state you are in. Showing a pause bar while
+        // already paused tells the viewer nothing they can act on.
+        el.innerHTML = paused
+            ? `<svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>`
+            : `<svg viewBox="0 0 24 24"><rect x="6.5" y="5" width="3.6" height="14" rx="1.2"/>`
+              + `<rect x="13.9" y="5" width="3.6" height="14" rx="1.2"/></svg>`;
+
+        // Remove BOTH classes, force a reflow, then apply the right one:
+        // without the reflow the browser coalesces the changes and the
+        // animation never restarts, so a second tap shows nothing.
+        el.classList.remove("paused", "playing");
+        void el.offsetWidth;
+        el.classList.add(paused ? "paused" : "playing");
+    }
+
     function togglePause() {
         isPaused = !isPaused;
+        flashPlayback(isPaused);
 
         const currentFill = progressBarEl && progressBarEl.querySelector(".segment.current .fill");
 
