@@ -220,6 +220,23 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
         nextCardIndex  = batchPattern.length;
         totalAvailable = batchPattern.length;
         loadedCount    = batchPattern.length;   // nothing left to page in
+        appendEndCard();                        // a tour is complete by definition
+    }
+
+    // Appended once, when there is provably nothing more to load. Guarded
+    // by its own presence rather than a flag, so the pagination path and
+    // the curated path can both call it without coordinating.
+    function appendEndCard() {
+        if (feedContainer.querySelector(".feed-end")) return;
+        const end = document.createElement("div");
+        end.className = "feed-end";
+        end.innerHTML =
+            `<div class="dot"></div>` +
+            `<div class="end-title">That's everything</div>` +
+            `<div class="end-sub">${totalAvailable ?? loadedCount} ` +
+            `card${(totalAvailable ?? loadedCount) === 1 ? "" : "s"} in this journey` +
+            `<br>scroll back up to watch any of them again</div>`;
+        feedContainer.appendChild(end);
     }
 
     async function loadFeedCards() {
@@ -274,6 +291,9 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
                 feedContainer.appendChild(card);
             });
             loadedCount = samples.length;
+            if (totalAvailable !== null && loadedCount >= totalAvailable) {
+                appendEndCard();   // the whole journey fitted one page
+            }
 
         } catch (err) {
             console.error("Failed to load sample list:", err);
@@ -306,6 +326,9 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
                 cardObserver.observe(card);
             });
             loadedCount += samples.length;
+            if (totalAvailable !== null && loadedCount >= totalAvailable) {
+                appendEndCard();
+            }
         } catch (err) {
             console.error("Failed to load more samples:", err);
         } finally {

@@ -42,10 +42,22 @@ function createDspEngine(config) {
         setParameter(payload) {
             if (payload.operation === "toggle") {
                 parameters[payload.key] = !parameters[payload.key];
+            } else if (payload.operation === "cycle") {
+                // Step through a fixed list. "toggle" only covers two
+                // states and only booleans; a route (aerobic, anaerobic,
+                // fermentation) is neither. Unknown current values start
+                // at the first option rather than failing, so a recipe
+                // whose default is not in the list still behaves.
+                const opts = payload.options ?? [];
+                if (opts.length) {
+                    const i = opts.indexOf(parameters[payload.key]);
+                    parameters[payload.key] = opts[(i + 1) % opts.length];
+                }
             } else {
                 parameters[payload.key] = payload.value;
             }
         },
+        getParameter(key) { return parameters[key]; },
         getActiveAlgorithm() { return activeId; },
         switchAlgorithm() {
             const ids = config.availableAlgorithms.map(a => a.id);

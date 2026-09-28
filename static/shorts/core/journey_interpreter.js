@@ -144,6 +144,11 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
     // bare array, so a later stage that needs the record's LABEL (which
     // lives in meta, not in the signal) has no other way to reach it.
     let lastResolvedMeta = {};
+    let lastEnvelope = null;
+    // Journeys are identified by label here; the recipe carries no name
+    // field, and two journeys sharing a label would only share rail
+    // memory, which is harmless.
+    const memKey = journeyJson.label ?? "journey";
 
     // meta recorded PER EXPORT, keyed by exportKey.
     //
@@ -295,6 +300,7 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             // inherit it -- exported fields are bare arrays with no fs.
             if (envelope?.fs) lastResolvedFs = envelope.fs;
             if (envelope?.meta) lastResolvedMeta = envelope.meta;
+            lastEnvelope = envelope;   // choices() needs the whole thing
             return envelope;
         }
 
@@ -398,7 +404,23 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         // create a fresh dspEngine reset to isDefault:true, silently
         // discarding the user's choice.
         if (!dspEngines.has(index)) {
-            dspEngines.set(index, createDspEngine(stageJson.dspEngine));
+            const eng = createDspEngine(stageJson.dspEngine);
+            // SESSION MEMORY: a choice made on one card carries to the
+            // next card of the same journey+stage. Without it a viewer
+            // who picks "no oxygen" has to pick it again on every card,
+            // which makes the control feel broken rather than sticky.
+            //
+            // Deliberately in memory only -- this is a preference for
+            // right now, not a setting. Surviving a reload would need a
+            // stable identity, which is a product decision.
+            const mem = (globalThis.__railMemory ??= new Map());
+            for (const [k, v] of mem) {
+                const [j, s, key] = k.split("::");
+                if (j === memKey && s === stageJson.stageId) {
+                    eng.setParameter({ key, value: v });
+                }
+            }
+            dspEngines.set(index, eng);
         }
         const dspEngine = dspEngines.get(index);
 
@@ -463,115 +485,247 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         if (descriptionEl) descriptionEl.textContent = stageJson.uiFillers.description || "";
         updateProgressBar(index, actualDuration);
 
-        railContainer.innerHTML = "";
-        stageJson.railControls.forEach(control => {
-            const btn = document.createElement("button");
-            btn.className = "rail-btn";
-            btn.title = control.ui.label;
+        // Wrapped so it can be RE-RUN. Switching the renderer changes
+        // which choices() exist -- the map view declares none, the
+        // navigator declares Show -- but a switch only re-rendered the
+        // stage, never the rail. The button could therefore not appear
+        // until the stage was rebuilt, which looked exactly like a
+        // deployment failure.
+        function buildRail() {
+            railContainer.innerHTML = "";
 
-            function refreshButtonContent() {
-                const valueDisplay = VALUE_DISPLAY_METHODS[control.action.method];
-                if (valueDisplay) {
-                    const targetObj = context[control.action.target];
-                    const currentValue = targetObj[valueDisplay.getMethod]();
-                    const short = valueDisplay.labelMap?.[currentValue]
-                                  ?? shortenId(currentValue);
-                    btn.textContent = short + valueDisplay.suffix;
-                    // Full id in the tooltip -- the button has room for
-                    // three characters, not "hamilton_tompkins".
-                    btn.title = `${control.ui.label}: ${currentValue}`;
-                } else if (control.action.method === "cycleSpeed") {
-                    // Dynamic, not a static RAIL_ICONS lookup -- the number
-                    // of chevrons reflects the CURRENT speed value, read
-                    // fresh every time this runs (including right after a
-                    // click, so the icon updates immediately).
-                    btn.innerHTML = buildSpeedIcon(journeyTarget.getSpeed());
-                } else if (control.ui.icon && RAIL_ICONS[control.ui.icon]) {
-                    btn.innerHTML = RAIL_ICONS[control.ui.icon];
-                } else {
-                    btn.textContent = control.ui.label;
+            // ── CONTROLS THE DSPE DECLARES ─────────────────────────────────
+            // choices(envelope) asks the algorithm what can be varied FOR
+            // THIS DATA, instead of the recipe asserting it. That is the fix
+            // for a control appearing where it means nothing -- a "Route"
+            // button sat on the citric acid cycle doing nothing, because no
+            // reaction there was ever conditional.
+            //
+            // The recipe keeps veto power (hide, rename) but cannot invent an
+            // option the DSPE did not declare -- inventing is how a button
+            // ends up setting a parameter nothing reads.
+            const derived = [];
+            try {
+                const algoId = dspEngines.get(index)?.getActiveAlgorithm?.();
+                const algo   = algoId ? DSP_ALGORITHMS[algoId] : null;
+
+                // The renderer gets asked as well: a VIEW preference has no
+                // home on the DSPE, and hardcoding it in the recipe means it
+                // cannot read the model's vocabulary.
+                const rendId = renderingEngine?.getActiveRenderer?.();
+                const rend   = rendId ? RENDER_ALGORITHMS[rendId] : null;
+                const declared = [
+                    ...(algo?.choices?.(lastEnvelope) ?? [])
+                        .map(c => ({ ...c, _target: "dspEngine" })),
+                    ...(rend?.choices?.(lastEnvelope) ?? [])
+                        .map(c => ({ ...c, _target: "renderingEngine" })),
+                ];
+                for (const ch of declared) {
+                    const override = stageJson.choiceControls?.[ch.key] ?? {};
+                    if (override.hide) continue;
+                    // The button shows the CURRENT VALUE, not the variable
+                    // name. "Oxygen" alone tells you what the button is about
+                    // but not which state you are in -- and the whole point
+                    // of the control is that the two states differ.
+                    // Seed the parameter from the data's effective value if
+                    // the user has not chosen yet. Without this the button
+                    // read "Oxygen: undefined", because the default lives in
+                    // the pathway data and never reached dspEngine.parameters.
+                    //
+                    // Seeded from choices().value, NOT from the pathway
+                    // default alone -- a sample that sets its own conditions
+                    // (the anaerobic card) would otherwise be overridden by
+                    // the default the moment the rail was built.
+                    const eng = ch._target === "renderingEngine"
+                              ? renderingEngine : dspEngines.get(index);
+                    let now = eng?.getParameter?.(ch.key);
+                    if (now === undefined && ch.value !== undefined) {
+                        eng?.setParameter?.({ key: ch.key, value: ch.value });
+                        now = ch.value;
+                    }
+                    const shown = ch.display?.[String(now)] ?? now;
+                    // The button carries the VARIABLE only -- "Oxygen" --
+                    // because the rail is a row of ~46px circles and
+                    // "Oxygen: present" does not fit. The card header already
+                    // states the values, so the state is never hidden; the
+                    // tooltip repeats it for anyone hovering.
+                    derived.push({
+                        ui: { label: override.label ?? ch.label ?? ch.key },
+                        _valueNow: shown,
+                        action: { target: ch._target ?? "dspEngine", method: "setParameter",
+                                  payload: { key: ch.key, operation: "cycle",
+                                             options: ch.values } },
+                        _choice: ch,
+                    });
                 }
+            } catch (e) {
+                // A broken choices() must not cost the whole rail -- the
+                // recipe's own controls still work.
+                console.warn("choices() failed:", e);
             }
-            refreshButtonContent();
 
-            btn.addEventListener("click", () => {
-                dispatch(control.action, context);
+            // Derived buttons show a VALUE, so their label goes stale the
+            // moment it changes. A tap recomputes the stage but does not
+            // rebuild the rail, so without refreshing here the button reads
+            // "Oxygen: present" for ever while the walk actually changed.
+            const derivedButtons = [];
 
-                // Anything that changes what this stage COMPUTES makes
-                // its cached output stale, and also makes every LATER
-                // stage stale -- because a pipeline stage consumes this
-                // one's export.
-                //
-                // Two bugs lived here:
-                //
-                //   1. Only switchAlgorithm cleared the cache.
-                //      setParameter -- which is what the Invert button
-                //      dispatches -- did not, so inverting re-ran the
-                //      renderer against the SAME cached DSP output.
-                //
-                //   2. Only the CURRENT stage was cleared. With
-                //      preloadNextStage on, the next stage has ALREADY
-                //      been computed from this stage's pre-change output.
-                //      Inverting at stage 1 then navigating to stage 2
-                //      showed the old, un-inverted beats -- and inverting
-                //      a second time changed nothing either, because the
-                //      stale entry was never evicted.
-                //
-                // Clearing forward rather than everything: earlier stages
-                // do not depend on this one, so their cache is still
-                // valid and recomputing them would be wasted work.
-                const RECOMPUTE_METHODS = ["switchAlgorithm", "setParameter"];
-                if (RECOMPUTE_METHODS.includes(control.action.method)) {
-                    for (const idx of [...dspOutputCache.keys()]) {
-                        if (idx >= currentStageIndex) dspOutputCache.delete(idx);
-                    }
-                    // stageOutputs feeds PREVIOUS_STAGE_PIPELINE stages.
-                    // Leaving stale exports there means a later stage
-                    // reads pre-change data even after its own cache is
-                    // cleared.
-                    for (let i = currentStageIndex; i < journeyJson.stages.length; i++) {
-                        const key = journeyJson.stages[i]?.stageOutput?.exportKey;
-                        if (key) delete stageOutputs[key];
+            [...stageJson.railControls, ...derived].forEach(control => {
+                const btn = document.createElement("button");
+                btn.className = "rail-btn";
+                btn.title = control.ui.label;
+
+                function refreshButtonContent() {
+                    const valueDisplay = VALUE_DISPLAY_METHODS[control.action.method];
+                    if (valueDisplay) {
+                        const targetObj = context[control.action.target];
+                        const currentValue = targetObj[valueDisplay.getMethod]();
+                        const short = valueDisplay.labelMap?.[currentValue]
+                                      ?? shortenId(currentValue);
+                        btn.textContent = short + valueDisplay.suffix;
+                        // Full id in the tooltip -- the button has room for
+                        // three characters, not "hamilton_tompkins".
+                        btn.title = `${control.ui.label}: ${currentValue}`;
+                    } else if (control.action.method === "cycleSpeed") {
+                        // Dynamic, not a static RAIL_ICONS lookup -- the number
+                        // of chevrons reflects the CURRENT speed value, read
+                        // fresh every time this runs (including right after a
+                        // click, so the icon updates immediately).
+                        btn.innerHTML = buildSpeedIcon(journeyTarget.getSpeed());
+                    } else if (control.ui.icon && RAIL_ICONS[control.ui.icon]) {
+                        btn.innerHTML = RAIL_ICONS[control.ui.icon];
+                    } else {
+                        btn.textContent = control.ui.label;
                     }
                 }
-
-                runAndRender();
                 refreshButtonContent();
 
-                // Both the progress bar AND the auto-advance timer must
-                // restart unconditionally when any rail button is clicked --
-                // runAndRender() restarts the sweep from 0, so the timer
-                // that was set during the ORIGINAL buildStage() call is now
-                // stale. Without this, the original timer fires at the
-                // original deadline regardless of how many times the renderer
-                // or algorithm was switched, silently advancing to the next
-                // stage at the wrong time.
-                if (autoAdvanceTimer) {
-                    clearTimeout(autoAdvanceTimer);
-                    autoAdvanceTimer = null;
+                // Register derived buttons so their value can be refreshed
+                // after a tap. _choice is attached only to controls that came
+                // from choices(), so recipe controls are untouched.
+                if (control._choice) {
+                    btn.title = `${control.ui.label}: ${control._valueNow}`;
+                    derivedButtons.push({
+                        btn,
+                        choice: control._choice,
+                        labelBase: control.ui.label,
+                    });
                 }
-                updateProgressBar(currentStageIndex, actualDuration);
-                if (!isPaused && journeyJson.journeyRules.autoAdvance && currentStageIndex < journeyJson.stages.length - 1) {
-                    autoAdvanceEndTime = performance.now() + actualDuration;
-                    // Analytics: stage ran to completion (as opposed to being
-                    // skipped by a tap or a card exit).
-                    if (typeof trackEvent === "function") {
-                        setTimeout(() => trackEvent("stage_completed", sampleId, {
-                            stage_index: index,
-                            stage_id:    stageJson?.stageId ?? null,
-                            elapsed_ms:  actualDuration,
-                        }), actualDuration);
+
+                btn.addEventListener("click", () => {
+                    dispatch(control.action, context);
+
+                    // Anything that changes what this stage COMPUTES makes
+                    // its cached output stale, and also makes every LATER
+                    // stage stale -- because a pipeline stage consumes this
+                    // one's export.
+                    //
+                    // Two bugs lived here:
+                    //
+                    //   1. Only switchAlgorithm cleared the cache.
+                    //      setParameter -- which is what the Invert button
+                    //      dispatches -- did not, so inverting re-ran the
+                    //      renderer against the SAME cached DSP output.
+                    //
+                    //   2. Only the CURRENT stage was cleared. With
+                    //      preloadNextStage on, the next stage has ALREADY
+                    //      been computed from this stage's pre-change output.
+                    //      Inverting at stage 1 then navigating to stage 2
+                    //      showed the old, un-inverted beats -- and inverting
+                    //      a second time changed nothing either, because the
+                    //      stale entry was never evicted.
+                    //
+                    // Clearing forward rather than everything: earlier stages
+                    // do not depend on this one, so their cache is still
+                    // valid and recomputing them would be wasted work.
+                    // Remember what the user just chose, so the next card of
+                    // this journey+stage starts there.
+                    if (control.action.method === "setParameter" && control.action.payload?.key) {
+                        const eng = dspEngines.get(index);
+                        const key = control.action.payload.key;
+                        const val = eng?.getParameter?.(key);
+                        if (val !== undefined) {
+                            (globalThis.__railMemory ??= new Map())
+                                .set(`${memKey}::${stageJson.stageId}::${key}`, val);
+                        }
                     }
 
-                    autoAdvanceTimer = setTimeout(() => goToStage(currentStageIndex + 1), actualDuration);
+                    // Refresh every derived label from the engine's CURRENT
+                    // parameters -- not just this button's, since one choice
+                    // can change what another means.
+                    for (const d of derivedButtons) {
+                        const src = d.choice._target === "renderingEngine"
+                                  ? renderingEngine : dspEngines.get(index);
+                        const v = src?.getParameter?.(d.choice.key);
+                        const shownNow = d.choice.display?.[String(v)] ?? v;
+                        // Text stays the variable name; only the tooltip
+                        // carries the value, so the button never reflows.
+                        d.btn.title = `${d.labelBase}: ${shownNow}`;
+                    }
+
+                    // Changing the renderer or the algorithm can change
+                // WHICH controls exist, so the rail is rebuilt. Not for
+                // setParameter: that changes a value, not the option set,
+                // and rebuilding would discard the button being clicked.
+                if (control.action.method === "switchRenderer" ||
+                    control.action.method === "switchAlgorithm") {
+                    setTimeout(buildRail, 0);   // after this handler returns
                 }
 
-                if (isPaused) {
-                    isPaused = false;
-                }
+                const RECOMPUTE_METHODS = ["switchAlgorithm", "setParameter"];
+                    if (RECOMPUTE_METHODS.includes(control.action.method)) {
+                        for (const idx of [...dspOutputCache.keys()]) {
+                            if (idx >= currentStageIndex) dspOutputCache.delete(idx);
+                        }
+                        // stageOutputs feeds PREVIOUS_STAGE_PIPELINE stages.
+                        // Leaving stale exports there means a later stage
+                        // reads pre-change data even after its own cache is
+                        // cleared.
+                        for (let i = currentStageIndex; i < journeyJson.stages.length; i++) {
+                            const key = journeyJson.stages[i]?.stageOutput?.exportKey;
+                            if (key) delete stageOutputs[key];
+                        }
+                    }
+
+                    runAndRender();
+                    refreshButtonContent();
+
+                    // Both the progress bar AND the auto-advance timer must
+                    // restart unconditionally when any rail button is clicked --
+                    // runAndRender() restarts the sweep from 0, so the timer
+                    // that was set during the ORIGINAL buildStage() call is now
+                    // stale. Without this, the original timer fires at the
+                    // original deadline regardless of how many times the renderer
+                    // or algorithm was switched, silently advancing to the next
+                    // stage at the wrong time.
+                    if (autoAdvanceTimer) {
+                        clearTimeout(autoAdvanceTimer);
+                        autoAdvanceTimer = null;
+                    }
+                    updateProgressBar(currentStageIndex, actualDuration);
+                    if (!isPaused && journeyJson.journeyRules.autoAdvance && currentStageIndex < journeyJson.stages.length - 1) {
+                        autoAdvanceEndTime = performance.now() + actualDuration;
+                        // Analytics: stage ran to completion (as opposed to being
+                        // skipped by a tap or a card exit).
+                        if (typeof trackEvent === "function") {
+                            setTimeout(() => trackEvent("stage_completed", sampleId, {
+                                stage_index: index,
+                                stage_id:    stageJson?.stageId ?? null,
+                                elapsed_ms:  actualDuration,
+                            }), actualDuration);
+                        }
+
+                        autoAdvanceTimer = setTimeout(() => goToStage(currentStageIndex + 1), actualDuration);
+                    }
+
+                    if (isPaused) {
+                        isPaused = false;
+                    }
+                });
+                railContainer.appendChild(btn);
             });
-            railContainer.appendChild(btn);
-        });
+        }
+        buildRail();
 
         if (journeyJson.journeyRules.preloadNextStage) {
             preloadStage(index + 1);

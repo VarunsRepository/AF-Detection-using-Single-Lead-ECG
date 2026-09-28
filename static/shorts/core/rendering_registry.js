@@ -37,10 +37,21 @@ function createRenderingEngine(config) {
         setParameter(payload) {
             if (payload.operation === "toggle") {
                 renderConfig[payload.key] = !renderConfig[payload.key];
+            } else if (payload.operation === "cycle") {
+                // Mirrors dsp_registry's cycle: step through a list.
+                // Needed for view preferences that are one of several
+                // states rather than on/off -- which line of a pathway
+                // step gets the emphasis, for instance.
+                const opts = payload.options ?? [];
+                if (opts.length) {
+                    const i = opts.indexOf(renderConfig[payload.key]);
+                    renderConfig[payload.key] = opts[(i + 1) % opts.length];
+                }
             } else {
                 renderConfig[payload.key] = payload.value;
             }
         },
+        getParameter(key) { return renderConfig[key]; },
         getActiveRenderer() { return activeId; },
         switchRenderer() {
             const ids = config.availableRenderers.map(r => r.id);
