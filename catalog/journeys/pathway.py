@@ -71,7 +71,7 @@ def _stage(stage_id, params, title, caption, description, ms):
 
 
 journey_store.register_journey("pathway", {
-    "version": 7,   # v7: Show comes from renderer choices()
+    "version": 8,   # v8: readable stage titles
     "label": "Round And Round",
     "description": "A metabolic pathway assembled from its own data",
     "status": "stable",
@@ -92,8 +92,13 @@ journey_store.register_journey("pathway", {
 
     "stages": [
         _stage("pathway_walk", {},
-               "The Order Is Not In The File",
-               "Reactions in any order; the sequence emerges",
+               # Titles are read by someone who does not know how the
+               # engine works. "The Order Is Not In The File" describes an
+               # implementation detail -- true, and meaningless on a card.
+               # The point it was making now lives in the description,
+               # where an interested reader will find it.
+               "Follow The Carbon",
+               "Every step, in the order it happens",
                "The data holds two flat lists -- species and reactions -- "
                "and nothing says which comes first. The order you are "
                "watching was worked out from shared names: one reaction's "
@@ -103,8 +108,8 @@ journey_store.register_journey("pathway", {
                13000),
 
         _stage("pathway_blocked", {"blocked": "auto"},
-               "Stop One Reaction",
-               "Everything downstream starves",
+               "Break One Step",
+               "And everything after it stops",
                "Each pathway names its own regulated step -- succinate "
                "dehydrogenase in the TCA cycle, phosphofructokinase in "
                "glycolysis -- and this stage blocks it. No special "
