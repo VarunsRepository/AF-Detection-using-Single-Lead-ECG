@@ -504,6 +504,135 @@ _DEPRESSION_MODEL = {
     ],
 }
 
+# ── The Odyssey ─────────────────────────────────────────────────────────
+# A narrative pathway rather than a biological one.
+# The same engine: one state produces the next state.
+# Each "reaction" is a major plot transition.
+
+_ODYSSEY = {
+    "name": "The Odyssey",
+    "start": "troy",
+    "defaultBlock": "home",
+    "vocabulary": {
+        "node": "story beat",
+        "edge": "transition",
+        "edges": "transitions",
+        "side": "influence",
+        "sides": "influences",
+        "cycle": "return",
+        "chain": "journey",
+        "branch": "divergence",
+        "per": "per",
+    },
+
+    "species": {
+        "troy":        {"name": "Troy Falls"},
+        "depart":      {"name": "Odysseus Departs"},
+        "cyclops":     {"name": "Cyclops Encounter"},
+        "poseidon":    {"name": "Poseidon Pursues"},
+        "aeolus":      {"name": "Winds Released"},
+        "giants":      {"name": "Giants Attack"},
+        "circe":       {"name": "Circe Transforms Crew"},
+        "hades":       {"name": "Journey Into Hades"},
+        "sirens":      {"name": "Sirens Encounter"},
+        "scylla":      {"name": "Scylla And Charybdis"},
+        "cattle":      {"name": "Sacred Cattle Slain"},
+        "shipwreck":   {"name": "Shipwreck"},
+        "calypso":     {"name": "Calypso Holds Odysseus"},
+        "release":     {"name": "Odysseus Released"},
+        "ithaca":      {"name": "Odysseus Reaches Ithaca"},
+        "disguise":    {"name": "Odysseus Disguises Himself"},
+        "telemachus":  {"name": "Telemachus Returns"},
+        "suitors":     {"name": "Suitors Challenge Odysseus"},
+        "bow":         {"name": "The Bow Is Strung"},
+        "battle":      {"name": "Palace Battle"},
+        "reunion":     {"name": "Odysseus Reunites"},
+    },
+
+    "reactions": [
+        {"id": "depart", "name": "Leave Troy",
+         "reactants": {"troy": 1},
+         "products": {"depart": 1}},
+
+        {"id": "cyclops", "name": "Face Polyphemus",
+         "reactants": {"depart": 1},
+         "products": {"cyclops": 1}},
+
+        {"id": "poseidon", "name": "Blind The Cyclops",
+         "reactants": {"cyclops": 1},
+         "products": {"poseidon": 1}},
+
+        {"id": "aeolus", "name": "Receive The Winds",
+         "reactants": {"poseidon": 1},
+         "products": {"aeolus": 1}},
+
+        {"id": "giants", "name": "Escape The Giants",
+         "reactants": {"aeolus": 1},
+         "products": {"giants": 1}},
+
+        {"id": "circe", "name": "Meet Circe",
+         "reactants": {"giants": 1},
+         "products": {"circe": 1}},
+
+        {"id": "hades", "name": "Enter The Underworld",
+         "reactants": {"circe": 1},
+         "products": {"hades": 1}},
+
+        {"id": "sirens", "name": "Resist The Sirens",
+         "reactants": {"hades": 1},
+         "products": {"sirens": 1}},
+
+        {"id": "scylla", "name": "Cross The Monsters",
+         "reactants": {"sirens": 1},
+         "products": {"scylla": 1}},
+
+        {"id": "cattle", "name": "Kill Sacred Cattle",
+         "reactants": {"scylla": 1},
+         "products": {"cattle": 1}},
+
+        {"id": "shipwreck", "name": "Lose The Crew",
+         "reactants": {"cattle": 1},
+         "products": {"shipwreck": 1}},
+
+        {"id": "calypso", "name": "Reach Ogygia",
+         "reactants": {"shipwreck": 1},
+         "products": {"calypso": 1}},
+
+        {"id": "release", "name": "Leave Calypso",
+         "reactants": {"calypso": 1},
+         "products": {"release": 1}},
+
+        {"id": "ithaca", "name": "Return To Ithaca",
+         "reactants": {"release": 1},
+         "products": {"ithaca": 1}},
+
+        {"id": "disguise", "name": "Become A Beggar",
+         "reactants": {"ithaca": 1},
+         "products": {"disguise": 1}},
+
+        {"id": "telemachus", "name": "Find Telemachus",
+         "reactants": {"disguise": 1},
+         "products": {"telemachus": 1}},
+
+        {"id": "suitors", "name": "Face The Suitors",
+         "reactants": {"telemachus": 1},
+         "products": {"suitors": 1}},
+
+        {"id": "bow", "name": "String The Bow",
+         "reactants": {"suitors": 1},
+         "products": {"bow": 1}},
+
+        {"id": "battle", "name": "Defeat The Suitors",
+         "reactants": {"bow": 1},
+         "products": {"battle": 1}},
+
+        {"id": "reunion", "name": "Reunite With Penelope",
+         "reactants": {"battle": 1},
+         "products": {"reunion": 1}},
+    ],
+}
+
+
 PATHWAY_MODELS = {
     "path_tca":        {"pathway": _TCA,
                         "note": "The citric acid cycle -- eight reactions that close a loop"},
@@ -538,7 +667,15 @@ PATHWAY_MODELS = {
                                 "educational, not a diagnosis"},
     "path_beta_ox":    {"pathway": _BETA_OX,
                         "note": "Beta-oxidation -- a cycle that shortens its own substrate"},
+
+    "path_odyssey": {
+        "pathway": _ODYSSEY,
+        "note": "Odysseus journeys home from Troy",
+    },
+
 }
+
+
 
 
 def _pathway_provider(sample_id: str) -> dict:
