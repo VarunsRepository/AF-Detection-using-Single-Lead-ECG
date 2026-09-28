@@ -38,6 +38,8 @@ from catalog.registry import dsp_store, rendering_store, undeclared  # noqa: E40
 from catalog.packs import ecg      as _pack_ecg      # noqa: E402,F401
 from catalog.packs import crypto   as _pack_crypto   # noqa: E402,F401
 from catalog.packs import testing  as _pack_testing  # noqa: E402,F401
+from catalog.packs import compute  as _pack_compute  # noqa: E402,F401
+from catalog.packs import biology  as _pack_biology  # noqa: E402,F401
 
 # 4. Recipes -- these reference everything above, so they come last
 from catalog.journeys import ecg                 # noqa: E402,F401
@@ -47,6 +49,10 @@ from catalog.journeys import beats               # noqa: E402,F401
 from catalog.journeys import spectrum            # noqa: E402,F401
 from catalog.journeys import spn                 # noqa: E402,F401
 from catalog.journeys import sha1                # noqa: E402,F401
+from catalog.journeys import simd                # noqa: E402,F401
+from catalog.journeys import ets                 # noqa: E402,F401
+from catalog.journeys import photosynthesis      # noqa: E402,F401
+from catalog.journeys import pathway             # noqa: E402,F401
 from catalog.journeys import test_journeys       # noqa: E402,F401
 
 # Components registered without a contract. Reported at startup because
