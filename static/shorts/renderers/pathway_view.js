@@ -89,6 +89,29 @@ registerRenderingAlgorithm("pathway_view", {
                              ? durationMs : 10000;
         const stepMs = safeDuration / steps.length;
 
+        // ── ROUTE IDENTITY ──────────────────────────────────────────────
+        // Where the routes part, and which one this walk took. Everything
+        // from the fork onward is drawn in that route's colour, and it is
+        // drawn from the FIRST frame -- a bifurcation should be visible
+        // before you arrive at it, not only once you are standing on it.
+        const ROUTE_COLS = ["#c77dff", "#21d4fd", "#ffd166", "#ff5d8f"];
+        const junctionIds = new Set((fo.junctions ?? []).map(j => j.species));
+        const activeIds   = new Set((fo.steps ?? []).map(s => s.id));
+        const FORK = (() => {
+            const at = steps.findIndex(s =>
+                Object.keys(s.reactants ?? {}).some(r => junctionIds.has(r)));
+            if (at === -1) return { at: -1, col: null, others: [] };
+            const sp = Object.keys(steps[at].reactants).find(r => junctionIds.has(r));
+            const opts = ((fo.junctions ?? []).find(x => x.species === sp)?.options) ?? [];
+            const taken = opts.findIndex(o => activeIds.has(o.id));
+            return {
+                at,
+                col: ROUTE_COLS[(taken < 0 ? 0 : taken) % ROUTE_COLS.length],
+                others: opts.filter(o => !activeIds.has(o.id)),
+            };
+        })();
+
+
         function draw(idx, frac) {
             const ctx = canvas.getContext("2d");
             const W = canvas.width, H = canvas.height;
@@ -153,8 +176,15 @@ registerRenderingAlgorithm("pathway_view", {
 
                 const state = s.blocked ? "blocked" : s.fired ? "fired" : "starved";
                 const active = i === idx;
+                // After the fork the trunk takes the ROUTE's colour, and
+                // it is drawn from the first frame -- the bifurcation
+                // should be visible before you arrive at it, not only
+                // once you are standing on it.
+                const onRoute = FORK.at !== -1 && i >= FORK.at;
+                const liveCol = onRoute ? FORK.col : accent;
                 ctx.strokeStyle = state === "fired"
-                    ? (i <= idx ? accent : "rgba(255,255,255,0.13)")
+                    ? (i <= idx ? liveCol : (onRoute ? FORK.col + "55"
+                                                     : "rgba(255,255,255,0.13)"))
                     : BAD;
                 // Heavier throughout: at 1.5px the ring read as a faint
                 // wireframe rather than a pathway, and the active arc
@@ -207,13 +237,43 @@ registerRenderingAlgorithm("pathway_view", {
                     ctx.arc(x, y, r + 7 * useDPR, 0, Math.PI * 2);
                     ctx.fill();
                 }
-                ctx.fillStyle = reached ? accent + "55" : "rgba(255,255,255,0.07)";
-                ctx.strokeStyle = reached ? accent : "rgba(255,255,255,0.16)";
+                const nodeOnRoute = FORK.at !== -1 && i > FORK.at;
+                const nodeCol = nodeOnRoute ? FORK.col : accent;
+                ctx.fillStyle = reached ? nodeCol + "55" : "rgba(255,255,255,0.07)";
+                ctx.strokeStyle = reached ? nodeCol : "rgba(255,255,255,0.16)";
                 ctx.lineWidth = (i === idx ? 3 : 1.8) * useDPR;
                 ctx.beginPath();
                 ctx.arc(x, y, r, 0, Math.PI * 2);
                 ctx.fill(); ctx.stroke();
 
+                if (FORK.at !== -1 && i === FORK.at) {
+                    ctx.strokeStyle = FORK.col;
+                    ctx.lineWidth = 1.6 * useDPR;
+                    ctx.beginPath();
+                    ctx.arc(x, y, r + 6 * useDPR, 0, Math.PI * 2);
+                    ctx.stroke();
+                    // The road not taken, as a stub off the fork. Without
+                    // it the alternative exists only as text at the
+                    // bottom of the card, which is easy to miss entirely.
+                    if (FORK.others.length) {
+                        const sx = x + 16 * useDPR, sy = y - 20 * useDPR;
+                        ctx.strokeStyle = "rgba(255,255,255,0.22)";
+                        ctx.setLineDash([3 * useDPR, 3 * useDPR]);
+                        ctx.beginPath();
+                        ctx.moveTo(x, y); ctx.lineTo(sx, sy);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        ctx.beginPath();
+                        ctx.arc(sx, sy, 4 * useDPR, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.fillStyle = "#6b7480";
+                        ctx.font = mono(9);
+                        ctx.textAlign = "left";
+                        ctx.fillText(FORK.others[0].name,
+                                     sx + 8 * useDPR, sy + 3 * useDPR);
+                        ctx.textAlign = "center";
+                    }
+                }
                 ctx.fillStyle = i === idx ? "#e8f4f8" : reached ? "#9aa4b0" : DIM;
                 ctx.font = i === idx
                     ? `600 ${12 * useDPR}px "IBM Plex Mono", monospace`

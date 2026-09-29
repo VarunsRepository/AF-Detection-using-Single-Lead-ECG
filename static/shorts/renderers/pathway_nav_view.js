@@ -109,6 +109,22 @@ registerRenderingAlgorithm("pathway_nav_view", {
         const accent = (typeof THEMES !== "undefined" && THEMES[themeIndex]?.traceColor)
                        || root.getPropertyValue("--accent").trim() || "#5cc24a";
         const SPUR = "#eb7b2b", BAD = "#e74c3c";
+        // Distinct from SPUR: a spur is a detour that rejoins, a fork is
+        // a choice where one road was NOT taken. Different things.
+        // One colour per route, applied from the fork ONWARD -- so the
+        // branch you are on is identifiable at every later step, not just
+        // at the moment of divergence.
+        const ROUTE_COLS = ["#c77dff", "#21d4fd", "#ffd166", "#ff5d8f"];
+        const junctionIds = new Set((fo.junctions ?? []).map(j => j.species));
+        const activeIds   = new Set((fo.steps ?? []).map(s => s.id));
+        const forkFrame = frames.findIndex(f => junctionIds.has(f.from));
+        const takenIdx = (() => {
+            if (forkFrame === -1) return 0;
+            const j = (fo.junctions ?? []).find(x => x.species === frames[forkFrame].from);
+            const i = (j?.options ?? []).findIndex(o => activeIds.has(o.id));
+            return i < 0 ? 0 : i;
+        })();
+        const FORK = ROUTE_COLS[takenIdx % ROUTE_COLS.length];
         const stepMs = Math.max(1, durationMs) / frames.length;
 
         // On a CYCLE the window never has blank ends -- position 0 is the
@@ -141,7 +157,6 @@ registerRenderingAlgorithm("pathway_nav_view", {
             }
             // Where the ROUTES part company -- a different kind of fork
             // from a spur: one road was taken and another was not.
-            const junctionIds = new Set((fo.junctions ?? []).map(j => j.species));
             const isJunction = f => junctionIds.has(f.from);
 
             ctx.strokeStyle = "rgba(255,255,255,0.16)";
@@ -239,10 +254,28 @@ registerRenderingAlgorithm("pathway_nav_view", {
                 const dist = Math.abs(off);
                 if (dist > 2.6) continue;
                 const isCur = dist < 0.5;
+                // PAST vs FUTURE, not just near vs far. Opacity alone
+                // made the two sides of the window symmetrical, so there
+                // was no way to tell what had already happened from what
+                // was coming -- which is most of what a navigator is for.
+                const past = off < -0.5;
+                // A JUNCTION is where the conditions decided the route.
+                // The divergence was invisible: swapping oxygen changed
+                // the last reaction and nothing announced that a choice
+                // had been made at all.
+                const atFork = junctionIds.has(f.from);
+                // Everything at or after the fork wears the route colour.
+                const onRoute = forkFrame !== -1 && (idx + k) >= forkFrame;
                 // Continuous fade, so a slot dims as it travels rather
                 // than switching brightness at a boundary.
                 const alpha = Math.max(0, Math.min(1, 1 - dist * 0.42));
-                const col = f.depth > 0 ? SPUR : accent;
+                const PAST_COL = "#2f6b3f";     // travelled: muted, still green
+                const NEXT_COL = "#6b7480";     // upcoming: neutral grey
+                const col = f.depth > 0 ? SPUR
+                          : onRoute     ? FORK
+                          : isCur       ? accent
+                          : past        ? PAST_COL
+                                        : NEXT_COL;
 
                 ctx.globalAlpha = alpha;
 
@@ -256,6 +289,20 @@ registerRenderingAlgorithm("pathway_nav_view", {
                 ctx.arc(x, y, (isCur ? 7 : 4) * useDPR, 0, Math.PI * 2);
                 ctx.stroke();
                 if (isCur) { ctx.fillStyle = col + "44"; ctx.fill(); }
+
+                if (atFork) {
+                    ctx.strokeStyle = FORK;
+                    ctx.lineWidth = 1.4 * useDPR;
+                    ctx.beginPath();
+                    ctx.arc(x, y, (isCur ? 12 : 8) * useDPR, 0, Math.PI * 2);
+                    ctx.stroke();
+                    if (isCur) {
+                        ctx.fillStyle = FORK;
+                        ctx.font = `600 ${9 * useDPR}px "IBM Plex Mono", monospace`;
+                        ctx.fillText("the routes part here",
+                                     x + 20 * useDPR, y - 14 * useDPR);
+                    }
+                }
 
                 // connector to the next slot
                 if (k < 3 && at(idx + k + 1)) {
