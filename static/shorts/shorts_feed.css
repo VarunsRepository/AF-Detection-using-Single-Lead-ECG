@@ -536,13 +536,18 @@ html, body {
     z-index: 40;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 8px;
     align-items: center;
 }
 
 .rail-btn {
-    width: 46px;
-    height: 46px;
+    /* 46 -> 40. With Share added the rail is six buttons tall on some
+       journeys, and at 46px with a 12px gap it ran from the text overlay
+       almost to the story dots. Smaller and tighter keeps the render
+       unobstructed, which is what the rail is placed low-right to
+       protect in the first place. */
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
     background: rgba(0, 0, 0, 0.5); /* darker than before to compensate visually for backdrop-filter staying off (see note below) */
     border: 1px solid var(--border);
@@ -792,3 +797,4 @@ html, body {
 .stage-caption.visible {
     opacity: 1;
 }
+
