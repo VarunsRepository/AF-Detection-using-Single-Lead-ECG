@@ -170,6 +170,81 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
 
     const sharedMemory = { ...(journeyJson.sharedPipelineMemory || {}) };
     const journeyTarget = {
+        // ── SHARE (on the DISPATCH TARGET) ─────────────────────
+        // This lived on the object interpretJourney RETURNS,
+        // which the feed uses for start/destroy/next. The
+        // dispatcher resolves "journey" to journeyTarget, a
+        // different object -- so the rail button found no such
+        // method. Right name, wrong home.
+        // ── SHARE ──────────────────────────────────────────────────────
+        // Builds a link to THIS card, not to the journey: ?sample= is
+        // validated server-side, so a stale link degrades to an ordinary
+        // feed rather than a card that cannot load.
+        //
+        // The journey's ROUTE name is used, not its label -- label is for
+        // display and two journeys could share one.
+        //
+        // On a mixed feed (/feed, /seed) journeyJson.name is null, so the
+        // batch is asked which journey this card belongs to.
+        async share() {
+            const fromPath = location.pathname.match(/^\/journey\/([^/?#]+)/)?.[1];
+            const name = journeyJson.name ?? fromPath;
+            if (!name) {
+                console.warn("share: cannot determine the journey name");
+                return;
+            }
+            const url = `${location.origin}/journey/${name}`
+                      + `?sample=${encodeURIComponent(sampleId)}`;
+            const title = journeyJson.stages?.[currentStageIndex]?.uiFillers?.title
+                        ?? "ECG Shorts";
+            // Three tiers, because each can fail for reasons the next
+            // does not share:
+            //   navigator.share  absent on desktop browsers, and on
+            //                    Windows Chrome it opens a dialog that
+            //                    may itself fail
+            //   clipboard API    requires a SECURE CONTEXT -- silently
+            //                    unavailable over plain http, which is
+            //                    exactly how a phone tests against a PC
+            //   execCommand      deprecated, but works anywhere
+            // and if all three fail the URL is shown so it can be copied
+            // by hand, which beats a dead button.
+            const copyFallback = () => {
+                const ta = document.createElement("textarea");
+                ta.value = url;
+                ta.setAttribute("readonly", "");
+                ta.style.cssText = "position:fixed;top:-1000px;opacity:0;";
+                document.body.appendChild(ta);
+                ta.select();
+                let ok = false;
+                try { ok = document.execCommand("copy"); } catch (_) {}
+                ta.remove();
+                return ok;
+            };
+
+            try {
+                if (navigator.share) {
+                    await navigator.share({ title, url });
+                    return;
+                }
+            } catch (e) {
+                // Cancelling the sheet is a normal outcome, not a failure.
+                if (e?.name === "AbortError") return;
+                console.warn("native share failed, falling back:", e);
+            }
+
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(url);
+                    flashMessage("Link copied");
+                    return;
+                }
+            } catch (e) {
+                console.warn("clipboard failed, falling back:", e);
+            }
+
+            flashMessage(copyFallback() ? "Link copied" : url);
+        }, // replays the CURRENT stage from the beginning -- used for the "first tap restarts, fast second tap goes back" pattern
+
         cycleSpeed() {
             // payload.options intentionally ignored now -- see the file
             // header for why speedOptions isn't recipe-configurable.
@@ -574,7 +649,21 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             // "Oxygen: present" for ever while the walk actually changed.
             const derivedButtons = [];
 
-            [...stageJson.railControls, ...derived].forEach(control => {
+                // SHARE IS UNIVERSAL, so the engine adds it rather than ten
+            // recipes repeating it. Everything it needs -- the journey
+            // name and the sample -- is already here; nothing about it
+            // varies by journey, stage or algorithm.
+            //
+            // Declaring it per recipe produced exactly the failures that
+            // implies: one journey missed it entirely, and three had it
+            // on stage 1 only. A recipe can still opt out with
+            // "share": false.
+            const universal = stageJson.share === false ? [] : [{
+                ui: { label: "Share", icon: "icon_share" },
+                action: { target: "journey", method: "share", payload: {} },
+            }];
+
+            [...stageJson.railControls, ...universal, ...derived].forEach(control => {
                 const btn = document.createElement("button");
                 btn.className = "rail-btn";
                 btn.title = control.ui.label;
@@ -798,6 +887,23 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         el.classList.add(paused ? "paused" : "playing");
     }
 
+    // Brief text confirmation, reusing the playback indicator's slot so
+    // it lands where the eye already is after a tap.
+    function flashMessage(text) {
+        const card = chartContainer?.closest(".journey-card");
+        if (!card) return;
+        let el = card.querySelector(".toast-flash");
+        if (!el) {
+            el = document.createElement("div");
+            el.className = "toast-flash";
+            card.appendChild(el);
+        }
+        el.textContent = text;
+        el.classList.remove("show");
+        void el.offsetWidth;
+        el.classList.add("show");
+    }
+
     function togglePause() {
         isPaused = !isPaused;
         flashPlayback(isPaused);
@@ -844,7 +950,8 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         },
         next() { if (journeyJson.journeyRules.allowStageNavigation) goToStage(currentStageIndex + 1); },
         prev() { if (journeyJson.journeyRules.allowStageNavigation) goToStage(currentStageIndex - 1); },
-        restart() { goToStage(currentStageIndex); }, // replays the CURRENT stage from the beginning -- used for the "first tap restarts, fast second tap goes back" pattern
+        restart() { goToStage(currentStageIndex); },
+
         togglePause,
     };
 }
