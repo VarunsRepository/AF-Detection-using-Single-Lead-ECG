@@ -313,6 +313,36 @@
         .playback-flash.playing { animation: playback-out 0.3s steps(2) forwards; }
     }
 
+    /* Brief text confirmation for share/copy. Sits above the text
+       overlay, non-interactive, and gone in a second. */
+    .toast-flash {
+        position: absolute;
+        left: 50%; bottom: 30%;
+        transform: translateX(-50%);
+        padding: 8px 16px;
+        border-radius: 18px;
+        background: rgba(0, 0, 0, 0.78);
+        color: #e8f4f8;
+        font: 500 12px/1.45 "IBM Plex Mono", ui-monospace, monospace;
+        letter-spacing: 0.03em;
+        /* The last-resort tier shows the URL itself, which is far longer
+           than "Link copied" -- without wrapping it would run off both
+           edges of the card. */
+        max-width: 78%;
+        text-align: center;
+        word-break: break-all;
+        pointer-events: none;
+        z-index: 46;
+        opacity: 0;
+    }
+    .toast-flash.show { animation: toast-fade 3.2s ease-out forwards; }
+    @keyframes toast-fade {
+        0%   { opacity: 0; transform: translateX(-50%) translateY(6px); }
+        14%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+        75%  { opacity: 1; }
+        100% { opacity: 0; }
+    }
+
     .journey-feed { padding: 0; }
 
     /* Stage rail sits above the home indicator on iPhone --
@@ -453,6 +483,36 @@
     }
     @media (prefers-reduced-motion: reduce) {
         .playback-flash.show { animation: playback-pop 0.72s steps(2) forwards; }
+    }
+
+    /* Brief text confirmation for share/copy. Sits above the text
+       overlay, non-interactive, and gone in a second. */
+    .toast-flash {
+        position: absolute;
+        left: 50%; bottom: 30%;
+        transform: translateX(-50%);
+        padding: 8px 16px;
+        border-radius: 18px;
+        background: rgba(0, 0, 0, 0.78);
+        color: #e8f4f8;
+        font: 500 12px/1.45 "IBM Plex Mono", ui-monospace, monospace;
+        letter-spacing: 0.03em;
+        /* The last-resort tier shows the URL itself, which is far longer
+           than "Link copied" -- without wrapping it would run off both
+           edges of the card. */
+        max-width: 78%;
+        text-align: center;
+        word-break: break-all;
+        pointer-events: none;
+        z-index: 46;
+        opacity: 0;
+    }
+    .toast-flash.show { animation: toast-fade 3.2s ease-out forwards; }
+    @keyframes toast-fade {
+        0%   { opacity: 0; transform: translateX(-50%) translateY(6px); }
+        14%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+        75%  { opacity: 1; }
+        100% { opacity: 0; }
     }
 
     .journey-feed {
@@ -830,6 +890,10 @@
         {% endfor %}
 
         const journeyJson = {
+            // Needed to build a shareable link. The route name is the
+            // only reliable source: label is for display and two
+            // journeys could share one.
+            name:           {{ (journey_name | tojson) if journey_name is defined else 'null' }},
             globalThemes:   {{ journey_themes | tojson }},
             journeyRules:   {{ journey_rules | tojson }},
             stages:         {{ journey_stages | tojson }},
