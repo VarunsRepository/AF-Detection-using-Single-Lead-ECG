@@ -115,6 +115,11 @@ registerRenderingAlgorithm("pathway_nav_view", {
         // branch you are on is identifiable at every later step, not just
         // at the moment of divergence.
         const ROUTE_COLS = ["#c77dff", "#21d4fd", "#ffd166", "#ff5d8f"];
+        // Lighter siblings for the CURRENT step. White said "this is the
+        // one you are on" but threw away which route you are on -- so the
+        // most prominent line on the card was the only one not carrying
+        // the route's identity.
+        const ROUTE_BRIGHT = ["#e5c4ff", "#8be9ff", "#ffeaae", "#ffb3c8"];
         const junctionIds = new Set((fo.junctions ?? []).map(j => j.species));
         const activeIds   = new Set((fo.steps ?? []).map(s => s.id));
         const forkFrame = frames.findIndex(f => junctionIds.has(f.from));
@@ -124,7 +129,16 @@ registerRenderingAlgorithm("pathway_nav_view", {
             const i = (j?.options ?? []).findIndex(o => activeIds.has(o.id));
             return i < 0 ? 0 : i;
         })();
-        const FORK = ROUTE_COLS[takenIdx % ROUTE_COLS.length];
+        const FORK        = ROUTE_COLS[takenIdx % ROUTE_COLS.length];
+        const FORK_BRIGHT = ROUTE_BRIGHT[takenIdx % ROUTE_BRIGHT.length];
+        // The condition that CAUSED this route, so the header can colour
+        // only that one. Colouring the whole line would claim organism
+        // mattered here when oxygen alone decided it.
+        const takenWhen = (() => {
+            if (forkFrame === -1) return "";
+            const j = (fo.junctions ?? []).find(x => x.species === frames[forkFrame].from);
+            return (j?.options ?? []).find(o => activeIds.has(o.id))?.when ?? "";
+        })();
         const stepMs = Math.max(1, durationMs) / frames.length;
 
         // On a CYCLE the window never has blank ends -- position 0 is the
@@ -216,10 +230,28 @@ registerRenderingAlgorithm("pathway_nav_view", {
             ctx.fillStyle = accent;
             ctx.font = `600 ${13 * useDPR}px "IBM Plex Mono", monospace`;
             ctx.fillText(fo.name, 20 * useDPR, 28 * useDPR);
-            if (fo.conditionSummary) {
-                ctx.fillStyle = "#78828e";
+            // Conditions, with the DECIDING one in the route's colour --
+            // so "Oxygen: present" is visibly the same thing as the
+            // purple branch below it, rather than two facts the viewer
+            // has to connect for themselves.
+            if (fo.conditions) {
                 ctx.font = `${10 * useDPR}px "IBM Plex Mono", monospace`;
-                ctx.fillText(fo.conditionSummary, 20 * useDPR, 44 * useDPR);
+                let cx2 = 20 * useDPR;
+                const entries = Object.entries(fo.conditions);
+                entries.forEach(([k, v], i) => {
+                    const spec  = fo.declaredConditions?.[k] ?? {};
+                    const shown = spec.display?.[String(v)] ?? v;
+                    const txt   = `${spec.label ?? k}: ${shown}`;
+                    const decides = takenWhen.includes(k);
+                    ctx.fillStyle = decides ? FORK_BRIGHT : "#78828e";
+                    ctx.fillText(txt, cx2, 44 * useDPR);
+                    cx2 += ctx.measureText(txt).width;
+                    if (i < entries.length - 1) {
+                        ctx.fillStyle = "#4a5260";
+                        ctx.fillText("  \u00b7  ", cx2, 44 * useDPR);
+                        cx2 += ctx.measureText("  \u00b7  ").width;
+                    }
+                });
             }
 
             drawHud(ctx, W, H, idx);
@@ -288,7 +320,10 @@ registerRenderingAlgorithm("pathway_nav_view", {
                 ctx.beginPath();
                 ctx.arc(x, y, (isCur ? 7 : 4) * useDPR, 0, Math.PI * 2);
                 ctx.stroke();
-                if (isCur) { ctx.fillStyle = col + "44"; ctx.fill(); }
+                if (isCur) {
+                    ctx.fillStyle = (onRoute ? FORK_BRIGHT : col) + "44";
+                    ctx.fill();
+                }
 
                 if (atFork) {
                     ctx.strokeStyle = FORK;
@@ -306,10 +341,40 @@ registerRenderingAlgorithm("pathway_nav_view", {
 
                 // connector to the next slot
                 if (k < 3 && at(idx + k + 1)) {
+                    const top = y + 9 * useDPR;
+                    const bot = y + gap - 9 * useDPR;
+                    // The edge LEAVING the current step grows as the step
+                    // progresses, so the connection is made rather than
+                    // presented. Every other connector is already
+                    // complete or not yet reached.
+                    //
+                    // At the very start this means the first edge is
+                    // blank: nothing has happened yet, and drawing it
+                    // pre-activated implied a step that had not run.
+                    const grow = isCur ? Math.min(1, Math.max(0, slide / 0.999))
+                               : (off < 0 ? 1 : 0);
+
+                    // TRACK, then FILL. The edge ahead stays visible as a
+                    // faint rail so the shape of what is coming is never
+                    // lost -- an edge that appears from nothing reads as
+                    // the pathway being built rather than travelled.
+                    // Only the LIT portion says where we have got to.
+                    const prevStroke = ctx.strokeStyle;
+                    const prevWidth  = ctx.lineWidth;
+                    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+                    ctx.lineWidth = 1.2 * useDPR;
                     ctx.beginPath();
-                    ctx.moveTo(x, y + 9 * useDPR);
-                    ctx.lineTo(x, y + gap - 9 * useDPR);
+                    ctx.moveTo(x, top); ctx.lineTo(x, bot);
                     ctx.stroke();
+                    ctx.strokeStyle = prevStroke;
+                    ctx.lineWidth = prevWidth;
+
+                    if (grow > 0) {
+                        ctx.beginPath();
+                        ctx.moveTo(x, top);
+                        ctx.lineTo(x, top + (bot - top) * grow);
+                        ctx.stroke();
+                    }
                 }
 
                 // EMPHASIS: which of the three facts about a step gets
@@ -340,7 +405,8 @@ registerRenderingAlgorithm("pathway_nav_view", {
                     cofactor:  ["side", "edge", "node"],
                 })[config.emphasis ?? "enzyme"] ?? ["edge", "node", "side"];
 
-                ctx.fillStyle = isCur ? "#e8f4f8" : "#8b939f";
+                ctx.fillStyle = isCur ? (onRoute ? FORK_BRIGHT : "#e8f4f8")
+                                      : "#8b939f";
                 ctx.font = `${isCur ? 600 : 400} ${(isCur ? 15 : 12) * useDPR}px `
                          + `"IBM Plex Mono", monospace`;
                 ctx.fillText(facts[order[0]], x + 20 * useDPR,

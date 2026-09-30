@@ -138,7 +138,10 @@ registerRenderingAlgorithm("pathway_view", {
             // fates for pyruvate.
             ctx.fillText(shape, W / 2, 40 * useDPR);
             if (fo.conditionSummary) {
-                ctx.fillStyle = "#5c6470";
+                // Same colour as the branch it produced. The map has no
+                // per-condition layout to work with, so the whole line
+                // takes the route colour rather than one word of it.
+                ctx.fillStyle = FORK.col ?? "#5c6470";
                 ctx.font = `${9 * useDPR}px "IBM Plex Mono", monospace`;
                 ctx.fillText(fo.conditionSummary, W / 2, 53 * useDPR);
             }
@@ -190,8 +193,35 @@ registerRenderingAlgorithm("pathway_view", {
                 // wireframe rather than a pathway, and the active arc
                 // needs to stand out from eight neighbours, not two.
                 ctx.lineWidth = (active ? 4 : 2.4) * useDPR;
+                if (active) {
+                    // The faint rail underneath, so the arc being
+                    // crossed still shows where it is heading.
+                    const ps = ctx.strokeStyle, pw = ctx.lineWidth;
+                    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+                    ctx.lineWidth = 1.4 * useDPR;
+                    ctx.beginPath();
+                    ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+                    ctx.stroke();
+                    ctx.strokeStyle = ps; ctx.lineWidth = pw;
+                }
+
                 ctx.beginPath();
-                ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+                ctx.moveTo(x0, y0);
+                if (active) {
+                    // The current arc GROWS toward the next node instead
+                    // of switching on whole. Lighting up an edge says "we
+                    // went that way"; drawing it says "we are going",
+                    // which is the thing a walk is meant to show.
+                    //
+                    // Eased so it leaves and arrives softly rather than
+                    // sliding at constant speed into a node it then sits
+                    // on for the rest of the step.
+                    const p = Math.min(1, Math.max(0, frac));
+                    const e = p * p * (3 - 2 * p);
+                    ctx.lineTo(x0 + (x1 - x0) * e, y0 + (y1 - y0) * e);
+                } else {
+                    ctx.lineTo(x1, y1);
+                }
                 ctx.stroke();
 
                 // enzyme label on the arc, only for the active reaction --
