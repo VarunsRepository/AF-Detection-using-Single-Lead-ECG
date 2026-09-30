@@ -24,6 +24,17 @@
 // reintroduce a visible seam between them.
 const THEMES = [
     {
+        // Weyland-Yutani terminal: amber phosphor, green sub-systems,
+        // scanlines. Renderers that support it check for this label and
+        // switch palette; the rest simply use its colours like any other
+        // theme, so nothing breaks on a card that has no CRT treatment.
+        label: "Romulus",
+        bg: "#020503",
+        traceColor: "#ff9900",
+        gridColor: "rgba(87, 227, 137, 0.10)",
+        zeroLineColor: "rgba(87, 227, 137, 0.35)",
+    },
+    {
         label: "Clinical",
         bg: "#000000",          // true black -- what an actual diagnostic monitor looks like
         traceColor: "#e8f4f8",  // near-white, cool cyan-white -- classic phosphor/oscilloscope trace, no-nonsense
