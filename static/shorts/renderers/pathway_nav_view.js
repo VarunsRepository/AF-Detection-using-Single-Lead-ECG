@@ -1,58 +1,29 @@
 // ---------------------------------------------------------------------------
 // renderers/pathway_nav_view.js
-//
-// Navigation rather than diagram: five slots, the current reaction always
-// in the middle, the pathway scrolling past it.
-//
-//   pos 0,1   where we have just been   (faded)
-//   pos 2     current                   (lit, centred)
-//   pos 3,4   what is coming            (faded)
-//
-// WHY THE WINDOW NEEDS A HUD
-//   A ring's defining property is that it RETURNS, and five nodes in a
-//   row cannot show closure -- the same five slots look identical
-//   whether this is step 8 of a cycle that just wrapped or step 2 of a
-//   line that keeps going. The window has genuinely lost the shape, so
-//   the HUD carries it: the whole pathway in miniature with a marker,
-//   not a progress bar. A bar would repeat the window's mistake, saying
-//   "3 of 8" while hiding that 8 wraps to 1.
-//
-// BRANCHES ARE A CALL STACK
-//   The tape emits push when the walk defers an arm and pop when it
-//   returns. On a push the trunk slides to the top-right and dims, and
-//   the spur runs in the centre; on a pop the trunk comes back. Nesting
-//   needs no extra concept -- a fork inside a fork is a deeper stack.
-//
-// Needs finalOutput.tape (move/push/pop), which pathway_filter emits
-// alongside its step list.
-//
-// Self-registers into RENDER_ALGORITHMS. IIFE-wrapped.
+// Weyland-Yutani Corp // Navigation Telemetry Tape (Alien: Romulus)
 // ---------------------------------------------------------------------------
 
 (function () {
 "use strict";
 
+function ROMULUS_BG() {
+    const t = (typeof THEMES !== "undefined" && THEMES[themeIndex]) || {};
+    return t.label === "Romulus" ? "#020503" : (t.bg || "#000000");
+}
+
 registerRenderingAlgorithm("pathway_nav_view", {
 
-    // What this VIEW can vary, named from the model's own vocabulary.
-    // The DSPE declares choices about the data; this declares choices
-    // about the display, and the two are different questions.
-    //
-    // Reading the vocabulary matters: a hardcoded "substrate / enzyme /
-    // cofactor" button would read as nonsense on a compiler pipeline,
-    // which is the same failure as a Route button on a pathway with no
-    // routes, arriving from the other direction.
     choices(envelope) {
         const V = envelope?.meta?.pathway?.vocabulary ?? {};
-        const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+        const cap = s => s ? s.toUpperCase() : s;
         return [{
             key: "emphasis",
-            label: "Show",
+            label: "DATA_REG",
             values: ["enzyme", "substrate", "cofactor"],
             display: {
-                enzyme:    cap(V.edge ?? "reaction"),
-                substrate: cap(V.node ?? "metabolite"),
-                cofactor:  cap(V.side ?? "cofactor"),
+                enzyme:    cap(V.edge ?? "EDGE"),
+                substrate: cap(V.node ?? "NODE"),
+                cofactor:  cap(V.side ?? "AUX"),
             },
         }];
     },
@@ -60,26 +31,26 @@ registerRenderingAlgorithm("pathway_nav_view", {
     render(container, dspOutput, config, sampleId, fs, durationMs) {
         container.innerHTML = "";
         container.style.position = "relative";
+        container.style.backgroundColor = ROMULUS_BG();
 
         if (dspOutput?.error) {
             container.innerHTML =
-                `<p style="color:#ff4d4d;padding:20px;">${dspOutput.error}</p>`;
+                `<p style="color:#ff3b30;font-family:'Courier New',monospace;padding:20px;">`
+                + `[COMM_FAULT]: ${dspOutput.error.toUpperCase()}</p>`;
             return;
         }
         const fo = dspOutput.finalOutput ?? {};
         const tape = fo.tape ?? [];
         const moves = tape.filter(t => t.type === "move");
         if (!moves.length) {
-            container.innerHTML = `<p style="color:#ff4d4d;padding:20px;">No navigation tape.</p>`;
+            container.innerHTML = `<p style="color:#ff8b1f;font-family:'Courier New',monospace;padding:20px;">[EMPTY_TAPE_BUFFER]</p>`;
             return;
         }
 
-        // Reaction id -> display name, and the species names.
         const byId = {};
         (fo.steps ?? []).forEach(s => { byId[s.id] = s; });
-        const spName = id => fo.species?.[id]?.name ?? id ?? "";
+        const spName = id => (fo.species?.[id]?.name ?? id ?? "").toUpperCase();
 
-        // Depth at each move, so the renderer knows when it is on a spur.
         let depth = 0;
         const frames = [];
         for (const ev of tape) {
@@ -95,6 +66,7 @@ registerRenderingAlgorithm("pathway_nav_view", {
         const iw = container.offsetWidth || 390, ih = container.offsetHeight || 440;
         canvas.width = Math.round(iw * useDPR); canvas.height = Math.round(ih * useDPR);
         canvas.style.width = iw + "px"; canvas.style.height = ih + "px";
+
         new ResizeObserver(e => {
             const { width, height } = e[0].contentRect;
             if (!width || !height) return;
@@ -105,63 +77,65 @@ registerRenderingAlgorithm("pathway_nav_view", {
             if (_ctl) _ctl.drawFn(_ctl.lastElapsedMs);
         }).observe(container);
 
-        const root = getComputedStyle(document.documentElement);
-        const accent = (typeof THEMES !== "undefined" && THEMES[themeIndex]?.traceColor)
-                       || root.getPropertyValue("--accent").trim() || "#5cc24a";
-        const SPUR = "#eb7b2b", BAD = "#e74c3c";
-        // Distinct from SPUR: a spur is a detour that rejoins, a fork is
-        // a choice where one road was NOT taken. Different things.
-        // One colour per route, applied from the fork ONWARD -- so the
-        // branch you are on is identifiable at every later step, not just
-        // at the moment of divergence.
-        const ROUTE_COLS = ["#c77dff", "#21d4fd", "#ffd166", "#ff5d8f"];
-        // Lighter siblings for the CURRENT step. White said "this is the
-        // one you are on" but threw away which route you are on -- so the
-        // most prominent line on the card was the only one not carrying
-        // the route's identity.
-        const ROUTE_BRIGHT = ["#e5c4ff", "#8be9ff", "#ffeaae", "#ffb3c8"];
+        // ── SKIN ────────────────────────────────────────────────────────
+        // The Theme button cycles THEMES; this renderer reads the active
+        // one and dresses itself accordingly. Romulus gets the amber
+        // phosphor palette, Courier, scanlines and a vignette; every
+        // other theme gets its own trace colour and none of the CRT
+        // treatment.
+        //
+        // Skinning rather than a second renderer keeps ONE implementation
+        // of the walk: a Romulus copy would drift from the original the
+        // first time either was fixed.
+        const _theme   = (typeof THEMES !== "undefined" && THEMES[themeIndex]) || {};
+        const ROMULUS  = _theme.label === "Romulus";
+        const _accent  = _theme.traceColor || "#5cc24a";
+        const FONT     = ROMULUS ? '"Courier New", monospace'
+                                 : '"IBM Plex Mono", monospace';
+
+
+        // Industrial Phosphor Constants
+        const CRT_AMBER    = ROMULUS ? "#ff9900" : _accent;
+        const CRT_GREEN    = ROMULUS ? "#57e389" : "#9aa4b0";
+        const CRT_CYAN     = ROMULUS ? "#2de2e6" : "#3b82f6";
+        const CRT_WARN     = ROMULUS ? "#ff3b30" : "#e74c3c";
+        const SPUR         = "#ff8b1f";
+        const ROUTE_COLS   = ["#ff9900", "#2de2e6", "#e0e722", "#ff5376"];
+
         const junctionIds = new Set((fo.junctions ?? []).map(j => j.species));
         const activeIds   = new Set((fo.steps ?? []).map(s => s.id));
-        const forkFrame = frames.findIndex(f => junctionIds.has(f.from));
+        const forkFrame   = frames.findIndex(f => junctionIds.has(f.from));
         const takenIdx = (() => {
             if (forkFrame === -1) return 0;
             const j = (fo.junctions ?? []).find(x => x.species === frames[forkFrame].from);
             const i = (j?.options ?? []).findIndex(o => activeIds.has(o.id));
             return i < 0 ? 0 : i;
         })();
-        const FORK        = ROUTE_COLS[takenIdx % ROUTE_COLS.length];
-        const FORK_BRIGHT = ROUTE_BRIGHT[takenIdx % ROUTE_BRIGHT.length];
-        // The condition that CAUSED this route, so the header can colour
-        // only that one. Colouring the whole line would claim organism
-        // mattered here when oxygen alone decided it.
-        const takenWhen = (() => {
-            if (forkFrame === -1) return "";
-            const j = (fo.junctions ?? []).find(x => x.species === frames[forkFrame].from);
-            return (j?.options ?? []).find(o => activeIds.has(o.id))?.when ?? "";
-        })();
+        const FORK = ROUTE_COLS[takenIdx % ROUTE_COLS.length];
         const stepMs = Math.max(1, durationMs) / frames.length;
 
-        // On a CYCLE the window never has blank ends -- position 0 is the
-        // last reaction of the ring, because there is always a "before".
-        // On a chain the ends really are empty, and that difference is
-        // itself a signal about which you are looking at.
         const at = i => {
             if (fo.cyclic) return frames[((i % frames.length) + frames.length) % frames.length];
             return (i < 0 || i >= frames.length) ? null : frames[i];
         };
 
+        function drawCRTOverlays(ctx, W, H) {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.22)";
+            for (let y = 0; y < H; y += 3 * useDPR) {
+                ctx.fillRect(0, y, W, 1.2 * useDPR);
+            }
+            const vig = ctx.createRadialGradient(W / 2, H / 2, W * 0.4, W / 2, H / 2, W * 0.72);
+            vig.addColorStop(0, "rgba(0,0,0,0)");
+            vig.addColorStop(1, "rgba(0,10,2,0.65)");
+            ctx.fillStyle = vig;
+            ctx.fillRect(0, 0, W, H);
+        }
+
         function drawHud(ctx, W, H, idx) {
-            // The whole pathway in miniature: the shape the window cannot
-            // show. Ring for a cycle, line for a chain.
-            const r = 26 * useDPR;
-            const cx = W - r - 22 * useDPR, cy = r + 26 * useDPR;
+            const r = 24 * useDPR;
+            const cx = W - r - 20 * useDPR, cy = r + 24 * useDPR;
             const trunk = frames.filter(f => f.depth === 0);
             const cur = frames[idx];
-            // On a spur the current frame is NOT on the trunk, so
-            // indexOf returns -1 and the marker vanished entirely --
-            // exactly when the viewer most needs to know where they left
-            // from. Fall back to the last trunk frame before here: the
-            // junction they departed at.
             let pos = trunk.indexOf(cur);
             if (pos === -1) {
                 for (let k = idx; k >= 0; k--) {
@@ -169,115 +143,71 @@ registerRenderingAlgorithm("pathway_nav_view", {
                     if (p !== -1) { pos = p; break; }
                 }
             }
-            // Where the ROUTES part company -- a different kind of fork
-            // from a spur: one road was taken and another was not.
-            const isJunction = f => junctionIds.has(f.from);
 
-            ctx.strokeStyle = "rgba(255,255,255,0.16)";
-            ctx.lineWidth = 1.4 * useDPR;
+            // Radar Enclosure
+            ctx.strokeStyle = "rgba(87, 227, 137, 0.25)";
+            ctx.lineWidth = 1.2 * useDPR;
+            ctx.strokeRect(cx - r - 8 * useDPR, cy - r - 8 * useDPR, (r + 8 * useDPR) * 2, (r + 8 * useDPR) * 2);
+
             if (fo.cyclic) {
                 ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
                 trunk.forEach((f, i) => {
                     const a = (i / trunk.length) * Math.PI * 2 - Math.PI / 2;
                     const px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r;
-                    ctx.beginPath();
-                    ctx.arc(px, py, (i === pos ? 4 : 2) * useDPR, 0, Math.PI * 2);
-                    ctx.fillStyle = i === pos ? accent : "rgba(255,255,255,0.28)";
-                    ctx.fill();
-                    if (isJunction(f)) {
-                        ctx.strokeStyle = SPUR;
-                        ctx.lineWidth = 1.4 * useDPR;
-                        ctx.beginPath();
-                        ctx.arc(px, py, 6 * useDPR, 0, Math.PI * 2);
-                        ctx.stroke();
-                    }
+                    ctx.fillStyle = i === pos ? CRT_AMBER : "rgba(87, 227, 137, 0.35)";
+                    ctx.fillRect(px - 2 * useDPR, py - 2 * useDPR, 4 * useDPR, 4 * useDPR);
                 });
             } else {
-                const x0 = cx - r, x1 = cx + r;
-                ctx.beginPath(); ctx.moveTo(x0, cy); ctx.lineTo(x1, cy); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy); ctx.stroke();
                 trunk.forEach((f, i) => {
-                    const x = x0 + (i / Math.max(1, trunk.length - 1)) * (x1 - x0);
-                    ctx.beginPath();
-                    ctx.arc(x, cy, (i === pos ? 4 : 2) * useDPR, 0, Math.PI * 2);
-                    ctx.fillStyle = i === pos ? accent : "rgba(255,255,255,0.28)";
-                    ctx.fill();
-                    if (isJunction(f)) {
-                        ctx.strokeStyle = SPUR;
-                        ctx.lineWidth = 1.4 * useDPR;
-                        ctx.beginPath();
-                        ctx.arc(x, cy, 6 * useDPR, 0, Math.PI * 2);
-                        ctx.stroke();
-                    }
+                    const x = (cx - r) + (i / Math.max(1, trunk.length - 1)) * (r * 2);
+                    ctx.fillStyle = i === pos ? CRT_AMBER : "rgba(87, 227, 137, 0.35)";
+                    ctx.fillRect(x - 2 * useDPR, cy - 2 * useDPR, 4 * useDPR, 4 * useDPR);
                 });
             }
-            // Off the trunk entirely -- say so, or the marker looks stuck.
-            ctx.fillStyle = "#5c6470";
-            ctx.font = `${8 * useDPR}px "IBM Plex Mono", monospace`;
+
+            ctx.fillStyle = CRT_GREEN;
+            ctx.font = `${8 * useDPR}px ${FONT}`;
             ctx.textAlign = "center";
-            ctx.fillText(cur.depth > 0 ? "on a branch" : (fo.cyclic ? "cycle" : "chain"),
-                         cx, cy + r + 13 * useDPR);
+            ctx.fillText(cur.depth > 0 ? "DETOUR // SPUR" : (fo.cyclic ? "LOOP_SYS" : "REL_TRACK"),
+                         cx, cy + r + 15 * useDPR);
         }
 
         function draw(idx, frac = 0) {
             const ctx = canvas.getContext("2d");
             const W = canvas.width, H = canvas.height;
             ctx.clearRect(0, 0, W, H);
-            const mono = s => `${s * useDPR}px "IBM Plex Mono", monospace`;
+            const mono = (s, w = 400) => `${w} ${s * useDPR}px ${FONT}`;
+
             const cur = frames[idx];
             if (!cur) return;
 
+            // Terminal Header Banner
             ctx.textAlign = "left";
-            ctx.fillStyle = accent;
-            ctx.font = `600 ${13 * useDPR}px "IBM Plex Mono", monospace`;
-            ctx.fillText(fo.name, 20 * useDPR, 28 * useDPR);
-            // Conditions, with the DECIDING one in the route's colour --
-            // so "Oxygen: present" is visibly the same thing as the
-            // purple branch below it, rather than two facts the viewer
-            // has to connect for themselves.
+            ctx.fillStyle = CRT_AMBER;
+            ctx.font = mono(12, 700);
+            ctx.fillText(`WY-TERM // ${(fo.name ?? "TRACK").toUpperCase()}`, 18 * useDPR, 26 * useDPR);
+
             if (fo.conditions) {
-                ctx.font = `${10 * useDPR}px "IBM Plex Mono", monospace`;
-                let cx2 = 20 * useDPR;
-                const entries = Object.entries(fo.conditions);
-                entries.forEach(([k, v], i) => {
+                ctx.font = mono(9);
+                let cx2 = 18 * useDPR;
+                Object.entries(fo.conditions).forEach(([k, v]) => {
                     const spec  = fo.declaredConditions?.[k] ?? {};
                     const shown = spec.display?.[String(v)] ?? v;
-                    const txt   = `${spec.label ?? k}: ${shown}`;
-                    const decides = takenWhen.includes(k);
-                    ctx.fillStyle = decides ? FORK_BRIGHT : "#78828e";
-                    ctx.fillText(txt, cx2, 44 * useDPR);
-                    cx2 += ctx.measureText(txt).width;
-                    if (i < entries.length - 1) {
-                        ctx.fillStyle = "#4a5260";
-                        ctx.fillText("  \u00b7  ", cx2, 44 * useDPR);
-                        cx2 += ctx.measureText("  \u00b7  ").width;
-                    }
+                    const txt   = `${(spec.label ?? k).toUpperCase()}:${String(shown).toUpperCase()}  `;
+                    ctx.fillStyle = CRT_GREEN;
+                    ctx.fillText(txt, cx2, 42 * useDPR);
+                    cx2 += ctx.measureText(txt).width + 8 * useDPR;
                 });
             }
 
             drawHud(ctx, W, H, idx);
 
-            // Five slots down the middle. The current one is bigger and
-            // fully opaque; distance from centre fades the rest, so the
-            // eye lands on the middle without being told.
             const cy = H * 0.54;
             const gap = Math.min(H * 0.135, 62 * useDPR);
-            const onSpur = cur.depth > 0;
-
-            // drawHud leaves textAlign as "center"; without resetting it
-            // every slot label is centred on its x and spills off the
-            // left edge of the card.
-            ctx.textAlign = "left";
-            // HOLD, THEN GLIDE. A constant crawl never lets a reaction
-            // sit still long enough to read; jumping loses the sense of
-            // travelling along a chain. So 62% of each step is held in
-            // place and the remainder glides to the next, smoothstepped
-            // so it starts and stops softly.
             const raw = Math.max(0, (frac - 0.62) / 0.38);
             const slide = raw * raw * (3 - 2 * raw);
 
-            // -3..3 rather than -2..2: the incoming and outgoing slots
-            // must exist before and after they are visible, or they pop
-            // into being at the edge of the card.
             for (let k = -3; k <= 3; k++) {
                 const f = at(idx + k);
                 if (!f) continue;
@@ -285,119 +215,56 @@ registerRenderingAlgorithm("pathway_nav_view", {
                 const y = cy + off * gap;
                 const dist = Math.abs(off);
                 if (dist > 2.6) continue;
+
                 const isCur = dist < 0.5;
-                // PAST vs FUTURE, not just near vs far. Opacity alone
-                // made the two sides of the window symmetrical, so there
-                // was no way to tell what had already happened from what
-                // was coming -- which is most of what a navigator is for.
                 const past = off < -0.5;
-                // A JUNCTION is where the conditions decided the route.
-                // The divergence was invisible: swapping oxygen changed
-                // the last reaction and nothing announced that a choice
-                // had been made at all.
                 const atFork = junctionIds.has(f.from);
-                // Everything at or after the fork wears the route colour.
                 const onRoute = forkFrame !== -1 && (idx + k) >= forkFrame;
-                // Continuous fade, so a slot dims as it travels rather
-                // than switching brightness at a boundary.
-                const alpha = Math.max(0, Math.min(1, 1 - dist * 0.42));
-                const PAST_COL = "#2f6b3f";     // travelled: muted, still green
-                const NEXT_COL = "#6b7480";     // upcoming: neutral grey
+                const alpha = Math.max(0.12, Math.min(1, 1 - dist * 0.42));
+
                 const col = f.depth > 0 ? SPUR
                           : onRoute     ? FORK
-                          : isCur       ? accent
-                          : past        ? PAST_COL
-                                        : NEXT_COL;
+                          : isCur       ? CRT_AMBER
+                          : past        ? "rgba(87, 227, 137, 0.4)"
+                                        : "rgba(255, 255, 255, 0.25)";
 
                 ctx.globalAlpha = alpha;
+                const x = 24 * useDPR + (f.depth > 0 ? 18 * useDPR : 0);
 
-                // A spur sits indented, so the trunk stays readable as the
-                // thing being departed from and returned to.
-                const x = 26 * useDPR + (f.depth > 0 ? 22 * useDPR : 0);
-
+                // Industrial Reticle Points
                 ctx.strokeStyle = col;
-                ctx.lineWidth = (isCur ? 2.4 : 1.2) * useDPR;
-                ctx.beginPath();
-                ctx.arc(x, y, (isCur ? 7 : 4) * useDPR, 0, Math.PI * 2);
-                ctx.stroke();
+                ctx.lineWidth = (isCur ? 2.2 : 1.2) * useDPR;
+                ctx.strokeRect(x - (isCur ? 6 : 4) * useDPR, y - (isCur ? 6 : 4) * useDPR,
+                               (isCur ? 12 : 8) * useDPR, (isCur ? 12 : 8) * useDPR);
+
                 if (isCur) {
-                    ctx.fillStyle = (onRoute ? FORK_BRIGHT : col) + "44";
-                    ctx.fill();
+                    ctx.fillStyle = col;
+                    ctx.fillRect(x - 2 * useDPR, y - 2 * useDPR, 4 * useDPR, 4 * useDPR);
                 }
 
-                if (atFork) {
-                    ctx.strokeStyle = FORK;
-                    ctx.lineWidth = 1.4 * useDPR;
-                    ctx.beginPath();
-                    ctx.arc(x, y, (isCur ? 12 : 8) * useDPR, 0, Math.PI * 2);
-                    ctx.stroke();
-                    if (isCur) {
-                        ctx.fillStyle = FORK;
-                        ctx.font = `600 ${9 * useDPR}px "IBM Plex Mono", monospace`;
-                        ctx.fillText("the routes part here",
-                                     x + 20 * useDPR, y - 14 * useDPR);
-                    }
-                }
-
-                // connector to the next slot
+                // Connector Trace
                 if (k < 3 && at(idx + k + 1)) {
-                    const top = y + 9 * useDPR;
-                    const bot = y + gap - 9 * useDPR;
-                    // The edge LEAVING the current step grows as the step
-                    // progresses, so the connection is made rather than
-                    // presented. Every other connector is already
-                    // complete or not yet reached.
-                    //
-                    // At the very start this means the first edge is
-                    // blank: nothing has happened yet, and drawing it
-                    // pre-activated implied a step that had not run.
-                    const grow = isCur ? Math.min(1, Math.max(0, slide / 0.999))
-                               : (off < 0 ? 1 : 0);
-
-                    // TRACK, then FILL. The edge ahead stays visible as a
-                    // faint rail so the shape of what is coming is never
-                    // lost -- an edge that appears from nothing reads as
-                    // the pathway being built rather than travelled.
-                    // Only the LIT portion says where we have got to.
-                    const prevStroke = ctx.strokeStyle;
-                    const prevWidth  = ctx.lineWidth;
-                    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+                    const top = y + 7 * useDPR;
+                    const bot = y + gap - 7 * useDPR;
+                    ctx.strokeStyle = "rgba(87, 227, 137, 0.15)";
                     ctx.lineWidth = 1.2 * useDPR;
-                    ctx.beginPath();
-                    ctx.moveTo(x, top); ctx.lineTo(x, bot);
-                    ctx.stroke();
-                    ctx.strokeStyle = prevStroke;
-                    ctx.lineWidth = prevWidth;
+                    ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bot); ctx.stroke();
 
+                    const grow = isCur ? Math.min(1, Math.max(0, slide / 0.999)) : (off < 0 ? 1 : 0);
                     if (grow > 0) {
-                        ctx.beginPath();
-                        ctx.moveTo(x, top);
-                        ctx.lineTo(x, top + (bot - top) * grow);
-                        ctx.stroke();
+                        ctx.strokeStyle = col;
+                        ctx.lineWidth = 2 * useDPR;
+                        ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, top + (bot - top) * grow); ctx.stroke();
                     }
                 }
 
-                // EMPHASIS: which of the three facts about a step gets
-                // the big line. The enzyme is the default because it
-                // names the step, but someone following the carbon wants
-                // the substrates, and someone counting ATP wants the
-                // cofactors. Same data, reordered -- not a different view.
-                const V = fo.vocabulary ?? {};
-                const endsAtFor = st => {
-                    if (!st) return "";
-                    const prods = Object.keys(st.products ?? {})
-                        .filter(p => !fo.species?.[p]?.boundary);
-                    return (prods.length ? prods : Object.keys(st.products ?? {}))
-                        .map(spName).join(" + ");
-                };
                 const facts = {
-                    edge: f.step?.name ?? f.reaction,
-                    node: `${spName(f.from)}  \u2192  ${f.to ? spName(f.to)
-                                                              : endsAtFor(f.step)}`,
+                    edge: (f.step?.name ?? f.reaction).toUpperCase(),
+                    node: `${spName(f.from)} -> ${spName(f.to)}`,
                     side: [
-                        ...(f.step?.cofactorsIn  ?? []).map(cc => `-${cc.name}`),
-                        ...(f.step?.cofactorsOut ?? []).map(cc => `+${cc.name}`),
-                    ].join("  ") || "\u2014",
+                        ...(f.step?.cofactorsIn  ?? []).map(cc => `-${cc.name.toUpperCase()}`),
+                        ...(f.step?.cofactorsOut ?? []).map(cc => `+${cc.name.toUpperCase()}`),
+                    ].join(" ") || "NONE",
                 };
                 const order = ({
                     enzyme:    ["edge", "node", "side"],
@@ -405,149 +272,66 @@ registerRenderingAlgorithm("pathway_nav_view", {
                     cofactor:  ["side", "edge", "node"],
                 })[config.emphasis ?? "enzyme"] ?? ["edge", "node", "side"];
 
-                ctx.fillStyle = isCur ? (onRoute ? FORK_BRIGHT : "#e8f4f8")
-                                      : "#8b939f";
-                ctx.font = `${isCur ? 600 : 400} ${(isCur ? 15 : 12) * useDPR}px `
-                         + `"IBM Plex Mono", monospace`;
-                ctx.fillText(facts[order[0]], x + 20 * useDPR,
-                             y + (isCur ? 5 : 4) * useDPR);
+                // Data Callouts
+                ctx.fillStyle = isCur ? "#ffffff" : "rgba(255, 255, 255, 0.4)";
+                ctx.font = mono(isCur ? 12 : 10, isCur ? 700 : 400);
+                ctx.textAlign = "left";
+                ctx.fillText(facts[order[0]], x + 18 * useDPR, y + (isCur ? 4 : 3) * useDPR);
 
                 if (isCur) {
-                    ctx.fillStyle = "#78828e";
-                    ctx.font = mono(10);
-                    ctx.fillText(facts[order[1]], x + 20 * useDPR, y + 22 * useDPR);
+                    ctx.fillStyle = CRT_GREEN;
+                    ctx.font = mono(9);
+                    ctx.fillText(`>> ${facts[order[1]]}`, x + 18 * useDPR, y + 19 * useDPR);
 
-                    // What this reaction SPENDS and MAKES. ATP and NADH
-                    // are boundary species so the walk skips them --
-                    // correct for pathfinding, but it meant the
-                    // accounting that IS the lesson never appeared.
-                    const spent = (f.step?.cofactorsIn ?? [])
-                        .map(c => `-${c.q > 1 ? c.q + " " : ""}${c.name}`);
-                    const made  = (f.step?.cofactorsOut ?? [])
-                        .map(c => `+${c.q > 1 ? c.q + " " : ""}${c.name}`);
-                    // REGULATION. Drawn, not simulated: nothing here
-                    // computes whether ATP is currently high, so the
-                    // symbols say "this step is controlled by these"
-                    // rather than claiming a state. Honest, and it makes
-                    // the single most important fact about
-                    // phosphofructokinase visible at all -- that it is
-                    // the regulated step, which the reaction arrows alone
-                    // can never show.
-                    //
-                    //   ⊣  inhibitor, the standard bar-ended notation
-                    //   ⊢  activator
-                    const mods = f.step?.modifiers ?? [];
-                    if (mods.length) {
-                        ctx.font = `${9 * useDPR}px "IBM Plex Mono", monospace`;
-                        let mx = x + 20 * useDPR;
-                        for (const m of mods) {
-                            const inhib = m.role === "inhibitor";
-                            const name = fo.species?.[m.species]?.name ?? m.species;
-                            const txt = `${inhib ? "\u22a3" : "\u22a2"} ${name}`;
-                            ctx.fillStyle = inhib ? "#e0654a" : "#5cc24a";
-                            ctx.fillText(txt, mx, y + 52 * useDPR);
-                            mx += ctx.measureText(txt).width + 12 * useDPR;
-                        }
-                        ctx.fillStyle = "#5c6470";
-                        ctx.fillText("regulated", mx + 2 * useDPR, y + 52 * useDPR);
+                    // Cofactors / Modifiers
+                    const spent = (f.step?.cofactorsIn ?? []).map(c => `-${c.name.toUpperCase()}`);
+                    const made  = (f.step?.cofactorsOut ?? []).map(c => `+${c.name.toUpperCase()}`);
+                    if (spent.length || made.length) {
+                        ctx.font = mono(8);
+                        ctx.fillStyle = CRT_WARN;
+                        ctx.fillText(spent.join(" "), x + 18 * useDPR, y + 33 * useDPR);
+                        const w = ctx.measureText(spent.join(" ")).width;
+                        ctx.fillStyle = CRT_GREEN;
+                        ctx.fillText(made.join(" "), x + 24 * useDPR + w, y + 33 * useDPR);
                     }
 
-                    // Skip the detail line when the emphasis has already
-                    // promoted cofactors to one of the top two slots --
-                    // otherwise they print twice on the same step.
-                    const sideShown = order[0] === "side" || order[1] === "side";
-                    if (!sideShown && (spent.length || made.length)) {
-                        const n = f.step?.runs ?? 1;
-                        ctx.font = `${9 * useDPR}px "IBM Plex Mono", monospace`;
-                        ctx.fillStyle = "#e0654a";
-                        ctx.fillText(spent.join("  "), x + 20 * useDPR, y + 37 * useDPR);
-                        const w = ctx.measureText(spent.join("  ")).width;
-                        ctx.fillStyle = "#5cc24a";
-                        ctx.fillText(made.join("  "),
-                                     x + 28 * useDPR + w, y + 37 * useDPR);
-                        if (n > 1) {
-                            ctx.fillStyle = "#5c6470";
-                            ctx.fillText(`  \u00d7${n}`,
-                                x + 34 * useDPR + w
-                                  + ctx.measureText(made.join("  ")).width,
-                                y + 37 * useDPR);
+                    const mods = f.step?.modifiers ?? [];
+                    if (mods.length) {
+                        ctx.font = mono(8, 700);
+                        let mx = x + 18 * useDPR;
+                        for (const m of mods) {
+                            const inhib = m.role === "inhibitor";
+                            const txt = `[${inhib ? "INHIB" : "ACT"}:${m.species.toUpperCase()}]`;
+                            ctx.fillStyle = inhib ? CRT_WARN : CRT_CYAN;
+                            ctx.fillText(txt, mx, y + 46 * useDPR);
+                            mx += ctx.measureText(txt).width + 8 * useDPR;
                         }
                     }
                 }
                 ctx.globalAlpha = 1;
             }
 
-            const j = (fo.junctions ?? []).find(x => x.species === cur.from);
-            if (j) {
-                // Name the roads NOT taken, with the condition that
-                // would have taken them -- "oxygen == 0 -> Lactate
-                // dehydrogenase" says why, not just what.
-                const active = new Set((fo.steps ?? []).map(s => s.id));
-                const other = (j.options ?? [])
-                    .filter(o => !active.has(o.id))
-                    .map(o => `${o.when} \u2192 ${o.name}`);
-                // One per line, and at most two. Joining them ran off the
-                // card as soon as a junction had more than one
-                // alternative -- glycolysis has two, so it overflowed
-                // immediately.
-                ctx.fillStyle = SPUR;
-                ctx.font = `${9 * useDPR}px "IBM Plex Mono", monospace`;
-                ctx.textAlign = "left";
-                // Truncate to the space LEFT of the ledger, which now
-                // occupies the bottom-right. Without this the condition
-                // text runs straight through the ATP figures.
-                const room = W * 0.62;
-                other.slice(0, 2).forEach((line, i) => {
-                    let s = `\u2942 ${line}`;
-                    if (ctx.measureText(s).width > room) {
-                        while (s.length > 6 && ctx.measureText(s + "\u2026").width > room) {
-                            s = s.slice(0, -1);
-                        }
-                        s += "\u2026";
-                    }
-                    ctx.fillText(s, 20 * useDPR, H - (54 - i * 12) * useDPR);
-                });
-                if (other.length > 2) {
-                    ctx.fillText(`\u2942 +${other.length - 2} more`,
-                                 20 * useDPR, H - 30 * useDPR);
-                }
-            }
-
-            if (onSpur) {
-                ctx.fillStyle = SPUR;
-                ctx.font = `600 ${10 * useDPR}px "IBM Plex Mono", monospace`;
-                ctx.textAlign = "left";
-                ctx.fillText("\u21b3 side branch \u2014 rejoins the main path",
-                             20 * useDPR, H - 26 * useDPR);
-            }
-
-            // The ledger for the WHOLE walk. "+/-" marks a cofactor that
-            // is spent and remade in equal measure -- net zero, which in
-            // fermentation is not nothing happening but the entire reason
-            // the step exists.
-            const led = (fo.cofactors ?? []).slice(0, 4);
+            // Ledger / Bottom Console
+            const led = (fo.cofactors ?? []).slice(0, 3);
             if (led.length) {
                 ctx.textAlign = "right";
-                ctx.font = mono(9);
-                let ly = H - 58 * useDPR;
-                ctx.fillStyle = "#5c6470";
-                ctx.fillText(`${fo.vocabulary?.per ?? "per"} `
-                             + (fo.start ? spName(fo.start) : "turn"),
-                             W - 18 * useDPR, ly);
+                ctx.font = mono(8);
+                let ly = H - 54 * useDPR;
+                ctx.fillStyle = "#5c6d5c";
+                ctx.fillText(`-- AUX LEDGER --`, W - 18 * useDPR, ly);
                 for (const cf of led) {
-                    ly += 12 * useDPR;
-                    ctx.fillStyle = cf.balanced ? "#5c6470"
-                                  : cf.net > 0 ? "#5cc24a" : "#e0654a";
-                    const val = cf.balanced ? `\u00b1${cf.moved / 2}`
-                              : `${cf.net > 0 ? "+" : ""}${cf.net}`;
-                    ctx.fillText(`${cf.name} ${val}`, W - 18 * useDPR, ly);
+                    ly += 11 * useDPR;
+                    ctx.fillStyle = cf.net > 0 ? CRT_GREEN : cf.net < 0 ? CRT_WARN : "#8b9f8b";
+                    ctx.fillText(`${cf.name.toUpperCase()}: ${cf.net > 0 ? "+" : ""}${cf.net}`, W - 18 * useDPR, ly);
                 }
             }
 
             ctx.textAlign = "center";
-            ctx.fillStyle = "#4a5260";
-            ctx.font = mono(9);
-            ctx.fillText(`${idx + 1} / ${frames.length}`, W / 2, H - 10 * useDPR);
+            ctx.fillStyle = CRT_GREEN;
+            ctx.font = mono(8);
+            ctx.fillText(`FRAME [${String(idx + 1).padStart(2, '0')}/${String(frames.length).padStart(2, '0')}] // W-Y BIOS VER 4.22`, W / 2, H - 12 * useDPR);
+
+            if (ROMULUS) drawCRTOverlays(ctx, W, H);
         }
 
         draw(0, 0);
