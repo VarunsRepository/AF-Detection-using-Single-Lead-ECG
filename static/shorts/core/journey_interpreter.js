@@ -904,6 +904,86 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         el.classList.add("show");
     }
 
+
+    // ── MANUAL SCRUB ────────────────────────────────────────────────────
+    // Drag HORIZONTALLY across the card to move through the stage, and
+    // it resumes where you let go.
+    //
+    // Horizontal, not vertical: vertical belongs to the feed, and a
+    // scrub that sometimes steals a swipe to the next short would make
+    // the whole feed feel unreliable. Horizontal always means the same
+    // thing, on a ring, a chain or a sweep -- the scrub bar is its own
+    // control, not a map of the layout.
+    //
+    // The auto-sweep and the scrub never fight, because both write to
+    // ONE number: the loop advances elapsed each frame, the drag sets it.
+    let scrub = null;
+    let suppressClickUntil = 0;
+
+    function scrubStart(e) {
+        const ctl = activeSweepControl.get(sampleId);
+        if (!ctl) return;
+        scrub = {
+            x: e.clientX, y: e.clientY,
+            from: ctl.lastElapsedMs ?? 0,
+            total: ctl.totalDurationMs,
+            wasPaused: isPaused,
+            moved: false,
+            at: ctl.lastElapsedMs ?? 0,
+        };
+    }
+
+    function scrubMove(e) {
+        if (!scrub) return;
+        const dx = e.clientX - scrub.x;
+        const dy = e.clientY - scrub.y;
+
+        if (!scrub.moved) {
+            // Commit only once the gesture is clearly sideways: a 12px
+            // threshold keeps a tap a tap, and requiring |dx| > |dy|
+            // leaves a diagonal swipe to the feed rather than grabbing it.
+            if (Math.abs(dx) < 12 || Math.abs(dx) <= Math.abs(dy)) return;
+            scrub.moved = true;
+            cancelSweepAnimation(sampleId);
+            chartContainer.setPointerCapture?.(e.pointerId);
+        }
+
+        // The card's width is one whole stage, so the gesture scales with
+        // however long that stage happens to be.
+        const width = chartContainer.clientWidth || 360;
+        scrub.at = Math.max(0, Math.min(scrub.total,
+                            scrub.from + (dx / width) * scrub.total));
+        activeSweepControl.get(sampleId)?.drawFn(scrub.at);
+    }
+
+    function scrubEnd() {
+        if (!scrub) return;
+        const s = scrub;
+        scrub = null;
+        if (!s.moved) return;                 // a tap: leave it to the tap handler
+
+        // Resume from where the finger left it -- unless the card was
+        // already paused, in which case scrubbing should not start it.
+        if (!s.wasPaused) {
+            const ctl = activeSweepControl.get(sampleId);
+            if (ctl) startSweepLoop(sampleId, ctl.totalDurationMs, ctl.drawFn, s.at);
+        }
+        // A drag ends in a click event too; without this every scrub
+        // would also toggle pause.
+        suppressClickUntil = performance.now() + 350;
+    }
+
+    chartContainer.addEventListener("pointerdown", scrubStart);
+    chartContainer.addEventListener("pointermove", scrubMove);
+    chartContainer.addEventListener("pointerup", scrubEnd);
+    chartContainer.addEventListener("pointercancel", scrubEnd);
+    chartContainer.addEventListener("click", e => {
+        if (performance.now() < suppressClickUntil) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+    }, true);
+
     function togglePause() {
         isPaused = !isPaused;
         flashPlayback(isPaused);
