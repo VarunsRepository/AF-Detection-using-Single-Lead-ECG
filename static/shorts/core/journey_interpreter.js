@@ -761,6 +761,16 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 // from the beginning of the stage -- honest and
                 // predictable, where resuming mid-sweep at a new speed
                 // would need the sweep loop to rescale its own clock.
+                // Canvas renderers read the theme when they DRAW, so a
+                // theme change is invisible until something redraws.
+                // Updating themeIndex and the CSS variables is enough for
+                // DOM-styled parts and nothing else -- which is why a
+                // skinned renderer appeared stuck on whichever theme
+                // happened to be active when the card was built.
+                if (control.action.method === "cycleTheme") {
+                    runAndRender(index);
+                }
+
                 if (control.action.method === "cycleSpeed") {
                     actualDuration = (stageJson.baseDurationMs || STAGE_DURATION_MS)
                                    / journeyTarget.getSpeed();
