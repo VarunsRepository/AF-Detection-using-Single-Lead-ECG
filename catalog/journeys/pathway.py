@@ -71,7 +71,7 @@ def _stage(stage_id, params, title, caption, description, ms):
 
 
 journey_store.register_journey("pathway", {
-    "version": 8,   # v8: readable stage titles
+    "version": 11,  # v11: templated overlay copy
     "label": "Round And Round",
     "description": "A metabolic pathway assembled from its own data",
     "status": "stable",
@@ -97,8 +97,13 @@ journey_store.register_journey("pathway", {
                # implementation detail -- true, and meaningless on a card.
                # The point it was making now lives in the description,
                # where an interested reader will find it.
-               "Follow The Carbon",
-               "Every step, in the order it happens",
+               # Templated from the sample, so the compiler pipeline and
+               # the mood model get their own names rather than a
+               # biochemistry slogan. The caption is the HOOK -- the
+               # render already shows the name, so repeating it in the
+               # overlay would waste the only line a viewer reads.
+               "{pathway.name}",
+               "Nothing here is stored in order \u2014 watch it work it out",
                "The data holds two flat lists -- species and reactions -- "
                "and nothing says which comes first. The order you are "
                "watching was worked out from shared names: one reaction's "
@@ -109,7 +114,7 @@ journey_store.register_journey("pathway", {
 
         _stage("pathway_blocked", {"blocked": "auto"},
                "Break One Step",
-               "And everything after it stops",
+               "{note}",
                "Each pathway names its own regulated step -- succinate "
                "dehydrogenase in the TCA cycle, phosphofructokinase in "
                "glycolysis -- and this stage blocks it. No special "
