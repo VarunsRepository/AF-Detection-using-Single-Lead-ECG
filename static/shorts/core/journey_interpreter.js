@@ -559,9 +559,23 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             titleEl.closest(".layout-zone")?.classList.remove("text-expanded");
         }
 
-        if (titleEl) titleEl.textContent = stageJson.uiFillers.title;
-        if (captionEl) captionEl.textContent = stageJson.uiFillers.caption;
-        if (descriptionEl) descriptionEl.textContent = stageJson.uiFillers.description || "";
+        // ── TEMPLATED COPY ─────────────────────────────────────────────
+        // {pathway.name} and friends are filled from the envelope, so one
+        // recipe can serve fifteen samples without claiming the same
+        // thing about all of them. A static "Follow The Carbon" is wrong
+        // on a compiler pipeline and worse on a clinical model.
+        //
+        // Unresolved tokens are left as-is rather than blanked: a visible
+        // {typo} on the card is far easier to notice than a sentence
+        // that silently lost half its meaning.
+        const fill = (s) => String(s ?? "").replace(/\{([\w.]+)\}/g, (whole, path) => {
+            const v = path.split(".").reduce((o, k) => o?.[k], lastEnvelope?.meta);
+            return v === undefined || v === null ? whole : String(v);
+        });
+
+        if (titleEl) titleEl.textContent = fill(stageJson.uiFillers.title);
+        if (captionEl) captionEl.textContent = fill(stageJson.uiFillers.caption);
+        if (descriptionEl) descriptionEl.textContent = fill(stageJson.uiFillers.description || "");
         updateProgressBar(index, actualDuration);
 
         // Wrapped so it can be RE-RUN. Switching the renderer changes
