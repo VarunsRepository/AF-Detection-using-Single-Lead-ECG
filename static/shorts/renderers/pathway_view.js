@@ -48,29 +48,17 @@ registerRenderingAlgorithm("pathway_view", {
             if (_ctl) _ctl.drawFn(_ctl.lastElapsedMs);
         }).observe(container);
 
-        // ── SKIN ────────────────────────────────────────────────────────
-        // The Theme button cycles THEMES; this renderer reads the active
-        // one and dresses itself accordingly. Romulus gets the amber
-        // phosphor palette, Courier, scanlines and a vignette; every
-        // other theme gets its own trace colour and none of the CRT
-        // treatment.
-        //
-        // Skinning rather than a second renderer keeps ONE implementation
-        // of the walk: a Romulus copy would drift from the original the
-        // first time either was fixed.
         const _theme   = (typeof THEMES !== "undefined" && THEMES[themeIndex]) || {};
         const ROMULUS  = _theme.label === "Romulus";
         const _accent  = _theme.traceColor || "#5cc24a";
         const FONT     = ROMULUS ? '"Courier New", monospace'
                                  : '"IBM Plex Mono", monospace';
 
-
-        // Romulus Phosphor Avionics Palette
-        const CRT_AMBER    = ROMULUS ? "#ff9900" : _accent; // Primary Weyland Amber Phosphor
-        const CRT_GREEN    = ROMULUS ? "#57e389" : "#9aa4b0"; // Sub-system Green Phosphor
-        const CRT_CYAN     = ROMULUS ? "#2de2e6" : "#3b82f6"; // Nav telemetry
-        const CRT_WARN     = ROMULUS ? "#ff3b30" : "#e74c3c"; // Hull Breach / Failure
-        const CRT_MUTED    = ROMULUS ? "#3d4b3d" : "#4a5260"; // Dim cathode background
+        const CRT_AMBER    = ROMULUS ? "#ff9900" : _accent;
+        const CRT_GREEN    = ROMULUS ? "#57e389" : "#9aa4b0";
+        const CRT_CYAN     = ROMULUS ? "#2de2e6" : "#3b82f6";
+        const CRT_WARN     = ROMULUS ? "#ff3b30" : "#e74c3c";
+        const CRT_MUTED    = ROMULUS ? "#3d4b3d" : "#4a5260";
         const CRT_GRID     = "rgba(87, 227, 137, 0.05)";
 
         const ROUTE_COLS   = ["#ff9900", "#2de2e6", "#e0e722", "#ff5376"];
@@ -100,19 +88,16 @@ registerRenderingAlgorithm("pathway_view", {
         const stepMs = safeDuration / steps.length;
 
         function drawCRTOverlays(ctx, W, H) {
-            // Horizontal scanlines
             ctx.fillStyle = "rgba(0, 0, 0, 0.22)";
             for (let y = 0; y < H; y += 3 * useDPR) {
                 ctx.fillRect(0, y, W, 1.2 * useDPR);
             }
 
-            // CRT Corner Brackets & Graticules
             const pad = 12 * useDPR;
             const arm = 14 * useDPR;
             ctx.strokeStyle = "rgba(87, 227, 137, 0.35)";
             ctx.lineWidth = 1.2 * useDPR;
 
-            // TL, TR, BL, BR
             [[pad, pad, 1, 1], [W - pad, pad, -1, 1], [pad, H - pad, 1, -1], [W - pad, H - pad, -1, -1]]
                 .forEach(([x, y, dx, dy]) => {
                     ctx.beginPath();
@@ -122,7 +107,6 @@ registerRenderingAlgorithm("pathway_view", {
                     ctx.stroke();
                 });
 
-            // Outer Screen Vignette
             const vig = ctx.createRadialGradient(W / 2, H / 2, W * 0.35, W / 2, H / 2, W * 0.7);
             vig.addColorStop(0, "rgba(0,0,0,0)");
             vig.addColorStop(1, "rgba(0,10,2,0.65)");
@@ -135,7 +119,6 @@ registerRenderingAlgorithm("pathway_view", {
             const W = canvas.width, H = canvas.height;
             ctx.clearRect(0, 0, W, H);
 
-            // Subtle dark grid background
             ctx.strokeStyle = CRT_GRID;
             ctx.lineWidth = 1 * useDPR;
             const gridSize = 24 * useDPR;
@@ -179,23 +162,27 @@ registerRenderingAlgorithm("pathway_view", {
                 ctx.fillText(`VEC: ${fo.conditionSummary.toUpperCase()}`, W / 2, 65 * useDPR);
             }
 
-            const cx = W / 2, cy = H * 0.53;
-            const R  = Math.min(W, H) * 0.28;
+            // ── POSITION CALCULATION (Shifted lower to prevent header collision) ──
+            const cx = W / 2, cy = H * 0.55;
+            const R  = Math.min(W, H) * 0.26;
 
             const pos = i => {
                 if (fo.cyclic) {
                     const a = (i / steps.length) * Math.PI * 2 - Math.PI / 2;
                     return [cx + Math.cos(a) * R, cy + Math.sin(a) * R];
                 }
+                // Vertical layout shifted down (starts at 24% height rather than 18%)
                 if (steps.length > 5) {
-                    const top = H * 0.18, bot = H * 0.82;
+                    const top = H * 0.24, bot = H * 0.86;
                     return [W * 0.52, top + (i / Math.max(1, steps.length - 1)) * (bot - top)];
                 }
+                // Horizontal layout shifted down
                 const span = W - 80 * useDPR;
-                return [40 * useDPR + (i / Math.max(1, steps.length - 1)) * span, cy];
+                const cyHorizontal = H * 0.58;
+                return [40 * useDPR + (i / Math.max(1, steps.length - 1)) * span, cyHorizontal];
             };
 
-            // ARCS
+// ARCS
             steps.forEach((s, i) => {
                 const [x0, y0] = pos(i);
                 const [x1, y1] = pos((i + 1) % steps.length);
@@ -203,21 +190,34 @@ registerRenderingAlgorithm("pathway_view", {
 
                 const state = s.blocked ? "blocked" : s.fired ? "fired" : "starved";
                 const active = i === idx;
+                const past = i < idx;
                 const onRoute = FORK.at !== -1 && i >= FORK.at;
                 const liveCol = onRoute ? FORK.col : CRT_AMBER;
 
-                // Static Track
-                ctx.strokeStyle = state === "fired"
-                    ? (i <= idx ? "rgba(87, 227, 137, 0.25)" : "rgba(255, 255, 255, 0.08)")
-                    : CRT_WARN;
-                ctx.lineWidth = 1.8 * useDPR;
-                ctx.setLineDash([4 * useDPR, 2 * useDPR]);
+                // 1. BASE TRACK / TRAVERSED PATH
+                if (state !== "fired") {
+                    // Starved or blocked interlock
+                    ctx.strokeStyle = CRT_WARN;
+                    ctx.lineWidth = 1.8 * useDPR;
+                    ctx.setLineDash([4 * useDPR, 2 * useDPR]);
+                } else if (past) {
+                    // TRAVERSED: Solid, fully powered trace (illuminated)
+                    ctx.strokeStyle = onRoute ? FORK.col : (ROMULUS ? CRT_GREEN : _accent);
+                    ctx.lineWidth = 2.2 * useDPR;
+                    ctx.setLineDash([]); // No dashes: stays solidly locked in
+                } else {
+                    // UPCOMING: Faint dashed inactive rail
+                    ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+                    ctx.lineWidth = 1.6 * useDPR;
+                    ctx.setLineDash([4 * useDPR, 2 * useDPR]);
+                }
+
                 ctx.beginPath();
                 ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
                 ctx.stroke();
-                ctx.setLineDash([]);
+                ctx.setLineDash([]); // Reset dash state
 
-                // Progressive Active Beam
+                // 2. ACTIVE PROGRESSIVE BEAM (Bright leading current)
                 if (active) {
                     const p = Math.min(1, Math.max(0, frac));
                     const e = p * p * (3 - 2 * p);
@@ -225,18 +225,18 @@ registerRenderingAlgorithm("pathway_view", {
                     const yt = y0 + (y1 - y0) * e;
 
                     ctx.strokeStyle = liveCol;
-                    ctx.lineWidth = 3.5 * useDPR;
+                    ctx.lineWidth = 3.8 * useDPR;
                     ctx.shadowColor = liveCol;
-                    ctx.shadowBlur = 8 * useDPR;
+                    ctx.shadowBlur = 9 * useDPR;
                     ctx.beginPath();
                     ctx.moveTo(x0, y0); ctx.lineTo(xt, yt);
                     ctx.stroke();
-                    ctx.shadowBlur = 0; // reset
+                    ctx.shadowBlur = 0;
 
-                    // Beam Particle Head
+                    // Leading beam particle
                     ctx.fillStyle = "#ffffff";
                     ctx.beginPath();
-                    ctx.arc(xt, yt, 3 * useDPR, 0, Math.PI * 2);
+                    ctx.arc(xt, yt, 3.2 * useDPR, 0, Math.PI * 2);
                     ctx.fill();
 
                     // Active Reaction Badge
@@ -262,7 +262,7 @@ registerRenderingAlgorithm("pathway_view", {
                 }
             });
 
-            // NODES (Avionics Graticules)
+            // NODES
             nodes.forEach((n, i) => {
                 const [x, y] = pos(i);
                 const reached = i <= idx;
@@ -272,7 +272,6 @@ registerRenderingAlgorithm("pathway_view", {
                 ctx.strokeStyle = reached ? CRT_GREEN : CRT_MUTED;
                 ctx.lineWidth = 1.4 * useDPR;
 
-                // Boxy CRT reticle for current node
                 if (isCur) {
                     ctx.strokeStyle = CRT_AMBER;
                     ctx.strokeRect(x - r - 4 * useDPR, y - r - 4 * useDPR, (r + 4 * useDPR) * 2, (r + 4 * useDPR) * 2);
@@ -286,7 +285,6 @@ registerRenderingAlgorithm("pathway_view", {
                 ctx.fill();
                 ctx.stroke();
 
-                // Branch offshoot
                 if (FORK.at !== -1 && i === FORK.at && FORK.others.length) {
                     const sx = x + 16 * useDPR, sy = y - 20 * useDPR;
                     ctx.strokeStyle = "rgba(255, 83, 118, 0.4)";
@@ -301,7 +299,6 @@ registerRenderingAlgorithm("pathway_view", {
                     ctx.textAlign = "center";
                 }
 
-                // Labels
                 ctx.fillStyle = isCur ? "#ffffff" : reached ? "#9cb59c" : "#3b4d3b";
                 ctx.font = mono(isCur ? 10 : 9, isCur ? 700 : 400);
 

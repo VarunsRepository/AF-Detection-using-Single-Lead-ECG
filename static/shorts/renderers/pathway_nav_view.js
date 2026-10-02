@@ -43,7 +43,13 @@ registerRenderingAlgorithm("pathway_nav_view", {
         const tape = fo.tape ?? [];
         const moves = tape.filter(t => t.type === "move");
         if (!moves.length) {
-            container.innerHTML = `<p style="color:#ff8b1f;font-family:'Courier New',monospace;padding:20px;">[EMPTY_TAPE_BUFFER]</p>`;
+            // Say what went wrong. "[EMPTY_TAPE_BUFFER]" is accurate and
+            // tells an author nothing they can act on.
+            const why = fo.tapeNote ?? "no navigable steps in this model";
+            container.innerHTML =
+                `<p style="color:#ff8b1f;font-family:'Courier New',monospace;`
+              + `padding:20px;line-height:1.6;">[EMPTY_TAPE_BUFFER]<br>`
+              + `<span style="color:#9aa4b0;font-size:12px;">${why}</span></p>`;
             return;
         }
 
