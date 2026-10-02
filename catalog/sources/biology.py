@@ -1602,6 +1602,295 @@ _TCP_HANDSHAKE = {
     ],
 }
 
+_PHOTOSYNTHESIS_SIMPLE = {
+    "name": "Carbon Fixation Engines",
+    "start": "atmospheric_gas",
+    "defaultBlock": "rubisco_step",
+    "vocabulary": {
+        "node": "carbon stage",
+        "edge": "adaptation step",
+        "cycle": "calvin loop",
+        "chain": "gas pathway",
+        "side": "energy currency",
+        "per": "per sugar molecule",
+    },
+    "conditions": {
+        "adaptation": {
+            "label": "Plant Strategy",
+            "values": ["c3_normal", "c4_spatial", "cam_temporal", "c2_stress"],
+            "default": "c3_normal",
+            "display": {
+                "c3_normal": "C3: Direct Sun",
+                "c4_spatial": "C4: Space Separation",
+                "cam_temporal": "CAM: Night Shift",
+                "c2_stress": "C2: Heat Glitch",
+            },
+        },
+    },
+    "species": {
+        # Core progression states
+        "atmospheric_gas": {"name": "Ambient Carbon Gas"},
+        "pre_concentrate": {"name": "Concentrated Acid"},
+        "rubisco_stage":   {"name": "RuBisCO Gate"},
+        "sugar_product":   {"name": "Clean Sugar (Food)"},
+        "waste_glitch":    {"name": "Toxic Waste Byproduct"},
+
+        # Boundary energy cofactors
+        "atp":             {"name": "Light-Made ATP",   "boundary": True},
+        "nadph":           {"name": "Light-Made NADPH", "boundary": True},
+    },
+    "reactions": [
+        # --- PRE-PROCESSING FORKS ---
+        # C4 spatial route (corn, sugarcane)
+        {
+            "id": "c4_pump",
+            "name": "Mesophyll Cell Pump",
+            "when": "adaptation == 'c4_spatial'",
+            "note": "Pumps carbon into inner core",
+            "reactants": {"atmospheric_gas": 1, "atp": 1},
+            "products":  {"pre_concentrate": 1},
+        },
+        # CAM temporal route (cactus, pineapple)
+        {
+            "id": "cam_night",
+            "name": "Night Vacuum Trap",
+            "when": "adaptation == 'cam_temporal'",
+            "note": "Traps gas in cool night",
+            "reactants": {"atmospheric_gas": 1, "atp": 1},
+            "products":  {"pre_concentrate": 1},
+        },
+
+        # --- FEED TO RUBISCO ---
+        {
+            "id": "feed_rubisco",
+            "name": "RuBisCO Supercharge",
+            "when": "adaptation == 'c4_spatial' || adaptation == 'cam_temporal'",
+            "note": "Floods RuBisCO with pure carbon",
+            "reactants": {"pre_concentrate": 1},
+            "products":  {"rubisco_stage": 1},
+        },
+        # Direct baseline feed (C3 and C2 baseline)
+        {
+            "id": "direct_feed",
+            "name": "Standard Stomata Intake",
+            "when": "adaptation == 'c3_normal' || adaptation == 'c2_stress'",
+            "note": "Direct gas flow from leaf",
+            "reactants": {"atmospheric_gas": 1},
+            "products":  {"rubisco_stage": 1},
+        },
+
+        # --- THE RUBISCO FATE ---
+        # Desired sugar production
+        {
+            "id": "rubisco_step",
+            "name": "Calvin Cycle Fixation",
+            "when": "adaptation != 'c2_stress'",
+            "note": "Binds CO2 into pure sugar",
+            "reactants": {"rubisco_stage": 1, "atp": 2, "nadph": 2},
+            "products":  {"sugar_product": 1},
+        },
+        # C2 Photorespiration stress loop
+        {
+            "id": "c2_error",
+            "name": "Photorespiration Error",
+            "when": "adaptation == 'c2_stress'",
+            "note": "Accidentally binds hot oxygen",
+            "reactants": {"rubisco_stage": 1, "atp": 1},
+            "products":  {"waste_glitch": 1},
+        },
+    ],
+}
+
+_PHOTOSYNTHESIS_DETAILED = {
+    "name": "Carbon Fixation & Photorespiration",
+    "start": "leaf_gas_pool",
+    "defaultBlock": "rubisco_carboxylase",
+    "vocabulary": {
+        "node": "intermediate",
+        "edge": "enzyme / channel",
+        "cycle": "calvin cycle",
+        "chain": "fixation route",
+        "side": "energy / gas",
+        "per": "per triose-P produced",
+    },
+    "conditions": {
+        "regime": {
+            "label": "Pathway Strategy",
+            "values": ["c3_optimum", "c3_drought_stress", "c4_kranz", "cam_succulent"],
+            "default": "c3_optimum",
+            "display": {
+                "c3_optimum": "C3: Optimum (Ambient CO2)",
+                "c3_drought_stress": "C2: Drought Stress (Photorespiration)",
+                "c4_kranz": "C4: Spatial Pump (Kranz Anatomy)",
+                "cam_succulent": "CAM: Temporal Acid (Night Open)",
+            },
+        },
+    },
+    "species": {
+        # Core intermediates
+        "leaf_gas_pool":     {"name": "Sub-Stomatal Gas Space"},
+        "oxaloacetate":      {"name": "Oxaloacetate (4C)", "formula": "C4H4O5"},
+        "malate_stored":     {"name": "Malate Storage Pool", "formula": "C4H6O5"},
+        "bundle_sheath_co2": {"name": "Concentrated CO2 Zone"},
+        "rubp_acceptor":     {"name": "RuBP (5C Acceptor)"},
+        "pga_pool":          {"name": "3-PGA (3C Backbone)", "formula": "C3H7O7P"},
+        "glycolate_waste":   {"name": "2-P-Glycolate (2C)", "formula": "C2H5O6P"},
+        "g3p_sugar":         {"name": "G3P Sugar Precursor", "formula": "C3H7O6P"},
+
+        # Boundary gases, cofactors, and carriers
+        "co2":               {"name": "Atmospheric CO2",  "boundary": True},
+        "o2":                {"name": "Atmospheric O2",   "boundary": True},
+        "pep":               {"name": "PEP Carrier (3C)", "boundary": True},
+        "pyruvate_recycle":  {"name": "Pyruvate Recycle", "boundary": True},
+        "atp":               {"name": "ATP",              "boundary": True},
+        "adp":               {"name": "ADP",              "boundary": True},
+        "pi":                {"name": "Pi",               "boundary": True},
+        "nadph":             {"name": "NADPH",            "boundary": True},
+        "nadp":              {"name": "NADP+",            "boundary": True},
+    },
+    "reactions": [
+        # =====================================================================
+        # 1. PRE-PROCESSING CONCENTRATION ARMS (C4 & CAM)
+        # =====================================================================
+        # C4 Mesophyll Capture via PEP Carboxylase
+        {
+            "id": "c4_pepc",
+            "name": "PEP Carboxylase (Mesophyll)",
+            "when": "regime == 'c4_kranz'",
+            "note": "Traps CO2 with zero O2 affinity",
+            "reactants": {"leaf_gas_pool": 1, "pep": 1},
+            "products":  {"oxaloacetate": 1},
+        },
+        # CAM Night Capture via nocturnal open stomata
+        {
+            "id": "cam_pepc",
+            "name": "Nocturnal PEP Carboxylation",
+            "when": "regime == 'cam_succulent'",
+            "note": "Open stomata capture night CO2",
+            "reactants": {"leaf_gas_pool": 1, "pep": 1},
+            "products":  {"oxaloacetate": 1},
+        },
+        # Conversion to malate for storage/transfer
+        {
+            "id": "malate_conversion",
+            "name": "Malate Dehydrogenase & Storage",
+            "when": "regime == 'c4_kranz' || regime == 'cam_succulent'",
+            "note": "Stores carbon safely as 4C malate",
+            "reactants": {"oxaloacetate": 1, "nadph": 1},
+            "products":  {"malate_stored": 1, "nadp": 1},
+        },
+        # Decarboxylation: Releases high-pressure CO2 directly at RuBisCO
+        {
+            "id": "decarboxylation_pump",
+            "name": "Malic Enzyme Decarboxylation",
+            "when": "regime == 'c4_kranz' || regime == 'cam_succulent'",
+            "note": "Dumps CO2 inside bundle sheath",
+            "reactants": {"malate_stored": 1, "atp": 1},
+            "products":  {"bundle_sheath_co2": 1, "pyruvate_recycle": 1, "adp": 1, "pi": 1},
+        },
+        {
+            "id": "c4_rubp_charge",
+            "name": "RuBP Charging",
+            "when": "regime == 'c4_kranz' || regime == 'cam_succulent'",
+            "note": "Prepares RuBisCO 5C acceptor",
+            "reactants": {"bundle_sheath_co2": 1},
+            "products":  {"rubp_acceptor": 1},
+        },
+
+        # Direct feed for C3 (Stomata open directly to RuBP)
+        {
+            "id": "c3_direct_intake",
+            "name": "Direct Stomatal Diffusion",
+            "when": "regime == 'c3_optimum' || regime == 'c3_drought_stress'",
+            "note": "Gas diffuses directly to stroma",
+            "reactants": {"leaf_gas_pool": 1},
+            "products":  {"rubp_acceptor": 1},
+        },
+
+        # =====================================================================
+        # 2. THE MASTER JUNCTION: RUBISCO CARBOXYLATION VS OXYGENATION
+        # =====================================================================
+
+        # Route A: Standard Carboxylation (C3 optimum, C4, CAM)
+        # Yields two 3-PGA molecules per RuBP
+        {
+            "id": "rubisco_carboxylase",
+            "name": "RuBisCO Carboxylation",
+            "when": "regime != 'c3_drought_stress'",
+            "note": "Productive fixation of CO2",
+            "modifiers": [
+                {"species": "co2", "role": "activator"},
+                {"species": "o2",  "role": "inhibitor"},
+            ],
+            "reactants": {"rubp_acceptor": 1, "co2": 1},
+            "products":  {"pga_pool": 1},
+        },
+
+        # Route B: Oxygenation Glitch (C2 Photorespiration under drought/heat)
+        # Closed stomata deplete CO2; RuBisCO binds O2, yielding toxic 2-P-Glycolate
+        {
+            "id": "rubisco_oxygenase",
+            "name": "RuBisCO Oxygenation (C2)",
+            "when": "regime == 'c3_drought_stress'",
+            "note": "Binds O2; leaks carbon and burns ATP",
+            "modifiers": [
+                {"species": "o2",  "role": "activator"},
+                {"species": "co2", "role": "inhibitor"},
+            ],
+            "reactants": {"rubp_acceptor": 1, "o2": 1},
+            "products":  {"glycolate_waste": 1},
+        },
+
+        # =====================================================================
+        # 3. TERMINAL CONVERSIONS
+        # =====================================================================
+        # Calvin Cycle reduction arm: Converts 3-PGA to G3P (sugar food)
+        {
+            "id": "calvin_reduction",
+            "name": "PGA Kinase & GAPDH (Calvin Cycle)",
+            "when": "regime != 'c3_drought_stress'",
+            "note": "Spends light energy to create sugar",
+            "reactants": {"pga_pool": 1, "atp": 2, "nadph": 2},
+            "products":  {"g3p_sugar": 1, "adp": 2, "pi": 2, "nadp": 2},
+        },
+        # Photorespiratory salvage cycle (consumes extra ATP across 3 organelles)
+        {
+            "id": "photorespiratory_salvage",
+            "name": "Peroxisome / Mitochondrial Salvage",
+            "when": "regime == 'c3_drought_stress'",
+            "note": "Burns ATP trying to recover glycolate",
+            "reactants": {"glycolate_waste": 1, "atp": 1},
+            "products":  {"pga_pool": 1, "adp": 1},
+        },
+    ],
+}
+
+_WATER_CYCLE_SIMPLIFIED = {
+  "name": "Water cycle",
+  "start": "ocean",
+  "defaultBlock": "condensation",
+  "vocabulary": { "node": "store", "edge": "process", "edges": "processes",
+                  "side": "driver", "sides": "drivers", "cycle": "cycle" },
+  "species": {
+    "ocean":  { "name": "Ocean",      "formula": "H2O" },
+    "vapour": { "name": "Water vapour", "formula": "H2O" },
+    "cloud":  { "name": "Cloud",      "formula": "H2O" },
+    "rain":   { "name": "Rain",       "formula": "H2O" },
+    "sun":    { "name": "Sunlight", "boundary": True },
+    "heat":   { "name": "Heat released", "boundary": True }
+  },
+  "reactions": [
+    { "id": "evaporation",   "name": "Evaporation",
+      "reactants": { "ocean": 1, "sun": 1 }, "products": { "vapour": 1 } },
+    { "id": "condensation",  "name": "Condensation",
+      "reactants": { "vapour": 1 }, "products": { "cloud": 1, "heat": 1 } },
+    { "id": "precipitation", "name": "Precipitation",
+      "reactants": { "cloud": 1 },  "products": { "rain": 1 } },
+    { "id": "runoff",        "name": "Runoff",
+      "reactants": { "rain": 1 },   "products": { "ocean": 1 } }
+  ]
+}
+
 
 PATHWAY_MODELS = {
     "path_tca":        {"pathway": _TCA,
@@ -1664,6 +1953,15 @@ PATHWAY_MODELS = {
     },
     "path_TCP_handshake": {  "pathway": _TCP_HANDSHAKE,
                         "note": "TCP_handshake "
+    },
+    "path_photosynthesis_simple": {  "pathway": _PHOTOSYNTHESIS_SIMPLE,
+                        "note": "simplified photosynthesis showing C2, C3, C4, CAM, Calvin cycle all in a single journey "
+    },
+    "path_photosynthesis_detailed": {  "pathway": _PHOTOSYNTHESIS_DETAILED,
+                        "note": "Detailed photosynthesis short showing C2, C3, C4, CAM, Calvin cycle all in a single journey "
+    },
+     "water_cycle_simplified": {  "pathway": _WATER_CYCLE_SIMPLIFIED,
+                        "note": "water_cycle_simplified"
     },
 }
 
