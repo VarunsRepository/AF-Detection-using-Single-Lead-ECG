@@ -73,6 +73,7 @@ def journey(journey_name):
         journey_ui_shell=package["uiShell"],
         journey_playback_config=package["playbackConfig"],
         journey_layout=package["layout"],
+        journey_name=journey_name,
         start_sample=start_sample,
         dsp_entrypoints=dsp_entrypoints,
         rendering_entrypoints=rendering_entrypoints,
@@ -173,6 +174,32 @@ def shorts():
         data_source_configs=data_source_configs,
         shorts_batch={"recipes": recipes, "pattern": pattern},
     )
+
+
+# ---------------------------------------------------------------------------
+# Pathway builder
+# ---------------------------------------------------------------------------
+
+@journey_bp.route('/builder/pathway')
+def pathway_builder():
+    """
+    Author a pathway and watch it run, with no restart and no deploy.
+
+    It loads the SAME DSPE and renderers the feed uses, so what the
+    preview shows is what a card would show -- a builder with its own
+    simplified view would be a different program.
+
+    PREVIEW ONLY: nothing is saved. Persisting a model pulls in
+    hot-loading, a review gate and the question of who may add content.
+    Until then "copy the JSON into catalog/sources/biology.py" is a
+    perfectly good publishing step, and the validation here is what makes
+    that paste safe.
+    """
+    # Starts from a real pathway rather than an empty box: the fastest way
+    # to learn the format is to edit something that already works.
+    from catalog.sources.biology import PATHWAY_MODELS
+    starter = PATHWAY_MODELS.get("path_tca", {}).get("pathway", {})
+    return render_template("shorts/pathway_builder.html", starter=starter)
 
 
 # ---------------------------------------------------------------------------
