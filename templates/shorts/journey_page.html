@@ -751,6 +751,11 @@
         opacity: 1;
     }
 
+    /* pan-y lets the feed keep vertical swipes while horizontal ones
+       reach the scrub handlers. Without it the browser claims the
+       gesture before pointermove ever fires. */
+    .journey-card .chart { touch-action: pan-y; }
+
     .journey-card .chart {
         width: 100%;
         flex: 1; /* shrinks to fit whatever space remains when sharing a zone with title/description -- was a rigid height:400px, which could push total content past 100vh once multiple elements shared one zone, triggering the card's overflow-y:auto scrollbar */

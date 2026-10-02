@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pathway Builder</title>
+<!--
+  ============================================================================
+  PATHWAY BUILDER
+
+  Edit a pathway model and watch it run. The point is not the form -- it is
+  that pathways are DATA, so authoring one needs no Python, no restart and
+  no deploy. The same DSPE and the same renderers the feed uses are loaded
+  here unmodified, which is the only way the preview can be trusted: a
+  builder with its own simplified renderer would show something the feed
+  would not.
+
+  PREVIEW ONLY, deliberately. Saving a model pulls in hot-loading, a review
+  gate and the question of who may add content -- see MASTER_DOCUMENT 31.
+  Everything up to that point is useful on its own: the atom-balance check
+  and the walk together catch most authoring mistakes, and "copy the JSON"
+  is a perfectly good way to get a model into catalog/sources/biology.py.
+  ============================================================================
+-->
+<style>
+  :root {
+      --bg: #0b0d10; --panel: #12161b; --line: #232a33;
+      --text: #e8f4f8; --dim: #78828e; --accent: #5cc24a; --bad: #e74c3c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+               font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .wrap { display: flex; height: 100%; gap: 1px; background: var(--line); }
+  .left, .right { background: var(--bg); display: flex; flex-direction: column; }
+  .left  { flex: 1 1 50%; min-width: 0; }
+  .right { flex: 1 1 50%; min-width: 0; }
+
+  header { padding: 12px 16px; border-bottom: 1px solid var(--line);
+           display: flex; align-items: baseline; gap: 12px; }
+  header h1 { font-size: 14px; margin: 0; letter-spacing: 0.06em; }
+  header span { font-size: 11px; color: var(--dim); }
+
+  textarea { flex: 1; width: 100%; resize: none; border: 0; outline: 0;
+             background: var(--panel); color: var(--text); padding: 14px;
+             font: 12px/1.55 "IBM Plex Mono", ui-monospace, monospace;
+             tab-size: 2; }
+
+  .status { padding: 10px 16px; border-top: 1px solid var(--line);
+            font-size: 11px; line-height: 1.6; max-height: 34%; overflow-y: auto; }
+  .ok   { color: var(--accent); }
+  .err  { color: var(--bad); }
+  .warn { color: #eb7b2b; }
+  .muted{ color: var(--dim); }
+
+  .card { flex: 1; position: relative; margin: 14px; border: 1px solid var(--line);
+          border-radius: 10px; overflow: hidden; background: #000; }
+  .bar { padding: 10px 16px; border-top: 1px solid var(--line);
+         display: flex; gap: 8px; flex-wrap: wrap; }
+  button { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+           border-radius: 6px; padding: 6px 12px; font: 11px "IBM Plex Mono", monospace;
+           cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.on { border-color: var(--accent); color: var(--accent); }
+
+  @media (max-width: 860px) { .wrap { flex-direction: column; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="left">
+    <header><h1>PATHWAY BUILDER</h1><span>species + reactions, as the feed reads them</span></header>
+    <textarea id="src" spellcheck="false"></textarea>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="right">
+    <header><h1>PREVIEW</h1><span id="previewNote" class="muted"></span></header>
+    <div class="card"><div id="chart" style="position:absolute;inset:0;"></div></div>
+    <div class="bar" id="controls"></div>
+  </div>
+</div>
+
+<script>
+// The renderers expect these globals. Defined here rather than pulling in
+// the whole feed: the builder needs a sweep loop and a theme, not a feed.
+const activeSweepControl = new Map();
+function cancelSweepAnimation(id) {
+    const c = activeSweepControl.get(id);
+    if (c?.handle) cancelAnimationFrame(c.handle);
+}
+function startSweepLoop(sampleId, totalDurationMs, drawFn, startElapsed = 0) {
+    cancelSweepAnimation(sampleId);
+    const ctl = { drawFn, totalDurationMs, lastElapsedMs: startElapsed, handle: null };
+    activeSweepControl.set(sampleId, ctl);
+    const t0 = performance.now() - startElapsed;
+    (function tick(now) {
+        // Loops rather than stopping: a builder is watched repeatedly
+        // while editing, and a card that runs once then freezes reads as
+        // a crash every time you tab back to it.
+        const e = (now - t0) % totalDurationMs;
+        ctl.lastElapsedMs = e;
+        drawFn(e);
+        ctl.handle = requestAnimationFrame(tick);
+    })(performance.now());
+}
+</script>
+
+<script src="{{ url_for('static', filename='shorts/core/rail_controls.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/dsp_registry.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/rendering_registry.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/filters/pathway_filter.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/renderers/pathway_view.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/renderers/pathway_nav_view.js') }}"></script>
+
+<script>
+const STARTER = {{ starter | tojson }};
+const srcEl    = document.getElementById("src");
+const statusEl = document.getElementById("status");
+const chartEl  = document.getElementById("chart");
+const barEl    = document.getElementById("controls");
+
+let rendererId = "pathway_view";
+let params     = {};
+
+srcEl.value = JSON.stringify(STARTER, null, 2);
+
+function say(lines) { statusEl.innerHTML = lines.join("<br>"); }
+
+function build() {
+    let model;
+    try {
+        model = JSON.parse(srcEl.value);
+    } catch (e) {
+        // Keep the last good render on screen. Blanking the preview on
+        // every keystroke that leaves the JSON momentarily invalid makes
+        // editing feel broken.
+        say([`<span class="err">JSON: ${e.message}</span>`]);
+        return;
+    }
+
+    const out = DSP_ALGORITHMS.pathway.process({ meta: { pathway: model } }, params);
+    if (out.error) {
+        say([`<span class="err">${out.error}</span>`]);
+        return;
+    }
+    const fo = out.finalOutput;
+    const lines = [];
+
+    lines.push(`<span class="ok">${fo.stepCount} ${fo.vocabulary.edges} walked`
+             + ` \u00b7 ${fo.cyclic ? fo.vocabulary.cycle : fo.vocabulary.chain}</span>`);
+    lines.push(`<span class="muted">${fo.steps.map(s => s.name).join(" \u2192 ")}</span>`);
+
+    // The atom balance is the real validator -- a typo in a formula fails
+    // arithmetic instead of animating wrong chemistry.
+    const b = fo.balance;
+    if (!b.allBalanced) {
+        lines.push(`<span class="err">UNBALANCED: ${b.unbalanced.join("; ")}</span>`);
+    } else if (b.checked === 0) {
+        lines.push(`<span class="warn">no reaction is atom-checkable `
+                 + `(add "formula" to species to enable it)</span>`);
+    } else {
+        lines.push(`<span class="ok">atoms balance in ${b.checked}/${b.total} checkable</span>`);
+    }
+
+    // Things that are legal but almost always mistakes.
+    const unreached = model.reactions.filter(r => !fo.steps.some(s => s.id === r.id));
+    if (unreached.length) {
+        lines.push(`<span class="warn">never reached: `
+                 + `${unreached.map(r => r.id).join(", ")}`
+                 + ` \u2014 check the species names match</span>`);
+    }
+    const unused = Object.keys(model.species ?? {}).filter(id =>
+        !model.reactions.some(r => id in (r.reactants ?? {}) || id in (r.products ?? {})));
+    if (unused.length) {
+        lines.push(`<span class="muted">declared but unused: ${unused.join(", ")}</span>`);
+    }
+    if (fo.feeders?.length) {
+        lines.push(`<span class="muted">fed from outside: `
+                 + `${fo.feeders.map(f => f.name).join(", ")}</span>`);
+    }
+    say(lines);
+
+    document.getElementById("previewNote").textContent =
+        `${rendererId === "pathway_view" ? "map" : "navigator"}`
+        + (Object.keys(params).length ? ` \u00b7 ${JSON.stringify(params)}` : "");
+
+    RENDER_ALGORITHMS[rendererId].render(chartEl, out, {}, "builder", null, 9000);
+    buildControls(out);
+}
+
+// Conditions come from the model, so the builder offers exactly the
+// buttons the feed would -- via the same choices() the rail uses.
+function buildControls(out) {
+    barEl.innerHTML = "";
+    const add = (label, on, fn) => {
+        const b = document.createElement("button");
+        b.textContent = label;
+        if (on) b.className = "on";
+        b.onclick = fn;
+        barEl.appendChild(b);
+    };
+    add("map", rendererId === "pathway_view",
+        () => { rendererId = "pathway_view"; build(); });
+    add("navigator", rendererId === "pathway_nav_view",
+        () => { rendererId = "pathway_nav_view"; build(); });
+
+    const model = JSON.parse(srcEl.value);
+    for (const ch of (DSP_ALGORITHMS.pathway.choices?.({ meta: { pathway: model } }) ?? [])) {
+        for (const v of ch.values) {
+            const shown = ch.display?.[String(v)] ?? v;
+            add(`${ch.label}: ${shown}`, (params[ch.key] ?? ch.value) === v,
+                () => { params[ch.key] = v; build(); });
+        }
+    }
+    const blocked = params.blocked;
+    add(blocked ? `blocked: ${blocked}` : "block a step", !!blocked, () => {
+        const ids = JSON.parse(srcEl.value).reactions.map(r => r.id);
+        const i = ids.indexOf(blocked);
+        params.blocked = i + 1 >= ids.length ? null : ids[i + 1];
+        if (!params.blocked) delete params.blocked;
+        build();
+    });
+    add("copy JSON", false, async () => {
+        try { await navigator.clipboard.writeText(srcEl.value); } catch (_) {}
+    });
+}
+
+let t = null;
+srcEl.addEventListener("input", () => { clearTimeout(t); t = setTimeout(build, 350); });
+build();
+</script>
+</body>
+</html>
