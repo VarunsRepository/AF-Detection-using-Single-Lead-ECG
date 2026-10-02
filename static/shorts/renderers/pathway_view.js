@@ -11,6 +11,13 @@ function ROMULUS_BG() {
     return t.label === "Romulus" ? "#020503" : (t.bg || "#000000");
 }
 
+// Remembers which route each card was showing, so a condition change can
+// be ANIMATED rather than appearing as new text in the same boxes. The
+// renderer is rebuilt from scratch on every change, so without this it
+// has no idea anything swapped.
+const _lastRoute = new Map();
+const _swapAt    = new Map();
+
 registerRenderingAlgorithm("pathway_view", {
     render(container, dspOutput, config, sampleId, fs, durationMs) {
         container.innerHTML = "";
@@ -84,6 +91,27 @@ registerRenderingAlgorithm("pathway_view", {
             return { id: main, name: (fo.species?.[main]?.name ?? main).toUpperCase() };
         });
 
+        // ── ROUTE SWAP ──────────────────────────────────────────────────
+        // Identify the route by the reactions AFTER the fork. If that set
+        // changed since the last render of this card, a condition was
+        // flipped, and the next ~550ms crossfades: the outgoing branch
+        // fades along what is now its ghost arm, the incoming one draws
+        // in from the fork. Switching the labels in place reads as a
+        // relabelling; this reads as taking a different road.
+        const routeKey = FORK.at === -1 ? "none"
+                       : steps.slice(FORK.at).map(s => s.id).join(">");
+        if (_lastRoute.get(sampleId) !== routeKey) {
+            if (_lastRoute.has(sampleId)) _swapAt.set(sampleId, performance.now());
+            _lastRoute.set(sampleId, routeKey);
+        }
+        const SWAP_MS = 550;
+        const swapPhase = () => {
+            const t0 = _swapAt.get(sampleId);
+            if (!t0) return 1;
+            const p = (performance.now() - t0) / SWAP_MS;
+            return p >= 1 ? 1 : p;
+        };
+
         const safeDuration = Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 10000;
         const stepMs = safeDuration / steps.length;
 
@@ -115,6 +143,7 @@ registerRenderingAlgorithm("pathway_view", {
         }
 
         function draw(idx, frac) {
+            const swap = swapPhase();
             const ctx = canvas.getContext("2d");
             const W = canvas.width, H = canvas.height;
             ctx.clearRect(0, 0, W, H);
@@ -213,7 +242,15 @@ registerRenderingAlgorithm("pathway_view", {
                 }
 
                 ctx.beginPath();
-                ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+                ctx.moveTo(x0, y0);
+                if (onRoute && swap < 1) {
+                    // The new branch extends from the fork rather than
+                    // being there already.
+                    const e = swap * swap * (3 - 2 * swap);
+                    ctx.lineTo(x0 + (x1 - x0) * e, y0 + (y1 - y0) * e);
+                } else {
+                    ctx.lineTo(x1, y1);
+                }
                 ctx.stroke();
                 ctx.setLineDash([]); // Reset dash state
 
@@ -285,18 +322,57 @@ registerRenderingAlgorithm("pathway_view", {
                 ctx.fill();
                 ctx.stroke();
 
-                if (FORK.at !== -1 && i === FORK.at && FORK.others.length) {
-                    const sx = x + 16 * useDPR, sy = y - 20 * useDPR;
-                    ctx.strokeStyle = "rgba(255, 83, 118, 0.4)";
-                    ctx.setLineDash([2 * useDPR, 2 * useDPR]);
-                    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(sx, sy); ctx.stroke();
-                    ctx.setLineDash([]);
-                    ctx.strokeRect(sx - 3 * useDPR, sy - 3 * useDPR, 6 * useDPR, 6 * useDPR);
-                    ctx.fillStyle = "#ff5376";
-                    ctx.font = mono(8);
-                    ctx.textAlign = "left";
-                    ctx.fillText(`ALT: ${FORK.others[0].name.toUpperCase()}`, sx + 6 * useDPR, sy + 3 * useDPR);
-                    ctx.textAlign = "center";
+                // ── GHOST ARMS ────────────────────────────────────────
+                // The roads not taken, drawn in full rather than as a
+                // stub. A stub says an alternative exists; this says
+                // whether it is one step or three, and where it ends --
+                // which is the thing the viewer actually wants to know
+                // when they are about to flip a condition.
+                //
+                // Fanned above the fork so they never cross the trunk,
+                // and dimmed so they read as context rather than as a
+                // second pathway competing for attention.
+                if (FORK.at !== -1 && i === FORK.at && (fo.ghostPaths ?? []).length) {
+                    const ghosts = fo.ghostPaths.slice(0, 2);
+                    // On a vertical chain the node NAMES already occupy
+                    // the right-hand side, so ghosts fan LEFT; on a ring
+                    // or short chain they fan right, where there is room.
+                    const vert = !fo.cyclic && steps.length > 5;
+                    const side = vert ? -1 : 1;
+                    ghosts.forEach((gp, gi) => {
+                        const dir = gi === 0 ? -1 : 1;
+                        const stepLen = 34 * useDPR;
+                        let gx = x, gy = y;
+                        ctx.font = mono(8);
+                        gp.steps.slice(0, 3).forEach((gs, si) => {
+                            const nx = gx + side * stepLen;
+                            const ny = gy + dir * (si === 0 ? 26 : 14) * useDPR;
+                            // Brighter during the swap: the arm being
+                            // drawn was the trunk a moment ago, and
+                            // watching it dim is what says "that road is
+                            // the one you just left".
+                            ctx.strokeStyle = `rgba(255, 83, 118, ${0.45 + 0.5 * (1 - swap)})`;
+                            ctx.lineWidth = 1.2 * useDPR;
+                            ctx.setLineDash([2 * useDPR, 2 * useDPR]);
+                            ctx.beginPath();
+                            ctx.moveTo(gx, gy); ctx.lineTo(nx, ny);
+                            ctx.stroke();
+                            ctx.setLineDash([]);
+                            ctx.strokeRect(nx - 3 * useDPR, ny - 3 * useDPR,
+                                           6 * useDPR, 6 * useDPR);
+                            ctx.fillStyle = `rgba(255, 83, 118, ${0.85 + 0.15 * (1 - swap)})`;
+                            ctx.textAlign = side < 0 ? "right" : "left";
+                            ctx.fillText(gs.name.toUpperCase(),
+                                         nx + side * 7 * useDPR, ny + 3 * useDPR);
+                            gx = nx; gy = ny;
+                        });
+                        // What would have to change to take it.
+                        ctx.fillStyle = "rgba(255, 83, 118, 0.55)";
+                        ctx.textAlign = side < 0 ? "right" : "left";
+                        ctx.fillText(`IF ${(gp.when ?? "").toUpperCase()}`,
+                                     x + side * 12 * useDPR, y + dir * 13 * useDPR);
+                        ctx.textAlign = "center";
+                    });
                 }
 
                 ctx.fillStyle = isCur ? "#ffffff" : reached ? "#9cb59c" : "#3b4d3b";
