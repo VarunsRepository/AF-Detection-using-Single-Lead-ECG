@@ -420,6 +420,7 @@ registerDspAlgorithm("pathway", {
         // belonging to different routes. Reported so the card can say a
         // choice was made and another road existed -- otherwise the
         // anaerobic route just looks like the whole story.
+        const activeIdsForGhost = new Set();   // filled once steps exist
         const junctions = [];
         {
             // A species consumed by several CONDITIONAL reactions is a
@@ -556,6 +557,55 @@ registerDspAlgorithm("pathway", {
             .filter(c => c.moved > 0)
             .sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || b.moved - a.moved);
 
+        // ── GHOST PATHS ────────────────────────────────────────────────
+        // Where the roads NOT taken actually go. A stub at the fork says
+        // an alternative exists; it does not say whether that alternative
+        // is one step or six, nor whether it rejoins. Walking each
+        // untaken option answers both.
+        //
+        // Walked over model.reactions, NOT the condition-filtered list:
+        // the untaken route is precisely what the filter removed, so
+        // using the filtered set would always come back empty.
+        for (const s of steps) activeIdsForGhost.add(s.id);
+        const ghostPaths = [];
+        {
+            const allConsumers = {};
+            for (const rx of model.reactions) {
+                for (const id of Object.keys(rx.reactants)) {
+                    (allConsumers[id] ??= []).push(rx);
+                }
+            }
+            const onTrunk = new Set(Object.keys(pool));
+            for (const j of junctions) {
+                for (const opt of j.options) {
+                    if (activeIdsForGhost.has(opt.id)) continue;
+                    const seq = [];
+                    const seen = new Set();
+                    let rx = model.reactions.find(r => r.id === opt.id);
+                    // Capped: a ghost arm is context, not a second
+                    // pathway, and six steps is already more than the
+                    // layout can place without crowding the trunk.
+                    while (rx && seq.length < 6 && !seen.has(rx.id)) {
+                        seen.add(rx.id);
+                        const prods = Object.keys(rx.products)
+                            .filter(p => !species[p]?.boundary);
+                        seq.push({ id: rx.id, name: rx.name ?? rx.id,
+                                   to: prods[0] ?? null });
+                        // Stop as soon as it rejoins something the real
+                        // walk already covers -- that IS the answer, and
+                        // carrying on would redraw the trunk.
+                        const next = prods.find(p => !onTrunk.has(p));
+                        if (!next) { seq[seq.length - 1].rejoins = prods[0] ?? null; break; }
+                        rx = (allConsumers[next] ?? []).find(r => !seen.has(r.id));
+                    }
+                    ghostPaths.push({
+                        from: j.species, optionId: opt.id,
+                        when: opt.when, steps: seq,
+                    });
+                }
+            }
+        }
+
         return {
             interimOutputs: steps.map(s => ({
                 label: s.name,
@@ -621,6 +671,9 @@ registerDspAlgorithm("pathway", {
                     return `${spec.label ?? k}: ${shown}`;
                 }).join("  \u00b7  "),
                 junctions,
+                // Where the roads not taken actually go, so the renderer
+                // can draw more than a stub.
+                ghostPaths,
                 // Every reaction's name, including ones this route skips.
                 // finalOutput.steps holds only ACTIVE reactions, so the
                 // card naming "the other route" had nothing to look up
