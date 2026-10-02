@@ -146,7 +146,14 @@ function walk(reactions, start, isBoundary, maxSteps = 60) {
 function evalWhen(expr, ctx) {
     if (!expr) return true;                    // no condition = always fires
 
-    return String(expr).split("&&").every(clause => {
+    // OR binds loosest: split on "||" first, then each alternative on
+    // "&&". Supporting only "&&" did not fail loudly -- the regex below
+    // happily matched "a == 'x' || a == 'y'" as ONE comparison whose
+    // value was "x' || a == 'y", which never equals anything. Every
+    // reaction guarded that way silently vanished, and the pathway
+    // reported that nothing consumed its own start species.
+    return String(expr).split("||").some(alternative =>
+        alternative.split("&&").every(clause => {
         const m = clause.trim().match(
             /^([A-Za-z_][\w.]*)\s*(==|!=|>=|<=|>|<)\s*(.+)$/);
         if (!m) {
@@ -171,7 +178,7 @@ function evalWhen(expr, ctx) {
             case "<=": return actual <=  want;
         }
         return true;
-    });
+        }));
 }
 
 // ── NAVIGATION TAPE ─────────────────────────────────────────────────────
@@ -190,10 +197,21 @@ function evalWhen(expr, ctx) {
 function buildTape(reactions, species, start) {
     const isBoundary = id => species[id]?.boundary === true;
 
+    // Index EVERY reactant, boundary or not -- matching walk() exactly.
+    //
+    // Skipping boundary species here meant the tape could not begin when
+    // the start species was itself a boundary one (NAD+, ATP, water):
+    // consumers[start] was empty, the loop exited immediately, and the
+    // navigator showed an empty buffer while the map -- which uses the
+    // other walk -- rendered the pathway perfectly.
+    //
+    // Two walks that disagree is the real fault. Boundary species are
+    // still excluded from the CHOICE of what to follow next, which is
+    // where that rule belongs: it stops the walk wandering off down ATP.
     const consumers = {};
     for (const rx of reactions) {
         for (const id of Object.keys(rx.reactants)) {
-            if (!isBoundary(id)) (consumers[id] ??= []).push(rx);
+            (consumers[id] ??= []).push(rx);
         }
     }
 
@@ -577,6 +595,12 @@ registerDspAlgorithm("pathway", {
                 // replacing it, so pathway_view keeps working unchanged.
                 tape:     nav.tape,
                 branches: nav.branches,
+                // An empty tape is almost always a start that nothing
+                // consumes -- a typo, or a species that only ever appears
+                // as a product. Saying so beats an empty buffer.
+                tapeNote: nav.tape.length ? null
+                        : `nothing consumes "${start}" -- check the start `
+                          + `species name, or whether it only appears as a product`,
                 name: model.name ?? "pathway",
                 cyclic: order.cyclic === true,
                 start,
