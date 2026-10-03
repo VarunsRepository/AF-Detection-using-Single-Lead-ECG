@@ -100,10 +100,16 @@ registerRenderingAlgorithm("pathway_view", {
         // relabelling; this reads as taking a different road.
         const routeKey = FORK.at === -1 ? "none"
                        : steps.slice(FORK.at).map(s => s.id).join(">");
-        if (_lastRoute.get(sampleId) !== routeKey) {
-            if (_lastRoute.has(sampleId)) _swapAt.set(sampleId, performance.now());
+        const prevKey = _lastRoute.get(sampleId);
+        if (prevKey !== routeKey) {
+            if (prevKey !== undefined) _swapAt.set(sampleId, performance.now());
             _lastRoute.set(sampleId, routeKey);
         }
+        // The ids the trunk used to hold. The outgoing branch is the ghost
+        // that contains them -- knowing which one lets it be animated OUT
+        // from the trunk's own positions rather than simply appearing in
+        // its ghost slot.
+        const prevIds = new Set((prevKey ?? "").split(">").filter(Boolean));
         const SWAP_MS = 550;
         const swapPhase = () => {
             const t0 = _swapAt.get(sampleId);
@@ -140,6 +146,22 @@ registerRenderingAlgorithm("pathway_view", {
             vig.addColorStop(1, "rgba(0,10,2,0.65)");
             ctx.fillStyle = vig;
             ctx.fillRect(0, 0, W, H);
+        }
+
+        // Rotate-and-recede about the fork. The outgoing branch swings
+        // back and shrinks away; the incoming swings forward from behind
+        // it. Anchoring the transform at the FORK NODE is what makes it
+        // read as one road giving way to another rather than the whole
+        // diagram sliding -- everything before the fork is untouched.
+        function withPivot(ctx, px, py, angle, scale, alpha, fn) {
+            ctx.save();
+            ctx.globalAlpha *= alpha;
+            ctx.translate(px, py);
+            ctx.rotate(angle);
+            ctx.scale(scale, scale);
+            ctx.translate(-px, -py);
+            fn();
+            ctx.restore();
         }
 
         function draw(idx, frac) {
@@ -212,10 +234,37 @@ registerRenderingAlgorithm("pathway_view", {
             };
 
 // ARCS
+            // Geometry of the pivot, shared by the arcs and the nodes so
+            // they move as one piece.
+            const ease = swap * swap * (3 - 2 * swap);
+            // One definition of where a side-branch sits, used by BOTH
+            // halves of the swap: the incoming branch travels from here
+            // to the trunk, the outgoing one travels from the trunk to
+            // here. Two separate formulas would have them pass through
+            // each other rather than trade places.
+            const fanPos = (si, dir) => {
+                const vert = !fo.cyclic && steps.length > 5;
+                const side = vert ? -1 : 1;
+                const [bx, by] = FORK.at === -1 ? [0, 0] : pos(FORK.at);
+                return [bx + side * 34 * useDPR * (si + 1),
+                        by + dir * (26 + 14 * si) * useDPR];
+            };
+            const [fx, fy] = FORK.at === -1 ? [0, 0] : pos(FORK.at);
+            const inAngle = (1 - ease) * -0.42;      // swings forward from behind
+            const inScale = 0.72 + 0.28 * ease;
+            const inAlpha = 0.15 + 0.85 * ease;
+
             steps.forEach((s, i) => {
                 const [x0, y0] = pos(i);
                 const [x1, y1] = pos((i + 1) % steps.length);
                 if (!fo.cyclic && i === steps.length - 1) return;
+                const swinging = swap < 1 && FORK.at !== -1 && i >= FORK.at;
+                if (swinging) {
+                    ctx.save();
+                    ctx.globalAlpha = inAlpha;
+                    ctx.translate(fx, fy); ctx.rotate(inAngle);
+                    ctx.scale(inScale, inScale); ctx.translate(-fx, -fy);
+                }
 
                 const state = s.blocked ? "blocked" : s.fired ? "fired" : "starved";
                 const active = i === idx;
@@ -297,11 +346,30 @@ registerRenderingAlgorithm("pathway_view", {
                     ctx.fillText(s.name.toUpperCase(), tx, ty);
                     ctx.textAlign = "center";
                 }
+                if (swinging) ctx.restore();
             });
 
             // NODES
             nodes.forEach((n, i) => {
-                const [x, y] = pos(i);
+                // The incoming branch's nodes travel in from the fan slot
+                // they occupied as a ghost, so the node you are about to
+                // follow is visibly the one that was offered a moment ago.
+                let [x, y] = [0, 0];
+                const swingNode = swap < 1 && FORK.at !== -1 && i > FORK.at;
+                if (swingNode) {
+                    ctx.save();
+                    ctx.globalAlpha = inAlpha;
+                    ctx.translate(fx, fy); ctx.rotate(inAngle * 0.5);
+                    ctx.scale(inScale, inScale); ctx.translate(-fx, -fy);
+                }
+                {
+                    const [tx, ty] = pos(i);
+                    if (swap < 1 && FORK.at !== -1 && i > FORK.at) {
+                        const [gxp, gyp] = fanPos(i - FORK.at - 1, -1);
+                        x = gxp + (tx - gxp) * ease;
+                        y = gyp + (ty - gyp) * ease;
+                    } else { x = tx; y = ty; }
+                }
                 const reached = i <= idx;
                 const isCur = i === idx;
                 const r = (isCur ? 9 : 6) * useDPR;
@@ -333,25 +401,67 @@ registerRenderingAlgorithm("pathway_view", {
                 // and dimmed so they read as context rather than as a
                 // second pathway competing for attention.
                 if (FORK.at !== -1 && i === FORK.at && (fo.ghostPaths ?? []).length) {
-                    const ghosts = fo.ghostPaths.slice(0, 2);
+                    // Each alternative wears ITS OWN route colour, matched
+                    // to the position it occupies in the junction's option
+                    // list -- so the arm you would switch to is already
+                    // the colour it will become. Painting every
+                    // alternative red said only "not this one", which
+                    // throws away the information the palette carries.
+                    const optOrder = (fo.junctions ?? [])
+                        .find(jj => jj.species === n.id)?.options ?? [];
+                    const ghostCol = gp => {
+                        const k = optOrder.findIndex(o => o.id === gp.optionId);
+                        return ROUTE_COLS[(k < 0 ? 1 : k) % ROUTE_COLS.length];
+                    };
+                    const ghosts = [...fo.ghostPaths]
+                        // The outgoing branch first, so it gets the
+                        // nearer fan slot it is travelling into.
+                        .sort((a, b) => (prevIds.has(b.optionId) ? 1 : 0)
+                                      - (prevIds.has(a.optionId) ? 1 : 0))
+                        .slice(0, 2);
                     // On a vertical chain the node NAMES already occupy
                     // the right-hand side, so ghosts fan LEFT; on a ring
                     // or short chain they fan right, where there is room.
                     const vert = !fo.cyclic && steps.length > 5;
                     const side = vert ? -1 : 1;
                     ghosts.forEach((gp, gi) => {
+                        // The arm that WAS the trunk is always first in
+                        // the list after a swap, so it gets the receding
+                        // motion; the others are static context.
+                        // Travelling out: this arm WAS the trunk, so its
+                        // boxes start at the trunk's own node positions
+                        // and move into the fan. Rotating it in place
+                        // looked like a different branch appearing; this
+                        // looks like the one you were on stepping aside.
+                        const outgoing = swap < 1 && prevIds.has(gp.optionId);
+                        const col = ghostCol(gp);
+                        // Save UNCONDITIONALLY. Multiplying globalAlpha
+                        // without a matching restore compounded on every
+                        // draw call and faded the entire card to black --
+                        // alpha is canvas-wide state, not per-shape.
+                        ctx.save();
+                        ctx.globalAlpha = outgoing ? (1 - ease * 0.45)
+                                                   : (0.5 + 0.35 * (1 - swap));
                         const dir = gi === 0 ? -1 : 1;
                         const stepLen = 34 * useDPR;
                         let gx = x, gy = y;
                         ctx.font = mono(8);
                         gp.steps.slice(0, 3).forEach((gs, si) => {
-                            const nx = gx + side * stepLen;
-                            const ny = gy + dir * (si === 0 ? 26 : 14) * useDPR;
+                            let nx = gx + side * stepLen;
+                            let ny = gy + dir * (si === 0 ? 26 : 14) * useDPR;
+                            if (outgoing) {
+                                // Lerp from where the trunk drew this
+                                // step to where the ghost fan wants it.
+                                const [tx0, ty0] = pos(Math.min(steps.length - 1,
+                                                               FORK.at + 1 + si));
+                                nx = tx0 + (nx - tx0) * ease;
+                                ny = ty0 + (ny - ty0) * ease;
+                            }
                             // Brighter during the swap: the arm being
                             // drawn was the trunk a moment ago, and
                             // watching it dim is what says "that road is
                             // the one you just left".
-                            ctx.strokeStyle = `rgba(255, 83, 118, ${0.45 + 0.5 * (1 - swap)})`;
+                            ctx.strokeStyle = col;
                             ctx.lineWidth = 1.2 * useDPR;
                             ctx.setLineDash([2 * useDPR, 2 * useDPR]);
                             ctx.beginPath();
@@ -360,18 +470,19 @@ registerRenderingAlgorithm("pathway_view", {
                             ctx.setLineDash([]);
                             ctx.strokeRect(nx - 3 * useDPR, ny - 3 * useDPR,
                                            6 * useDPR, 6 * useDPR);
-                            ctx.fillStyle = `rgba(255, 83, 118, ${0.85 + 0.15 * (1 - swap)})`;
+                            ctx.fillStyle = col;
                             ctx.textAlign = side < 0 ? "right" : "left";
                             ctx.fillText(gs.name.toUpperCase(),
                                          nx + side * 7 * useDPR, ny + 3 * useDPR);
                             gx = nx; gy = ny;
                         });
                         // What would have to change to take it.
-                        ctx.fillStyle = "rgba(255, 83, 118, 0.55)";
+                        ctx.fillStyle = col;
                         ctx.textAlign = side < 0 ? "right" : "left";
                         ctx.fillText(`IF ${(gp.when ?? "").toUpperCase()}`,
                                      x + side * 12 * useDPR, y + dir * 13 * useDPR);
                         ctx.textAlign = "center";
+                        ctx.restore();
                     });
                 }
 
@@ -387,7 +498,53 @@ registerRenderingAlgorithm("pathway_view", {
                 } else {
                     ctx.fillText(n.name, x, y + 22 * useDPR);
                 }
+                if (swingNode) ctx.restore();
             });
+
+            // ── OUTGOING BRANCH ────────────────────────────────────────
+            // Drawn as FULL NODES at the trunk's own positions, receding
+            // into the fan. Previously the old branch simply stopped
+            // being drawn and a small ghost box animated instead, so the
+            // nodes you were following vanished the instant you tapped --
+            // the one thing the transition is supposed to prevent.
+            if (swap < 1 && FORK.at !== -1) {
+                const out = (fo.ghostPaths ?? []).find(g => prevIds.has(g.optionId));
+                if (out) {
+                    ctx.save();
+                    ctx.globalAlpha = 1 - ease * 0.75;
+                    const [ox, oy] = pos(FORK.at);
+                    ctx.translate(ox, oy);
+                    ctx.rotate(ease * 0.5);              // swings back
+                    ctx.scale(1 - ease * 0.35, 1 - ease * 0.35);
+                    ctx.translate(-ox, -oy);
+
+                    const col = ROUTE_COLS[0];
+                    out.steps.slice(0, 3).forEach((os, si) => {
+                        const [tx, ty] = pos(Math.min(steps.length - 1, FORK.at + 1 + si));
+                        const [gxp, gyp] = fanPos(si, -1);
+                        const nx = tx + (gxp - tx) * ease;
+                        const ny = ty + (gyp - ty) * ease;
+
+                        ctx.strokeStyle = col;
+                        ctx.lineWidth = 1.6 * useDPR;
+                        ctx.beginPath();
+                        ctx.moveTo(ox, oy); ctx.lineTo(nx, ny);
+                        ctx.stroke();
+
+                        ctx.beginPath();
+                        ctx.arc(nx, ny, 6 * useDPR, 0, Math.PI * 2);
+                        ctx.fillStyle = col; ctx.fill();
+
+                        ctx.fillStyle = col;
+                        ctx.font = mono(9, 700);
+                        ctx.textAlign = "left";
+                        ctx.fillText(os.name.toUpperCase(),
+                                     nx + 11 * useDPR, ny + 3 * useDPR);
+                        ctx.textAlign = "center";
+                    });
+                    ctx.restore();
+                }
+            }
 
             // Console Footer Telemetry
             ctx.fillStyle = step.blocked ? CRT_WARN : step.fired ? "#7a9b7a" : CRT_WARN;
