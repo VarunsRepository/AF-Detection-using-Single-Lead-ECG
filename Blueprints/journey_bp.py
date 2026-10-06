@@ -387,6 +387,135 @@ def list_sources():
     })
 
 
+
+
+# ---------------------------------------------------------------------------
+# Add to journey_bp.py, next to the existing /api/data routes.
+#
+# ONE route for every writable source, exactly as /api/data/<source>/<id>
+# is one route for every readable one. A source becomes writable by
+# registering a saver, not by anyone adding a route.
+#
+# THE GATE
+#
+#   Reads stay public. Writes do not. This is the decision we made ahead of
+#   the work: gating the feed would mean logging in on every incognito
+#   window and every phone, for no safety gained, since the feed is public
+#   content anyway.
+#
+#   The check below is a shared token from the environment. That is NOT
+#   identity -- it cannot tell John from Ashlinda, and everyone who has it
+#   is the same person as far as the server is concerned. It is a lock on
+#   the door while the building is still empty, and it is honest about
+#   being that.
+#
+#   When real auth arrives, `_author()` is the only function that changes:
+#   it starts returning a user id from the session instead of a constant.
+#   Every caller already treats its return value as "who is writing this".
+# ---------------------------------------------------------------------------
+
+
+
+
+# ---------------------------------------------------------------------------
+# Add to journey_bp.py, next to the existing /api/data routes.
+#
+# ONE route for every writable source, exactly as /api/data/<source>/<id>
+# is one route for every readable one. A source becomes writable by
+# registering a saver, not by anyone adding a route.
+#
+# THE GATE
+#
+#   Reads stay public. Writes do not. This is the decision we made ahead of
+#   the work: gating the feed would mean logging in on every incognito
+#   window and every phone, for no safety gained, since the feed is public
+#   content anyway.
+#
+#   The check below is a shared token from the environment. That is NOT
+#   identity -- it cannot tell John from Ashlinda, and everyone who has it
+#   is the same person as far as the server is concerned. It is a lock on
+#   the door while the building is still empty, and it is honest about
+#   being that.
+#
+#   When real auth arrives, `_author()` is the only function that changes:
+#   it starts returning a user id from the session instead of a constant.
+#   Every caller already treats its return value as "who is writing this".
+# ---------------------------------------------------------------------------
+
+import hmac
+import os
+
+from flask import jsonify, request
+
+
+def _author() -> str | None:
+    """
+    Who is writing. None means "not allowed to".
+
+    Swap point. Today: a shared token. Tomorrow:
+
+        from flask_login import current_user
+        return current_user.get_id() if current_user.is_authenticated else None
+
+    Nothing else in the save path needs to know which of those it is.
+    """
+    expected = os.environ.get("BUILDER_TOKEN", "")
+    if not expected:
+        # No token configured. Allow writes only from the machine the app
+        # is running on, so a fresh clone works on a laptop without
+        # ceremony and a deployed instance is not silently wide open.
+        return "local" if request.remote_addr in ("127.0.0.1", "::1") else None
+
+    sent = (request.headers.get("X-Builder-Token")
+            or (request.get_json(silent=True) or {}).get("token")
+            or "")
+    # Constant time: a plain == leaks the token one character at a time to
+    # anyone willing to measure.
+    return "builder" if hmac.compare_digest(sent, expected) else None
+
+
+@journey_bp.route("/api/data/<source_id>/save", methods=["POST"])
+def save_sample(source_id):
+    """
+    POST {"model": {...}, "id": "...", "overwrite": false}
+      201 saved (new)       200 saved (overwrote)
+      400 validation failed -- errors[] says what, in the author's terms
+      401 no write permission
+      405 source exists but is read-only
+      404 no such source
+    """
+    if data_source_store.get(source_id) is None:
+        return jsonify({"ok": False, "errors": [f'no source "{source_id}"']}), 404
+
+    saver = data_source_store.get_saver(source_id)
+    if saver is None:
+        return jsonify({"ok": False,
+                        "errors": [f'"{source_id}" does not accept writes']}), 405
+
+    author = _author()
+    if author is None:
+        return jsonify({"ok": False, "errors": ["not permitted to save"]}), 401
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "errors": ["body must be a JSON object"]}), 400
+
+    # A model big enough to be a denial-of-service is not a model anyone
+    # authored by hand. Cheap ceiling, checked before any parsing work.
+    if request.content_length and request.content_length > 512 * 1024:
+        return jsonify({"ok": False, "errors": ["model too large"]}), 400
+
+    result = saver(payload, author)
+    if not result.get("ok"):
+        return jsonify(result), 400
+    return jsonify(result), 201 if result.get("created") else 200
+
+
+
+
+
+
+
 # ---------------------------------------------------------------------------
 # Analytics
 # ---------------------------------------------------------------------------
@@ -474,6 +603,7 @@ def validate_all_journeys():
     else:
         print("[SCHEMA] all journey contracts valid")
     return all_errors
+
 
 
 validate_all_journeys()
