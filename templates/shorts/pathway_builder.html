@@ -120,6 +120,21 @@
       </span>
     </header>
 
+    <!-- The name is PART OF THE MODEL, not chrome: this is a second view
+         of model.name, which is why editing either moves the other. It is
+         surfaced because save refuses an unnamed pathway, and finding
+         that out at save time is late -- by then you have built the
+         thing and the error reads as the save being broken. -->
+    <div style="padding:8px 14px;border-bottom:1px solid var(--line);
+                display:flex;gap:10px;align-items:center;">
+      <label for="nameEl" style="font-size:10px;color:var(--dim);
+             letter-spacing:0.08em;">NAME</label>
+      <input id="nameEl" placeholder="Glycolysis / TCA cycle / Compiler pipeline"
+             style="flex:1;outline:0;background:#0f1216;color:var(--text);
+                    padding:7px 10px;border:1px solid var(--line);
+                    border-radius:5px;font:12px 'IBM Plex Mono',monospace;">
+    </div>
+
     <!-- CONSOLE: a cursor you move, because that is literally what the
          data is. Branching needs no new idea -- step back to an earlier
          node and carry on, and the two reactions now share a reactant. -->
@@ -165,10 +180,30 @@ function cancelSweepAnimation(id) {
     const c = activeSweepControl.get(id);
     if (c?.handle) cancelAnimationFrame(c.handle);
 }
+// STILL BY DEFAULT. The sweep draws the walk progressively over nine
+// seconds, so the node you JUST added is the last thing it draws -- and
+// every edit restarts the sweep from zero. The preview therefore looked
+// like it was ignoring the newest step for up to nine seconds, which is
+// exactly the moment you want to see it.
+//
+// Authoring wants the finished state; watching wants the animation. They
+// are different jobs, so there is a button.
+let previewPlaying = false;
+
 function startSweepLoop(sampleId, totalDurationMs, drawFn, startElapsed = 0) {
     cancelSweepAnimation(sampleId);
     const ctl = { drawFn, totalDurationMs, lastElapsedMs: startElapsed, handle: null };
     activeSweepControl.set(sampleId, ctl);
+
+    if (!previewPlaying) {
+        // Just short of the end: some renderers treat progress === 1 as
+        // a wrap rather than a finish.
+        const end = totalDurationMs * 0.999;
+        ctl.lastElapsedMs = end;
+        drawFn(end);
+        return;
+    }
+
     const t0 = performance.now() - startElapsed;
     (function tick(now) {
         // Loops rather than stopping: a builder is watched repeatedly
@@ -538,18 +573,37 @@ function build() {
         say([`<span class="err">JSON: ${e.message}</span>`]);
         return;
     }
+    syncName(model);
 
     // An empty pathway is the STARTING STATE, not a fault. Reporting
     // "nothing consumes undefined" before the user has typed anything
     // makes the tool look broken at the only moment they are deciding
     // whether to trust it.
     if (!(model.reactions ?? []).length) {
-        say([`<span class="muted">empty \u2014 name your first node to begin`
-           + `${mode === "console" ? ", e.g. <b>glucose</b>" : ""}</span>`]);
+        // TWO different empties, and saying so matters. The first `next`
+        // sets `start` and creates NO reaction -- a pathway is a list of
+        // reactions and a lone species is not one. So after typing a
+        // first node there is genuinely nothing to walk, and a preview
+        // reading "AWAITING INPUT" looks like the tool ignored you.
+        const startName = model.species?.[model.start]?.name ?? model.start;
+        if (startName) {
+            say([`<span class="ok">start at <b>${startName}</b></span>`,
+                 `<span class="muted">no steps yet \u2014 a pathway is reactions, `
+               + `and one node is not a reaction. Add the next one`
+               + `${mode === "console" ? ", e.g. <b>next pyruvate</b>" : ""}.</span>`]);
+        } else {
+            say([`<span class="muted">empty \u2014 name your first node to begin`
+               + `${mode === "console" ? ", e.g. <b>glucose</b>" : ""}</span>`]);
+        }
         chartEl.innerHTML = `<div style="position:absolute;inset:0;display:flex;`
             + `align-items:center;justify-content:center;color:#3d4b3d;`
-            + `font:11px 'IBM Plex Mono',monospace;letter-spacing:0.08em;">`
-            + `AWAITING INPUT</div>`;
+            + `font:11px 'IBM Plex Mono',monospace;letter-spacing:0.08em;`
+            + `text-align:center;padding:0 24px;">`
+            + (startName
+                ? `START: ${String(startName).toUpperCase()}<br><br>`
+                  + `<span style="color:#2d3a2d">ONE MORE NODE TO DRAW A STEP</span>`
+                : `AWAITING INPUT`)
+            + `</div>`;
         buildControls({ finalOutput: {} });
         return;
     }
@@ -598,6 +652,7 @@ function build() {
 
     document.getElementById("previewNote").textContent =
         `${rendererId === "pathway_view" ? "map" : "navigator"}`
+        + (previewPlaying ? " \u00b7 playing, tap to pause" : " \u00b7 tap to play")
         + (Object.keys(params).length ? ` \u00b7 ${JSON.stringify(params)}` : "");
 
     RENDER_ALGORITHMS[rendererId].render(chartEl, out, {}, "builder", null, 9000);
@@ -639,6 +694,93 @@ function buildControls(out) {
     add("copy JSON", false, async () => {
         try { await navigator.clipboard.writeText(srcEl.value); } catch (_) {}
     });
+    add("save draft", false, saveDraft);
+}
+
+// ── SAVE ────────────────────────────────────────────────────────────────
+// The browser checks already ran -- that is the status panel on the left.
+// They are NOT what makes this safe. The server validates again, with its
+// own walk, because a POST does not have to come from this page. If the
+// two ever disagree, the server wins and says why, and that disagreement
+// is a bug to go and find rather than something to paper over here.
+let saving = false;
+
+async function saveDraft(overwrite = false) {
+    if (saving) return;
+    let model;
+    try { model = JSON.parse(srcEl.value); }
+    catch (e) { return logLine(`cannot save \u2014 JSON: ${e.message}`, "err"); }
+    if (!(model.reactions ?? []).length) {
+        return logLine("nothing to save yet", "err");
+    }
+    if (!model.name || model.name === "New pathway") {
+        return logLine("give it a name first \u2014 set \"name\" in the json tab", "err");
+    }
+
+    saving = true;
+    logLine(`saving <b>${model.name}</b>\u2026`);
+    try {
+        const res = await fetch("/api/data/pathway_model/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model, id: model.id, overwrite }),
+        });
+        const out = await res.json().catch(() => ({}));
+
+        if (res.status === 401) {
+            logLine("not permitted to save \u2014 set BUILDER_TOKEN, or run locally", "err");
+        } else if (res.ok) {
+            logLine(`saved as <b>${out.id}</b> (draft)`, "ok");
+            (out.warnings ?? []).forEach(w => logLine(w, "warn"));
+            // Keep the id so the next save updates this draft rather than
+            // minting a second one under a near-identical name.
+            if (!model.id) { model.id = out.id; commit(model); }
+        } else if (out.conflict && !overwrite) {
+            // Say WHAT is in the way. Ids are slugged from the name, so
+            // a collision is usually a second pathway with a similar
+            // name rather than the one you were editing -- and the two
+            // cases want opposite answers. Naming the author, the age
+            // and the size is what lets you tell them apart.
+            const c = out.conflict;
+            const when = c.updatedAt ? ` \u00b7 ${c.updatedAt.replace("T", " ").replace("Z", "")}` : "";
+            logLine(`<b>${c.id}</b> already exists \u2014 "${c.name}", `
+                  + `${c.steps} step${c.steps === 1 ? "" : "s"}`
+                  + `${c.author ? ` \u00b7 by ${c.author}` : ""}${when}`, "warn");
+            logLine(`overwriting replaces it permanently \u2014 there are no `
+                  + `versions yet`, "muted");
+
+            const row = document.createElement("div");
+            row.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:6px 0;";
+            const mk = (label, fn) => {
+                const b = document.createElement("button");
+                b.textContent = label; b.onclick = fn; row.appendChild(b);
+            };
+            mk("overwrite it", () => { row.remove(); saveDraft(true); });
+            mk("save under a new name", () => {
+                row.remove();
+                // Clearing the id matters: it is what the server would
+                // otherwise reuse, so a renamed pathway would land right
+                // back on top of the old one.
+                try {
+                    const m = JSON.parse(srcEl.value);
+                    delete m.id;
+                    srcEl.value = JSON.stringify(m, null, 2);
+                } catch (_) {}
+                logLine("change the NAME field above, then save again", "ok");
+                nameEl.focus(); nameEl.select();
+            });
+            mk("cancel", () => { row.remove(); logLine("not saved", "muted"); });
+            logEl.appendChild(row); logEl.scrollTop = logEl.scrollHeight;
+        } else {
+            (out.errors ?? [`save failed (${res.status})`])
+                .forEach(e => logLine(e, "err"));
+            (out.warnings ?? []).forEach(w => logLine(w, "warn"));
+        }
+    } catch (e) {
+        logLine(`save failed \u2014 ${e.message}`, "err");
+    } finally {
+        saving = false;
+    }
 }
 
 let t = null;
@@ -652,6 +794,40 @@ srcEl.addEventListener("input", () => { clearTimeout(t); t = setTimeout(build, 3
 const cardEl  = document.querySelector(".card");
 const szPhone = document.getElementById("szPhone");
 const szFill  = document.getElementById("szFill");
+// ── NAME, BOTH WAYS ─────────────────────────────────────────────────────
+// Typing here writes model.name; a build reads it back. The one trap is
+// the round trip: this field rewrites the JSON, the JSON rebuilds, and
+// the rebuild would rewrite this field -- putting the caret at the end on
+// every keystroke. syncName refuses to touch an input that has focus.
+const nameEl = document.getElementById("nameEl");
+let nameTimer = null;
+
+nameEl.addEventListener("input", () => {
+    clearTimeout(nameTimer);
+    nameTimer = setTimeout(() => {
+        let m;
+        try { m = JSON.parse(srcEl.value); } catch (e) { return; }
+        m.name = nameEl.value;
+        // Not commit(): that also rebuilds the quick buttons, and the
+        // species have not changed. Only the JSON and the preview move.
+        srcEl.value = JSON.stringify(m, null, 2);
+        build();
+    }, 250);
+});
+
+function syncName(m) {
+    if (document.activeElement !== nameEl) nameEl.value = m?.name ?? "";
+}
+
+// Tap the card to play or pause -- the same gesture as the feed, so the
+// preview behaves like the thing it is previewing. A button would have
+// been a control the real card does not have, which is the one kind of
+// difference this builder is supposed to avoid.
+document.querySelector(".card").addEventListener("click", () => {
+    previewPlaying = !previewPlaying;
+    build();
+});
+
 function setPreviewSize(fill) {
     cardEl.classList.toggle("fill", fill);
     szFill.className  = fill ? "on" : "";
