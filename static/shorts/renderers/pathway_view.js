@@ -87,6 +87,26 @@ registerRenderingAlgorithm("pathway_view", {
             return { id: main, name: (fo.species?.[main]?.name ?? main).toUpperCase() };
         });
 
+        // THE TERMINAL NODE.
+        //
+        // `steps` is a list of REACTIONS and a node is a reaction's
+        // reactant, so N reactions gave N nodes -- and the final PRODUCT
+        // was never one of them. A cycle hides this completely: its last
+        // product IS the start, which is already node 0. TCA, Calvin and
+        // the urea cycle are all cycles, so nothing looked wrong until a
+        // LINEAR pathway came along and the chain ended one node short --
+        // a compiler pipeline drawn without its executable on it.
+        if (!fo.cyclic && steps.length) {
+            const lastProducts = steps[steps.length - 1].products ?? {};
+            const tail = Object.keys(lastProducts)
+                .find(id => !fo.species?.[id]?.boundary) ?? Object.keys(lastProducts)[0];
+            if (tail) nodes.push({
+                id: tail,
+                name: (fo.species?.[tail]?.name ?? tail).toUpperCase(),
+                terminal: true,
+            });
+        }
+
         const routeKey = FORK.at === -1 ? "none"
                        : steps.slice(FORK.at).map(s => s.id).join(">");
         const prevKey = _lastRoute.get(sampleId);
@@ -191,6 +211,11 @@ registerRenderingAlgorithm("pathway_view", {
             const cy = H * 0.55;
             const R  = Math.min(W - 40 * useDPR, H) * 0.24; // Scaled to prevent rightward label overflow
 
+            // A linear layout now spreads over NODES, not steps -- one
+            // more point than before, because the terminal node is real.
+            // The cyclic branch is untouched: its node count has not
+            // changed, so every existing ring draws exactly as it did.
+            const LAST = Math.max(1, nodes.length - 1);
             const pos = i => {
                 if (fo.cyclic) {
                     const a = (i / steps.length) * Math.PI * 2 - Math.PI / 2;
@@ -199,14 +224,14 @@ registerRenderingAlgorithm("pathway_view", {
                 // Vertical layout shifted left from W * 0.52 to W * 0.40
                 if (steps.length > 5) {
                     const top = H * 0.24, bot = H * 0.86;
-                    return [W * 0.40, top + (i / Math.max(1, steps.length - 1)) * (bot - top)];
+                    return [W * 0.40, top + (i / LAST) * (bot - top)];
                 }
                 // Horizontal layout with right-side safe padding
                 const leftPad  = 30 * useDPR;
                 const rightPad = 54 * useDPR; // Safe gutter for right-side controls
                 const span     = W - leftPad - rightPad;
                 const cyHorizontal = H * 0.58;
-                return [leftPad + (i / Math.max(1, steps.length - 1)) * span, cyHorizontal];
+                return [leftPad + (i / LAST) * span, cyHorizontal];
             };
 
             // ── ARCS ──
@@ -225,8 +250,11 @@ registerRenderingAlgorithm("pathway_view", {
 
             steps.forEach((s, i) => {
                 const [x0, y0] = pos(i);
-                const [x1, y1] = pos((i + 1) % steps.length);
-                if (!fo.cyclic && i === steps.length - 1) return;
+                // A linear walk's last edge used to be SKIPPED, because
+                // pos((i+1) % steps.length) wrapped round to node 0 and
+                // drew a line back to the start. With a terminal node
+                // there is somewhere for it to land, so it is drawn.
+                const [x1, y1] = pos(fo.cyclic ? (i + 1) % steps.length : i + 1);
                 const swinging = swap < 1 && FORK.at !== -1 && i >= FORK.at;
                 if (swinging) {
                     ctx.save();
@@ -330,8 +358,13 @@ registerRenderingAlgorithm("pathway_view", {
                         y = gyp + (ty - gyp) * ease;
                     } else { x = tx; y = ty; }
                 }
-                const reached = i <= idx;
-                const isCur = i === idx;
+                // The terminal node sits one past the last STEP, so
+                // `i <= idx` would leave it dark forever. It lights when
+                // the final step is the one running, and is never the
+                // current node -- nothing is happening AT it, it is what
+                // the last reaction produced.
+                const reached = n.terminal ? idx >= steps.length - 1 : i <= idx;
+                const isCur = !n.terminal && i === idx;
                 const r = (isCur ? 9 : 6) * useDPR;
 
                 ctx.strokeStyle = reached ? CRT_GREEN : CRT_MUTED;
@@ -378,7 +411,7 @@ registerRenderingAlgorithm("pathway_view", {
                             let nx = gx + side * stepLen;
                             let ny = gy + dir * (si === 0 ? 26 : 14) * useDPR;
                             if (outgoing) {
-                                const [tx0, ty0] = pos(Math.min(steps.length - 1,
+                                const [tx0, ty0] = pos(Math.min(nodes.length - 1,
                                                                FORK.at + 1 + si));
                                 nx = tx0 + (nx - tx0) * ease;
                                 ny = ty0 + (ny - ty0) * ease;
@@ -436,7 +469,7 @@ registerRenderingAlgorithm("pathway_view", {
 
                     const col = ROUTE_COLS[0];
                     out.steps.slice(0, 3).forEach((os, si) => {
-                        const [tx, ty] = pos(Math.min(steps.length - 1, FORK.at + 1 + si));
+                        const [tx, ty] = pos(Math.min(nodes.length - 1, FORK.at + 1 + si));
                         const [gxp, gyp] = fanPos(si, -1);
                         const nx = tx + (gxp - tx) * ease;
                         const ny = ty + (gyp - ty) * ease;

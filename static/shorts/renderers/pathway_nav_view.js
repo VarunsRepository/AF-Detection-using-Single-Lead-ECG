@@ -211,8 +211,24 @@ registerRenderingAlgorithm("pathway_nav_view", {
 
             const cy = H * 0.54;
             const gap = Math.min(H * 0.135, 62 * useDPR);
-            const raw = Math.max(0, (frac - 0.62) / 0.38);
-            const slide = raw * raw * (3 - 2 * raw);
+
+            // ── TWO CLOCKS, OVERLAPPED ──────────────────────────────────
+            // Both motions used to run off ONE value, `slide`, which was
+            // pinned at 0 for the first 62% of every step. So nothing
+            // moved at all for most of a step and then the trace filled
+            // AND the tape scrolled in the last 38%, finishing together.
+            // That reads as a stutter: a long hold, then a lurch.
+            //
+            // Now the trace leads -- it is the thing being measured --
+            // and the tape slides to meet it, starting while the fill is
+            // still running and landing just after it completes. The
+            // overlap is what makes one step flow into the next.
+            const clamp01 = u => Math.max(0, Math.min(1, u));
+            const ease    = u => u * u * (3 - 2 * u);
+            const FILL_END   = 0.80;   // trace is full by here
+            const SLIDE_FROM = 0.38;   // tape starts moving here
+            const fill  = ease(clamp01(frac / FILL_END));
+            const slide = ease(clamp01((frac - SLIDE_FROM) / (1 - SLIDE_FROM)));
 
             for (let k = -3; k <= 3; k++) {
                 const f = at(idx + k);
@@ -224,6 +240,12 @@ registerRenderingAlgorithm("pathway_nav_view", {
 
                 const isCur = dist < 0.5;
                 const past = off < -0.5;
+                // Continuous version of isCur. The boolean flips the
+                // instant the tape is half a row along, which popped the
+                // reticle from 8px to 12px and the label from 10pt to
+                // 12pt mid-slide. Sizes and alphas ride this instead, so
+                // the handover is a crossfade rather than a snap.
+                const emph = clamp01(1 - dist / 0.5);
                 const atFork = junctionIds.has(f.from);
                 const onRoute = forkFrame !== -1 && (idx + k) >= forkFrame;
                 const alpha = Math.max(0.12, Math.min(1, 1 - dist * 0.42));
@@ -238,14 +260,16 @@ registerRenderingAlgorithm("pathway_nav_view", {
                 const x = 24 * useDPR + (f.depth > 0 ? 18 * useDPR : 0);
 
                 // Industrial Reticle Points
+                const rw = (4 + 2 * emph) * useDPR;
                 ctx.strokeStyle = col;
-                ctx.lineWidth = (isCur ? 2.2 : 1.2) * useDPR;
-                ctx.strokeRect(x - (isCur ? 6 : 4) * useDPR, y - (isCur ? 6 : 4) * useDPR,
-                               (isCur ? 12 : 8) * useDPR, (isCur ? 12 : 8) * useDPR);
+                ctx.lineWidth = (1.2 + 1.0 * emph) * useDPR;
+                ctx.strokeRect(x - rw, y - rw, rw * 2, rw * 2);
 
-                if (isCur) {
+                if (emph > 0) {
+                    ctx.globalAlpha = alpha * emph;
                     ctx.fillStyle = col;
                     ctx.fillRect(x - 2 * useDPR, y - 2 * useDPR, 4 * useDPR, 4 * useDPR);
+                    ctx.globalAlpha = alpha;
                 }
 
                 // Connector Trace
@@ -256,7 +280,15 @@ registerRenderingAlgorithm("pathway_nav_view", {
                     ctx.lineWidth = 1.2 * useDPR;
                     ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bot); ctx.stroke();
 
-                    const grow = isCur ? Math.min(1, Math.max(0, slide / 0.999)) : (off < 0 ? 1 : 0);
+                    // Keyed on k (which row this is relative to the
+                    // current frame), NOT on isCur. The old test flipped
+                    // when the tape passed the halfway mark, and at that
+                    // instant `off < 0` became true for k === 0 -- so the
+                    // fill jumped from ~0.5 to 1 in a single frame, every
+                    // step. k is stable for the whole step, and when the
+                    // frame advances this row becomes k === -1 with the
+                    // trace already full: no seam.
+                    const grow = k < 0 ? 1 : k > 0 ? 0 : fill;
                     if (grow > 0) {
                         ctx.strokeStyle = col;
                         ctx.lineWidth = 2 * useDPR;
@@ -279,12 +311,15 @@ registerRenderingAlgorithm("pathway_nav_view", {
                 })[config.emphasis ?? "enzyme"] ?? ["edge", "node", "side"];
 
                 // Data Callouts
-                ctx.fillStyle = isCur ? "#ffffff" : "rgba(255, 255, 255, 0.4)";
-                ctx.font = mono(isCur ? 12 : 10, isCur ? 700 : 400);
+                ctx.fillStyle = `rgba(255, 255, 255, ${(0.4 + 0.6 * emph).toFixed(3)})`;
+                ctx.font = mono(10 + 2 * emph, emph > 0.5 ? 700 : 400);
                 ctx.textAlign = "left";
-                ctx.fillText(facts[order[0]], x + 18 * useDPR, y + (isCur ? 4 : 3) * useDPR);
+                ctx.fillText(facts[order[0]], x + 18 * useDPR, y + (3 + emph) * useDPR);
 
                 if (isCur) {
+                    // The detail block cannot be interpolated -- it is
+                    // either drawn or it is not -- so it fades instead.
+                    ctx.globalAlpha = alpha * emph;
                     ctx.fillStyle = CRT_GREEN;
                     ctx.font = mono(9);
                     ctx.fillText(`>> ${facts[order[1]]}`, x + 18 * useDPR, y + 19 * useDPR);

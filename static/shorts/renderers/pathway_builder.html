@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pathway Builder</title>
+<!--
+  ============================================================================
+  PATHWAY BUILDER
+
+  Edit a pathway model and watch it run. The point is not the form -- it is
+  that pathways are DATA, so authoring one needs no Python, no restart and
+  no deploy. The same DSPE and the same renderers the feed uses are loaded
+  here unmodified, which is the only way the preview can be trusted: a
+  builder with its own simplified renderer would show something the feed
+  would not.
+
+  PREVIEW ONLY, deliberately. Saving a model pulls in hot-loading, a review
+  gate and the question of who may add content -- see MASTER_DOCUMENT 31.
+  Everything up to that point is useful on its own: the atom-balance check
+  and the walk together catch most authoring mistakes, and "copy the JSON"
+  is a perfectly good way to get a model into catalog/sources/biology.py.
+  ============================================================================
+-->
+<style>
+  :root {
+      --bg: #0b0d10; --panel: #12161b; --line: #232a33;
+      --text: #e8f4f8; --dim: #78828e; --accent: #5cc24a; --bad: #e74c3c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+               font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .wrap { display: flex; height: 100%; gap: 1px; background: var(--line); }
+  .left, .right { background: var(--bg); display: flex; flex-direction: column; }
+  .left  { flex: 1 1 50%; min-width: 0; }
+  .right { flex: 1 1 50%; min-width: 0; }
+
+  header { padding: 12px 16px; border-bottom: 1px solid var(--line);
+           display: flex; align-items: baseline; gap: 12px; }
+  header h1 { font-size: 14px; margin: 0; letter-spacing: 0.06em; }
+  header span { font-size: 11px; color: var(--dim); }
+
+  textarea { flex: 1; width: 100%; resize: none; border: 0; outline: 0;
+             background: var(--panel); color: var(--text); padding: 14px;
+             font: 12px/1.55 "IBM Plex Mono", ui-monospace, monospace;
+             tab-size: 2; }
+
+  .status { padding: 10px 16px; border-top: 1px solid var(--line);
+            font-size: 11px; line-height: 1.6; max-height: 34%; overflow-y: auto; }
+  .ok   { color: var(--accent); }
+  .err  { color: var(--bad); }
+  .warn { color: #eb7b2b; }
+  .muted{ color: var(--dim); }
+
+  /* The preview is a CARD, not a panel: same proportions as the feed, so
+     what you are looking at is what a viewer would see. Letting it fill
+     a wide pane stretched the layout and left the renderer's grid
+     covering only part of the box -- so it keeps 9:15 and simply takes
+     the largest such box the pane allows, rather than stopping at a
+     fixed 390px with the rest of the pane left empty. */
+  .cardWrap { flex: 1; display: flex; align-items: center; justify-content: center;
+              padding: 14px; min-height: 0; min-width: 0;
+              container-type: size; }
+  /* Whichever runs out first: the pane's height, the width that height
+     would need, or a cap so a tall monitor does not give a 1200px phone.
+     WIDTH IS DERIVED from aspect-ratio and never set, because clamping a
+     definite height with max-width is what breaks the ratio. */
+  .card { position: relative; aspect-ratio: 9 / 15;
+          height: min(100cqh, calc(100cqw * 15 / 9), 860px);
+          border: 1px solid var(--line);
+          border-radius: 10px; overflow: hidden; background: #000; }
+  @supports not (container-type: size) {
+      .card { width: min(100%, 420px); height: auto; max-height: 100%; }
+  }
+  /* FILL: drop the phone proportions and take the whole pane. Useful for
+     reading a wide graph while authoring -- but it is NOT what a viewer
+     sees, which is why phone stays the default rather than the reverse. */
+  .card.fill { aspect-ratio: auto; width: 100%; height: 100%; }
+
+  /* NOT position:absolute;inset:0. Both pathway renderers set
+     container.style.position = "relative" as their first act, which
+     overwrites it -- the chart then falls into normal flow with auto
+     height, the canvas resolves height:100% against auto and takes its
+     intrinsic 150px, and the renderer measures that 150 and pins it.
+     That is the empty lower half. Sizing by width/height survives it. */
+  #chart { width: 100%; height: 100%; position: relative; }
+  .bar { padding: 10px 16px; border-top: 1px solid var(--line);
+         display: flex; gap: 8px; flex-wrap: wrap; }
+  button { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+           border-radius: 6px; padding: 6px 12px; font: 11px "IBM Plex Mono", monospace;
+           cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.on { border-color: var(--accent); color: var(--accent); }
+
+  /* Stack if the viewport is NARROW or if it is TALLER THAN WIDE. Width
+     alone was wrong on a portrait monitor -- 1280x1800 is wider than
+     860, so it stayed side-by-side and gave two slivers. Aspect alone is
+     wrong on a squat landscape phone. Both conditions, or one of them
+     always loses a real case.
+     The explicit 50% shares matter: stacked, .right would otherwise take
+     its height from content, .cardWrap's flex:1 would have nothing
+     definite to divide, and the card's 100cqh would resolve against a
+     collapsed box -- the short-preview bug again, by another route. */
+  @media (max-width: 860px), (max-aspect-ratio: 1 / 1) {
+      .wrap  { flex-direction: column; }
+      .left  { flex: 1 1 50%; min-height: 0; }
+      .right { flex: 1 1 50%; min-height: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="left">
+    <header><h1>PATHWAY BUILDER</h1>
+      <span id="modeHint">walk it one step at a time</span>
+      <span style="margin-left:auto;display:flex;gap:6px;">
+        <button id="mConsole" class="on">console</button>
+        <button id="mLines">sentences</button>
+        <button id="mJson">json</button>
+      </span>
+    </header>
+
+    <!-- The name is PART OF THE MODEL, not chrome: this is a second view
+         of model.name, which is why editing either moves the other. It is
+         surfaced because save refuses an unnamed pathway, and finding
+         that out at save time is late -- by then you have built the
+         thing and the error reads as the save being broken. -->
+    <div style="padding:8px 14px;border-bottom:1px solid var(--line);
+                display:flex;gap:10px;align-items:center;">
+      <label for="nameEl" style="font-size:10px;color:var(--dim);
+             letter-spacing:0.08em;">NAME</label>
+      <input id="nameEl" placeholder="Glycolysis / TCA cycle / Compiler pipeline"
+             style="flex:1;outline:0;background:#0f1216;color:var(--text);
+                    padding:7px 10px;border:1px solid var(--line);
+                    border-radius:5px;font:12px 'IBM Plex Mono',monospace;">
+    </div>
+
+    <!-- CONSOLE: a cursor you move, because that is literally what the
+         data is. Branching needs no new idea -- step back to an earlier
+         node and carry on, and the two reactions now share a reactant. -->
+    <div id="consolePane" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+      <div id="log" style="flex:1;overflow-y:auto;padding:14px;background:var(--panel);
+                           font-size:12px;line-height:1.7;"></div>
+      <div style="padding:8px 14px;border-top:1px solid var(--line);
+                  display:flex;gap:6px;flex-wrap:wrap;" id="quick"></div>
+      <input id="cmd" placeholder="try:  next pyruvate   /   costs ATP   /   back to g6p"
+             style="border:0;outline:0;background:#0f1216;color:var(--text);
+                    padding:12px 14px;font:12px 'IBM Plex Mono',monospace;
+                    border-top:1px solid var(--line);">
+    </div>
+
+    <!-- SENTENCES: one reaction per line, the way it is written on a
+         whiteboard. Species are created from the names themselves, so
+         nothing is declared twice. -->
+    <textarea id="lines" spellcheck="false" style="display:none;"></textarea>
+
+    <textarea id="src" spellcheck="false" style="display:none;"></textarea>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="right">
+    <header><h1>PREVIEW</h1><span id="previewNote" class="muted"></span>
+      <span style="margin-left:auto;display:flex;gap:6px;">
+        <button id="szPhone" class="on">phone</button>
+        <button id="szFill">fill pane</button>
+      </span>
+    </header>
+    <div class="cardWrap">
+      <div class="card"><div id="chart"></div></div>
+    </div>
+    <div class="bar" id="controls"></div>
+  </div>
+</div>
+
+<script>
+// The renderers expect these globals. Defined here rather than pulling in
+// the whole feed: the builder needs a sweep loop and a theme, not a feed.
+const activeSweepControl = new Map();
+function cancelSweepAnimation(id) {
+    const c = activeSweepControl.get(id);
+    if (c?.handle) cancelAnimationFrame(c.handle);
+}
+// STILL BY DEFAULT. The sweep draws the walk progressively over nine
+// seconds, so the node you JUST added is the last thing it draws -- and
+// every edit restarts the sweep from zero. The preview therefore looked
+// like it was ignoring the newest step for up to nine seconds, which is
+// exactly the moment you want to see it.
+//
+// Authoring wants the finished state; watching wants the animation. They
+// are different jobs, so there is a button.
+let previewPlaying = false;
+
+function startSweepLoop(sampleId, totalDurationMs, drawFn, startElapsed = 0) {
+    cancelSweepAnimation(sampleId);
+    const ctl = { drawFn, totalDurationMs, lastElapsedMs: startElapsed, handle: null };
+    activeSweepControl.set(sampleId, ctl);
+
+    if (!previewPlaying) {
+        // Just short of the end: some renderers treat progress === 1 as
+        // a wrap rather than a finish.
+        const end = totalDurationMs * 0.999;
+        ctl.lastElapsedMs = end;
+        drawFn(end);
+        return;
+    }
+
+    const t0 = performance.now() - startElapsed;
+    (function tick(now) {
+        // Loops rather than stopping: a builder is watched repeatedly
+        // while editing, and a card that runs once then freezes reads as
+        // a crash every time you tab back to it.
+        const e = (now - t0) % totalDurationMs;
+        ctl.lastElapsedMs = e;
+        drawFn(e);
+        ctl.handle = requestAnimationFrame(tick);
+    })(performance.now());
+}
+</script>
+
+<script src="{{ url_for('static', filename='shorts/core/rail_controls.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/dsp_registry.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/core/rendering_registry.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/filters/pathway_filter.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/renderers/pathway_view.js') }}"></script>
+<script src="{{ url_for('static', filename='shorts/renderers/pathway_nav_view.js') }}"></script>
+
+<script>
+const STARTER = {{ starter | tojson }};
+const srcEl    = document.getElementById("src");
+const statusEl = document.getElementById("status");
+const chartEl  = document.getElementById("chart");
+const barEl    = document.getElementById("controls");
+
+let rendererId = "pathway_view";
+let params     = {};
+
+srcEl.value = JSON.stringify(STARTER, null, 2);
+
+// ── MODES ───────────────────────────────────────────────────────────────
+// Three ways in, ONE artifact out. The JSON is the single source of
+// truth; console and sentences are editors that write it. Keeping one
+// format is what lets a beginner's session and an SBML conversion end up
+// as the same thing, and lets each tier show the next one's version of
+// what you just built.
+const linesEl = document.getElementById("lines");
+const logEl   = document.getElementById("log");
+const cmdEl   = document.getElementById("cmd");
+const quickEl = document.getElementById("quick");
+const panes = { console: document.getElementById("consolePane"),
+                lines: linesEl, json: srcEl };
+let mode = "console";
+
+function setMode(m) {
+    mode = m;
+    panes.console.style.display = m === "console" ? "flex" : "none";
+    linesEl.style.display = m === "lines" ? "block" : "none";
+    srcEl.style.display   = m === "json"  ? "block" : "none";
+    for (const [id, name] of [["mConsole","console"],["mLines","lines"],["mJson","json"]]) {
+        document.getElementById(id).className = m === name ? "on" : "";
+    }
+    document.getElementById("modeHint").textContent =
+        m === "console" ? "walk it one step at a time"
+      : m === "lines"   ? "one reaction per line:  a + b -> c : Name"
+      : "species + reactions, as the feed reads them";
+    // Leaving a mode hands its work to the others, so switching is a way
+    // to SEE the format rather than a commitment.
+    if (m === "lines") linesEl.value = toLines(JSON.parse(srcEl.value));
+}
+document.getElementById("mConsole").onclick = () => setMode("console");
+document.getElementById("mLines").onclick   = () => setMode("lines");
+document.getElementById("mJson").onclick    = () => setMode("json");
+
+// ── SENTENCES ───────────────────────────────────────────────────────────
+const idOf = s => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+
+function toLines(model) {
+    return (model.reactions ?? []).map(r => {
+        const side = o => Object.entries(o ?? {})
+            .map(([k, n]) => (n > 1 ? n + " " : "") + (model.species?.[k]?.name ?? k))
+            .join(" + ");
+        let s = `${side(r.reactants)} -> ${side(r.products)}`;
+        if (r.name) s += `  : ${r.name}`;
+        if (r.when) s += `  [if ${r.when}]`;
+        return s;
+    }).join("\n");
+}
+
+function fromLines(text, base) {
+    const species = {}, reactions = [];
+    const keepName = {};
+    for (const [id, sp] of Object.entries(base?.species ?? {})) keepName[id] = sp;
+
+    text.split("\n").map(l => l.trim()).filter(Boolean).forEach((line, i) => {
+        const whenM = line.match(/\[if ([^\]]+)\]\s*$/);
+        const when = whenM ? whenM[1].trim() : null;
+        if (whenM) line = line.slice(0, whenM.index).trim();
+
+        const nameM = line.split(":");
+        const name = nameM.length > 1 ? nameM.slice(1).join(":").trim() : null;
+        const body = nameM[0];
+
+        const [lhs, rhs] = body.split("->");
+        if (!rhs) return;                       // not a reaction line; skip quietly
+        const parse = part => {
+            const out = {};
+            part.split("+").map(t => t.trim()).filter(Boolean).forEach(tok => {
+                const m = tok.match(/^(\d+)\s+(.*)$/);
+                const n = m ? Number(m[1]) : 1;
+                const label = (m ? m[2] : tok).trim();
+                const id = idOf(label);
+                out[id] = (out[id] ?? 0) + n;
+                // Species are created from the names used, so nothing has
+                // to be declared twice -- the commonest JSON mistake.
+                species[id] = keepName[id] ?? { name: label };
+            });
+            return out;
+        };
+        reactions.push({
+            id: idOf(name ?? `step_${i + 1}`) || `step_${i + 1}`,
+            name: name ?? `Step ${i + 1}`,
+            ...(when ? { when } : {}),
+            reactants: parse(lhs), products: parse(rhs),
+        });
+    });
+
+    const firstIn = Object.keys(reactions[0]?.reactants ?? {})[0];
+    return { ...(base ?? {}), name: base?.name ?? "New pathway",
+             start: species[base?.start] ? base.start : firstIn,
+             species, reactions };
+}
+
+linesEl.addEventListener("input", () => {
+    try {
+        srcEl.value = JSON.stringify(fromLines(linesEl.value, JSON.parse(srcEl.value)), null, 2);
+        build();
+    } catch (e) { say([`<span class="err">${e.message}</span>`]); }
+});
+
+// ── CONSOLE ─────────────────────────────────────────────────────────────
+// A cursor you stand on. "back to X" then "next Y" IS a branch: two
+// reactions consuming the same species, which is exactly how the engine
+// represents one. The UI matches the model instead of hiding it.
+let cursor = null;
+const history = [];
+// Whether the LAST command created a reaction. The hints key off this:
+// offering "costs ATP" when no reaction exists teaches the wrong model,
+// since costs attaches to reactions.at(-1) and not to the cursor.
+let justMade = false;
+
+function logLine(html, cls = "muted") {
+    logEl.innerHTML += `<div class="${cls}">${html}</div>`;
+    logEl.scrollTop = logEl.scrollHeight;
+}
+
+function model() { return JSON.parse(srcEl.value); }
+function commit(m) { srcEl.value = JSON.stringify(m, null, 2); build(); refreshQuick(); }
+
+function refreshQuick() {
+    const m = model();
+    quickEl.innerHTML = "";
+    const mk = (label, fn) => {
+        const b = document.createElement("button"); b.textContent = label;
+        b.onclick = fn; quickEl.appendChild(b);
+    };
+    // Offering the existing names matters: a mistyped species is the one
+    // mistake that silently severs the pathway, and retyping invites it.
+    Object.entries(m.species ?? {}).slice(0, 8).forEach(([id, sp]) =>
+        mk(`back to ${sp.name}`, () => runCmd(`back to ${sp.name}`)));
+    mk("undo", () => runCmd("undo"));
+    // The page opens on a worked example, which is the fastest way to
+    // learn the format -- but typing into the console then APPENDS to
+    // someone else's pathway, which reads as the tool misbehaving.
+    mk("start fresh", () => runCmd("clear"));
+}
+
+function runCmd(raw) {
+    const m = model();
+    const cmd = raw.trim();
+    const lower = cmd.toLowerCase();
+
+    const ensure = label => {
+        const id = idOf(label);
+        (m.species ??= {})[id] ??= { name: label };
+        return id;
+    };
+
+    if (lower === "clear") {
+        history.push({ json: srcEl.value, cursor });
+        srcEl.value = JSON.stringify(
+            { name: "New pathway", start: null, species: {}, reactions: [] }, null, 2);
+        cursor = null;
+        logEl.innerHTML = "";
+        logLine("blank pathway \u2014 name your first node, e.g. <b>glucose</b>", "ok");
+        build(); refreshQuick(); return;
+    }
+    if (lower === "undo") {
+        if (!history.length) return logLine("nothing to undo");
+        const prev = history.pop();
+        srcEl.value = prev.json; cursor = prev.cursor;
+        logLine("undone", "warn"); build(); refreshQuick(); return;
+    }
+    // Where people look first. Costs two lines and saves the one question
+    // every console gets asked.
+    if (lower === "?" || lower === "help") {
+        logLine("<b>next X</b> \u2014 step to X. The first one sets the start.", "ok");
+        logLine("<b>costs X</b> / <b>costs 2 X</b> \u2014 X consumed by the last step");
+        logLine("<b>makes X</b> / <b>makes 2 X</b> \u2014 X produced by the last step");
+        logLine("<b>back to X</b> \u2014 move the cursor. Then <b>next Y</b> is a branch.");
+        logLine("<b>only if C</b> \u2014 guard the last step, e.g. only if oxygen == 0");
+        logLine("<b>name it X</b> \u2014 rename the last step");
+        logLine("<b>drop last</b> \u2014 remove the last step only");
+        logLine("<b>undo</b> \u00b7 <b>clear</b> \u2014 step back \u00b7 blank pathway");
+        return;
+    }
+    // Not the same as undo: undo reverses the last COMMAND, which may have
+    // been a rename or a cost. This reverses the last STEP, which is what
+    // you want when a chain went one node too far.
+    if (lower === "drop last") {
+        const last = (m.reactions ?? []).at(-1);
+        if (!last) return logLine("no step to drop", "err");
+        history.push({ json: srcEl.value, cursor });
+        m.reactions.pop();
+        cursor = Object.keys(last.reactants ?? {})[0] ?? cursor;
+        justMade = false;
+        logLine(`dropped <b>${last.name}</b> \u2014 cursor back at ` +
+                `<b>${m.species?.[cursor]?.name ?? cursor}</b>`, "warn");
+        commit(m); return;
+    }
+    history.push({ json: srcEl.value, cursor });
+
+    let mm;
+    if ((mm = lower.match(/^back to (.+)$/))) {
+        cursor = idOf(cmd.slice(8));
+        justMade = false;
+        logLine(`cursor \u2192 <b>${m.species?.[cursor]?.name ?? cursor}</b>`, "ok");
+        commit(m); return;
+    }
+    if ((mm = cmd.match(/^next (.+)$/i))) {
+        const to = ensure(mm[1].trim());
+        if (!cursor) {
+            cursor = to; m.start ??= to; justMade = false;
+            logLine(`start at <b>${mm[1]}</b>`, "ok");
+        } else {
+            (m.reactions ??= []).push({
+                id: `${cursor}_${to}`, name: `${m.species[cursor].name} \u2192 ${mm[1].trim()}`,
+                reactants: { [cursor]: 1 }, products: { [to]: 1 },
+            });
+            logLine(`${m.species[cursor].name} \u2192 <b>${mm[1].trim()}</b>`, "ok");
+            cursor = to; justMade = true;
+        }
+        m.start ??= cursor;
+        commit(m); return;
+    }
+    // The leading count is not a convenience. Every amount was hardcoded
+    // to 1, so glycolysis's 2 ATP could not be written at all -- and atom
+    // balance can never pass on a real pathway whose stoichiometry you
+    // are unable to state. "costs 2 ATP" parses; "costs ATP" still means 1.
+    if ((mm = cmd.match(/^(costs|makes) (?:(\d+(?:\.\d+)?)\s+)?(.+)$/i))) {
+        const last = (m.reactions ?? []).at(-1);
+        if (!last) return logLine("no step yet \u2014 try: next pyruvate", "err");
+        const n     = mm[2] ? Number(mm[2]) : 1;
+        const label = mm[3].trim();
+        const id = ensure(label);
+        m.species[id].boundary = true;        // ATP, NADH and friends
+        (mm[1].toLowerCase() === "costs" ? last.reactants : last.products)[id] = n;
+        logLine(`${last.name}: ${mm[1].toLowerCase()} <b>${n > 1 ? n + " " : ""}${label}</b>`);
+        commit(m); return;
+    }
+    if ((mm = cmd.match(/^only if (.+)$/i))) {
+        const last = (m.reactions ?? []).at(-1);
+        if (!last) return logLine("no step yet", "err");
+        last.when = mm[1].trim();
+        // Declare the variable the condition names, and remember every
+        // value used on it. Without this the console writes a `when`
+        // that nothing can satisfy -- the conditions object is empty, so
+        // the comparison is against undefined, every guarded reaction is
+        // filtered out, and the branch the user just built disappears.
+        for (const part of last.when.split(/&&|\|\|/)) {
+            const cm = part.trim().match(/^([A-Za-z_][\w.]*)\s*(?:==|!=|>=|<=|>|<)\s*(.+)$/);
+            if (!cm) continue;
+            const key = cm[1];
+            let val = cm[2].trim().replace(/^['"]|['"]$/g, "");
+            if (!/^['"]/.test(cm[2].trim()) && !Number.isNaN(Number(val))) val = Number(val);
+            const spec = ((m.conditions ??= {})[key] ??=
+                { label: key.replace(/_/g, " "), values: [], default: val });
+            if (!spec.values.includes(val)) spec.values.push(val);
+            // A ">" or "<" names a threshold, not a state, so offer the
+            // other side of it as a choice too.
+            if (/[<>]/.test(part) && typeof val === "number") {
+                const other = val === 0 ? 1 : 0;
+                if (!spec.values.includes(other)) spec.values.push(other);
+            }
+        }
+        logLine(`${last.name}: only if <b>${mm[1].trim()}</b>`);
+        commit(m); return;
+    }
+    if ((mm = cmd.match(/^name it (.+)$/i))) {
+        const last = (m.reactions ?? []).at(-1);
+        if (last) { last.name = mm[1].trim(); logLine(`named <b>${mm[1].trim()}</b>`); commit(m); }
+        return;
+    }
+    // A bare word starts (or moves to) a node.
+    if (/^[\w\- ]+$/.test(cmd)) { runCmd(`next ${cmd}`); return; }
+    history.pop();
+    logLine(`don't know "${cmd}" \u2014 type <b>?</b> for every command`, "err");
+}
+
+// ── GHOST HINTS ─────────────────────────────────────────────────────────
+// A cycling placeholder, not a dropdown. Two reasons it is state-aware
+// rather than a fixed loop: "costs ATP" before any reaction exists is
+// illegal and would teach that costs attaches to the cursor, and a hint
+// naming YOUR species -- "back to g6p" -- is what makes the cursor idea
+// land, where "back to X" reads as syntax to memorise.
+let ghostIdx = 0;
+
+function ghostList() {
+    let m; try { m = model(); } catch (e) { return ["next glucose"]; }
+    if (!cursor) return ["next glucose", "name your first node, then ? for the rest"];
+
+    const others = Object.entries(m.species ?? {})
+        .filter(([id, sp]) => !sp.boundary && id !== cursor)
+        .map(([, sp]) => sp.name);
+
+    const g = [];
+    if (justMade) g.push("costs 2 ATP", "makes NADH", "only if oxygen == 0", "name it Hexokinase");
+    g.push("next pyruvate");
+    if (others.length) g.push(`back to ${others[0]}`);
+    if (justMade) g.push("drop last");
+    g.push("? for every command");
+    return g;
+}
+
+function tickGhost() {
+    if (cmdEl.value) return;               // placeholder is not visible anyway
+    const g = ghostList();
+    ghostIdx = (ghostIdx + 1) % g.length;
+    const hint = g[ghostIdx];
+    cmdEl.placeholder = hint;
+    // Only a real command is Tab-able. The "? for every command" line is
+    // prose, and completing it would type something that does not run.
+    cmdEl.dataset.ghost =
+        /^(next|costs|makes|only if|back to|name it|drop last)\b/.test(hint) ? hint : "";
+}
+tickGhost();
+setInterval(tickGhost, 2500);
+
+cmdEl.addEventListener("keydown", e => {
+    // Tab accepts the hint, Enter runs what you typed. Two keys, no menu.
+    if (e.key === "Tab" && !cmdEl.value && cmdEl.dataset.ghost) {
+        e.preventDefault(); cmdEl.value = cmdEl.dataset.ghost; return;
+    }
+    if (e.key !== "Enter" || !cmdEl.value.trim()) return;
+    logLine(`<span style="color:#5cc24a">&gt;</span> ${cmdEl.value}`);
+    runCmd(cmdEl.value); cmdEl.value = "";
+    tickGhost();                           // hint follows the new state at once
+});
+
+logLine("start by naming a node, e.g. <b>glucose</b>");
+logLine("then: next X \u00b7 costs ATP \u00b7 makes NADH \u00b7 back to X \u00b7 only if oxygen == 0");
+setMode("console");
+refreshQuick();
+
+function say(lines) { statusEl.innerHTML = lines.join("<br>"); }
+
+function build() {
+    let model;
+    try {
+        model = JSON.parse(srcEl.value);
+    } catch (e) {
+        // Keep the last good render on screen. Blanking the preview on
+        // every keystroke that leaves the JSON momentarily invalid makes
+        // editing feel broken.
+        say([`<span class="err">JSON: ${e.message}</span>`]);
+        return;
+    }
+    syncName(model);
+
+    // An empty pathway is the STARTING STATE, not a fault. Reporting
+    // "nothing consumes undefined" before the user has typed anything
+    // makes the tool look broken at the only moment they are deciding
+    // whether to trust it.
+    if (!(model.reactions ?? []).length) {
+        // TWO different empties, and saying so matters. The first `next`
+        // sets `start` and creates NO reaction -- a pathway is a list of
+        // reactions and a lone species is not one. So after typing a
+        // first node there is genuinely nothing to walk, and a preview
+        // reading "AWAITING INPUT" looks like the tool ignored you.
+        const startName = model.species?.[model.start]?.name ?? model.start;
+        if (startName) {
+            say([`<span class="ok">start at <b>${startName}</b></span>`,
+                 `<span class="muted">no steps yet \u2014 a pathway is reactions, `
+               + `and one node is not a reaction. Add the next one`
+               + `${mode === "console" ? ", e.g. <b>next pyruvate</b>" : ""}.</span>`]);
+        } else {
+            say([`<span class="muted">empty \u2014 name your first node to begin`
+               + `${mode === "console" ? ", e.g. <b>glucose</b>" : ""}</span>`]);
+        }
+        chartEl.innerHTML = `<div style="position:absolute;inset:0;display:flex;`
+            + `align-items:center;justify-content:center;color:#3d4b3d;`
+            + `font:11px 'IBM Plex Mono',monospace;letter-spacing:0.08em;`
+            + `text-align:center;padding:0 24px;">`
+            + (startName
+                ? `START: ${String(startName).toUpperCase()}<br><br>`
+                  + `<span style="color:#2d3a2d">ONE MORE NODE TO DRAW A STEP</span>`
+                : `AWAITING INPUT`)
+            + `</div>`;
+        buildControls({ finalOutput: {} });
+        return;
+    }
+
+    const out = DSP_ALGORITHMS.pathway.process({ meta: { pathway: model } }, params);
+    if (out.error) {
+        say([`<span class="err">${out.error}</span>`]);
+        return;
+    }
+    const fo = out.finalOutput;
+    const lines = [];
+
+    lines.push(`<span class="ok">${fo.stepCount} ${fo.vocabulary.edges} walked`
+             + ` \u00b7 ${fo.cyclic ? fo.vocabulary.cycle : fo.vocabulary.chain}</span>`);
+    lines.push(`<span class="muted">${fo.steps.map(s => s.name).join(" \u2192 ")}</span>`);
+
+    // The atom balance is the real validator -- a typo in a formula fails
+    // arithmetic instead of animating wrong chemistry.
+    const b = fo.balance;
+    if (!b.allBalanced) {
+        lines.push(`<span class="err">UNBALANCED: ${b.unbalanced.join("; ")}</span>`);
+    } else if (b.checked === 0) {
+        lines.push(`<span class="warn">no reaction is atom-checkable `
+                 + `(add "formula" to species to enable it)</span>`);
+    } else {
+        lines.push(`<span class="ok">atoms balance in ${b.checked}/${b.total} checkable</span>`);
+    }
+
+    // Things that are legal but almost always mistakes.
+    const unreached = model.reactions.filter(r => !fo.steps.some(s => s.id === r.id));
+    if (unreached.length) {
+        lines.push(`<span class="warn">never reached: `
+                 + `${unreached.map(r => r.id).join(", ")}`
+                 + ` \u2014 check the species names match</span>`);
+    }
+    const unused = Object.keys(model.species ?? {}).filter(id =>
+        !model.reactions.some(r => id in (r.reactants ?? {}) || id in (r.products ?? {})));
+    if (unused.length) {
+        lines.push(`<span class="muted">declared but unused: ${unused.join(", ")}</span>`);
+    }
+    if (fo.feeders?.length) {
+        lines.push(`<span class="muted">fed from outside: `
+                 + `${fo.feeders.map(f => f.name).join(", ")}</span>`);
+    }
+    say(lines);
+
+    document.getElementById("previewNote").textContent =
+        `${rendererId === "pathway_view" ? "map" : "navigator"}`
+        + (previewPlaying ? " \u00b7 playing, tap to pause" : " \u00b7 tap to play")
+        + (Object.keys(params).length ? ` \u00b7 ${JSON.stringify(params)}` : "");
+
+    RENDER_ALGORITHMS[rendererId].render(chartEl, out, {}, "builder", null, 9000);
+    buildControls(out);
+}
+
+// Conditions come from the model, so the builder offers exactly the
+// buttons the feed would -- via the same choices() the rail uses.
+function buildControls(out) {
+    barEl.innerHTML = "";
+    const add = (label, on, fn) => {
+        const b = document.createElement("button");
+        b.textContent = label;
+        if (on) b.className = "on";
+        b.onclick = fn;
+        barEl.appendChild(b);
+    };
+    add("map", rendererId === "pathway_view",
+        () => { rendererId = "pathway_view"; build(); });
+    add("navigator", rendererId === "pathway_nav_view",
+        () => { rendererId = "pathway_nav_view"; build(); });
+
+    const model = JSON.parse(srcEl.value);
+    for (const ch of (DSP_ALGORITHMS.pathway.choices?.({ meta: { pathway: model } }) ?? [])) {
+        for (const v of ch.values) {
+            const shown = ch.display?.[String(v)] ?? v;
+            add(`${ch.label}: ${shown}`, (params[ch.key] ?? ch.value) === v,
+                () => { params[ch.key] = v; build(); });
+        }
+    }
+    const blocked = params.blocked;
+    add(blocked ? `blocked: ${blocked}` : "block a step", !!blocked, () => {
+        const ids = JSON.parse(srcEl.value).reactions.map(r => r.id);
+        const i = ids.indexOf(blocked);
+        params.blocked = i + 1 >= ids.length ? null : ids[i + 1];
+        if (!params.blocked) delete params.blocked;
+        build();
+    });
+    add("copy JSON", false, async () => {
+        try { await navigator.clipboard.writeText(srcEl.value); } catch (_) {}
+    });
+    add("save draft", false, saveDraft);
+}
+
+// ── SAVE ────────────────────────────────────────────────────────────────
+// The browser checks already ran -- that is the status panel on the left.
+// They are NOT what makes this safe. The server validates again, with its
+// own walk, because a POST does not have to come from this page. If the
+// two ever disagree, the server wins and says why, and that disagreement
+// is a bug to go and find rather than something to paper over here.
+let saving = false;
+
+async function saveDraft(overwrite = false) {
+    if (saving) return;
+    let model;
+    try { model = JSON.parse(srcEl.value); }
+    catch (e) { return logLine(`cannot save \u2014 JSON: ${e.message}`, "err"); }
+    if (!(model.reactions ?? []).length) {
+        return logLine("nothing to save yet", "err");
+    }
+    if (!model.name || model.name === "New pathway") {
+        return logLine("give it a name first \u2014 set \"name\" in the json tab", "err");
+    }
+
+    saving = true;
+    logLine(`saving <b>${model.name}</b>\u2026`);
+    try {
+        const res = await fetch("/api/data/pathway_model/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model, id: model.id, overwrite }),
+        });
+        const out = await res.json().catch(() => ({}));
+
+        if (res.status === 401) {
+            logLine("not permitted to save \u2014 set BUILDER_TOKEN, or run locally", "err");
+        } else if (res.ok) {
+            logLine(`saved as <b>${out.id}</b> (draft)`, "ok");
+            (out.warnings ?? []).forEach(w => logLine(w, "warn"));
+            // Keep the id so the next save updates this draft rather than
+            // minting a second one under a near-identical name.
+            if (!model.id) { model.id = out.id; commit(model); }
+        } else if (out.hint && !overwrite) {
+            // The one error worth offering to resolve rather than just
+            // reporting: you meant to update the thing you are editing.
+            logLine(`<b>${out.errors?.[0] ?? "already exists"}</b>`, "warn");
+            const b = document.createElement("button");
+            b.textContent = "overwrite my draft";
+            b.onclick = () => { b.remove(); saveDraft(true); };
+            logEl.appendChild(b); logEl.scrollTop = logEl.scrollHeight;
+        } else {
+            (out.errors ?? [`save failed (${res.status})`])
+                .forEach(e => logLine(e, "err"));
+            (out.warnings ?? []).forEach(w => logLine(w, "warn"));
+        }
+    } catch (e) {
+        logLine(`save failed \u2014 ${e.message}`, "err");
+    } finally {
+        saving = false;
+    }
+}
+
+let t = null;
+srcEl.addEventListener("input", () => { clearTimeout(t); t = setTimeout(build, 350); });
+
+// ── PREVIEW SIZE ────────────────────────────────────────────────────────
+// Two shapes, one renderer. The ResizeObserver below already redraws when
+// the card changes size, so this only flips the class; the setTimeout is
+// for the case where the box happens not to change at all (fill and phone
+// coinciding on an unusually proportioned pane), where no resize fires.
+const cardEl  = document.querySelector(".card");
+const szPhone = document.getElementById("szPhone");
+const szFill  = document.getElementById("szFill");
+// ── NAME, BOTH WAYS ─────────────────────────────────────────────────────
+// Typing here writes model.name; a build reads it back. The one trap is
+// the round trip: this field rewrites the JSON, the JSON rebuilds, and
+// the rebuild would rewrite this field -- putting the caret at the end on
+// every keystroke. syncName refuses to touch an input that has focus.
+const nameEl = document.getElementById("nameEl");
+let nameTimer = null;
+
+nameEl.addEventListener("input", () => {
+    clearTimeout(nameTimer);
+    nameTimer = setTimeout(() => {
+        let m;
+        try { m = JSON.parse(srcEl.value); } catch (e) { return; }
+        m.name = nameEl.value;
+        // Not commit(): that also rebuilds the quick buttons, and the
+        // species have not changed. Only the JSON and the preview move.
+        srcEl.value = JSON.stringify(m, null, 2);
+        build();
+    }, 250);
+});
+
+function syncName(m) {
+    if (document.activeElement !== nameEl) nameEl.value = m?.name ?? "";
+}
+
+// Tap the card to play or pause -- the same gesture as the feed, so the
+// preview behaves like the thing it is previewing. A button would have
+// been a control the real card does not have, which is the one kind of
+// difference this builder is supposed to avoid.
+document.querySelector(".card").addEventListener("click", () => {
+    previewPlaying = !previewPlaying;
+    build();
+});
+
+function setPreviewSize(fill) {
+    cardEl.classList.toggle("fill", fill);
+    szFill.className  = fill ? "on" : "";
+    szPhone.className = fill ? "" : "on";
+    clearTimeout(t); t = setTimeout(build, 60);
+}
+szPhone.onclick = () => setPreviewSize(false);
+szFill.onclick  = () => setPreviewSize(true);
+
+// The canvas sizes itself from the container, which has no final size
+// until flex has resolved -- measuring too early is what left the grid
+// drawn across part of the box.
+build();
+requestAnimationFrame(() => build());
+new ResizeObserver(() => { clearTimeout(t); t = setTimeout(build, 120); })
+    .observe(document.querySelector(".card"));
+</script>
+</body>
+</html>
