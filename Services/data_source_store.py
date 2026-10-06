@@ -51,6 +51,7 @@ class DataSourceStore:
         self._providers: dict[str, Callable] = {}
         self._listers: dict[str, Callable] = {}
         self._statuses: dict[str, Callable] = {}
+        self._savers: dict[str, Callable] = {}
         self._lock = threading.Lock()
 
     def register(self,
@@ -58,6 +59,7 @@ class DataSourceStore:
         provider: Callable[[str], dict] | None = None,
         lister: Callable[[int, int], dict] | None = None,
         status: Callable[[], dict] | None = None,
+        saver: Callable[[dict, str], dict] | None = None,
         endpoint_template: str | None          = None,
         adapter: str                           = "single_to_arrays",
         primary_field: str                     = "signal",
@@ -77,6 +79,22 @@ class DataSourceStore:
                            different operations -- one returns ids, the
                            other returns data -- so they are separate
                            callables rather than one overloaded provider.
+        saver              fn(payload, author) -> dict. The WRITE half,
+                           and the only place a source is allowed to
+                           accept data from outside. It lives here rather
+                           than in the route for the same reason provider
+                           does: this store is already the one thing that
+                           knows where a source's data lives. Put writing
+                           in the blueprint and that knowledge is in two
+                           places, and they drift the first time either is
+                           changed.
+
+                           A saver OWNS VALIDATION. Reading can be
+                           permissive; writing cannot, because what it
+                           accepts today it must still be able to serve
+                           after the next engine change. Most sources have
+                           no saver and are read-only, which is the right
+                           default.
         endpoint_template  URL with an {id} placeholder, for sources that
                            already live behind their own route.
                            Exactly one of provider / endpoint_template.
@@ -121,6 +139,8 @@ class DataSourceStore:
                 self._listers[source_id] = lister
             if status is not None:
                 self._statuses[source_id] = status
+            if saver is not None:
+                self._savers[source_id] = saver
 
     def get(self, source_id: str) -> dict | None:
         return self._registry.get(source_id)
@@ -141,6 +161,18 @@ class DataSourceStore:
         keeps working with degraded data.
         """
         return self._statuses.get(source_id)
+
+    def get_saver(self, source_id: str) -> Callable | None:
+        """
+        Used by the generic POST /api/data/<source>/save route. None for
+        every read-only source, which is nearly all of them -- so the
+        route answers 405 rather than 404, and "this source does not
+        accept writes" is distinguishable from "no such source".
+        """
+        return self._savers.get(source_id)
+
+    def is_writable(self, source_id: str) -> bool:
+        return source_id in self._savers
 
     def get_schema(self, source_id: str) -> dict | None:
         cfg = self._registry.get(source_id)
