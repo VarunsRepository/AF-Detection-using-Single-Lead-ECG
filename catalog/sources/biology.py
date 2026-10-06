@@ -6,6 +6,7 @@
 # anything) is poisoning it.
 # ---------------------------------------------------------------------------
 
+
 from Services.data_source_store import data_source_store
 
 ETS_SCENARIOS = {
@@ -503,8 +504,6 @@ _DEPRESSION_MODEL = {
          "reactants": {"fewer_rewards": 1}, "products": {"low_mood": 1}},
     ],
 }
-
-
 
 
 
@@ -1891,6 +1890,100 @@ _WATER_CYCLE_SIMPLIFIED = {
   ]
 }
 
+_ETS_CYANIDE_CRISIS = {
+    "name": "Mitochondrial Grid: Cyanide Meltdown",
+    "start": "high_energy_electrons",
+    "defaultBlock": "complex_4_fatal_block",
+    "vocabulary": {
+        "node": "electron packet",
+        "edge": "power station step",
+        "chain": "current flow",
+        "side": "voltage / poison",
+        "per": "per glucose payload",
+    },
+    "conditions": {
+        "toxin_presence": {
+            "label": "Toxin Exposure",
+            "values": ["nominal", "cyanide_spike"],
+            "default": "cyanide_spike",
+            "display": {
+                "nominal": "Nominal Breath (O2 Clean)",
+                "cyanide_spike": "Lethal Cyanide Ingestion",
+            },
+        },
+    },
+    "species": {
+        # Narrative Nodes: Visualized as energy passing down an electrical grid
+        "high_energy_electrons": {"name": "High-Voltage Electrons"},
+        "ubiquinone_pool":       {"name": "Mid-Way Battery Pool"},
+        "cytochrome_c_bridge":   {"name": "Spark Wire (Cyt c)"},
+        "oxygen_sink":           {"name": "Oxygen Exhaust Port"},
+        "atp_generator":         {"name": "ATP Power Output"},
+        "system_collapse":       {"name": "Total Power Blackout"},
+
+        # Boundary cofactors (The voltage & the poison)
+        "proton_gradient":       {"name": "Proton Pressure", "boundary": True},
+        "cyanide_poison":        {"name": "Cyanide (CN⁻)",   "boundary": True},
+        "oxygen_gas":            {"name": "Inhaled Oxygen",  "boundary": True},
+    },
+    "reactions": [
+        # --- STAGE 1: UNLOADING THE SPARK ---
+        {
+            "id": "complex_1_intake",
+            "name": "Strip Food Electrons",         # <--- Action Hook: Instant intuition
+            "tech": "Complex I (NADH Dehydrogenase)", # <--- Exact Science
+            "note": "Pumps protons to charge battery",
+            "reactants": {"high_energy_electrons": 1},
+            "products":  {"ubiquinone_pool": 1, "proton_gradient": 4},
+        },
+
+        # --- STAGE 2: PASSING THROUGH THE GRID ---
+        {
+            "id": "complex_3_pass",
+            "name": "Step-Down Transformer",
+            "tech": "Complex III (Cytochrome bc1)",
+            "note": "Transfers electrons down the line",
+            "reactants": {"ubiquinone_pool": 1},
+            "products":  {"cytochrome_c_bridge": 1, "proton_gradient": 4},
+        },
+
+        # --- STAGE 3: THE FORK (NOMINAL BREATH vs CYANIDE CATASTROPHE) ---
+        
+        # Route A: Nominal - Oxygen absorbs the spark safely into water
+        {
+            "id": "complex_4_nominal",
+            "name": "Vent Sparks to Oxygen",
+            "tech": "Complex IV Carboxylation to H2O",
+            "when": "toxin_presence == 'nominal'",
+            "note": "Oxygen safely takes spent spark",
+            "reactants": {"cytochrome_c_bridge": 1, "oxygen_gas": 1},
+            "products":  {"oxygen_sink": 1, "proton_gradient": 2},
+        },
+        {
+            "id": "atp_synthase_nominal",
+            "name": "Spin Turbine for ATP",
+            "tech": "Complex V (F1-Fo ATP Synthase)",
+            "when": "toxin_presence == 'nominal'",
+            "note": "Pressure spins rotor, life sustained",
+            "reactants": {"oxygen_sink": 1, "proton_gradient": 4},
+            "products":  {"atp_generator": 1},
+        },
+
+        # Route B: Cyanide Block - Fatal Jam at Complex IV
+        {
+            "id": "complex_4_fatal_block",
+            "name": "Clog the Exhaust Pipe",          # <--- What happens mechanically
+            "tech": "Complex IV ⊣ Cyanide Binding",   # <--- The textbook answer
+            "when": "toxin_presence == 'cyanide_spike'",
+            "note": "Cyanide locks iron core; flow stalls",
+            "modifiers": [
+                {"species": "cyanide_poison", "role": "inhibitor"},
+            ],
+            "reactants": {"cytochrome_c_bridge": 1},
+            "products":  {"system_collapse": 1},
+        },
+    ],
+}
 
 PATHWAY_MODELS = {
     "path_tca":        {"pathway": _TCA,
@@ -1963,29 +2056,303 @@ PATHWAY_MODELS = {
      "water_cycle_simplified": {  "pathway": _WATER_CYCLE_SIMPLIFIED,
                         "note": "water_cycle_simplified"
     },
+     "cyanide_crysis_simplified": {  "pathway": _ETS_CYANIDE_CRISIS,
+                        "note": "_ETS_CYANIDE_CRISIS Simplified"
+    },
 }
 
 
 
 
+#def _pathway_provider(sample_id: str) -> dict:
+#    s = PATHWAY_MODELS.get(sample_id)
+#    if s is None:
+#        raise FileNotFoundError(sample_id)
+#    return {"arrays": {"scenario": [1]}, "meta": dict(s)}
+
+
+#def _pathway_lister(limit: int, offset: int) -> dict:
+#    ids = list(PATHWAY_MODELS.keys())
+#    page = ids[offset:offset + limit]
+#    return {"samples": [{"record_id": i, "label": PATHWAY_MODELS[i]["note"]}
+#                        for i in page],
+#            "total": len(ids), "offset": offset}
+
+
+#data_source_store.register("pathway_model",
+#    provider      = _pathway_provider,
+#    lister        = _pathway_lister,
+#    adapter       = "multi_to_arrays",
+#    primary_field = "scenario",
+#    fs_field      = None,
+#    label         = "Metabolic pathway",
+#    description   = "Species and reactions in SBML's shape",
+#    schema        = {"fields": ["meta.pathway"],
+#                     "fs": None, "domain": "biology.pathway"})
+
+
+
+# ---------------------------------------------------------------------------
+# PASTE INTO catalog/sources/biology.py
+#
+# Replaces the existing data_source_store.register("pathway_model", ...)
+# call and the _pathway_provider / _pathway_lister pair above it. Leave
+# the ETS and photosynthesis registrations in this file alone.
+#
+# PATHWAY_MODELS stays for now. The store reads JSON files; this keeps the
+# old dict working alongside it so nothing breaks before the migration is
+# run, and the one-off below is what ends that.
+# ---------------------------------------------------------------------------
+
+#from catalog.sources import biology_pathway_store as pathway_store
+#from catalog.sources.biology_pathway_validate import validate as validate_pathway
+# 
+# 
+#def _as_sample(entry: dict) -> dict:
+#    """
+#    Accept either form and return a sample wrapper.
+# 
+#    PATHWAY_MODELS entries are already wrappers. Saved drafts are bare
+#    models. The tell is "species": a wrapper never has one and a model
+#    always does.
+#    """
+#    if "pathway" in entry and "species" not in entry:
+#        return entry                                  # already a wrapper
+#    return {"pathway": entry,
+#            "note": entry.get("note") or entry.get("name") or "Saved pathway"}
+# 
+# 
+## ── read ─────────────────────────────────────────────────────────────────
+# 
+#def _pathway_provider(sample_id: str) -> dict:
+#    """
+#    Same shape as _ets_provider: no signal, only a configuration. The
+#    arrays entry is a placeholder the adapter needs; everything real
+#    rides in meta.
+# 
+#    JSON files are consulted first, then the legacy dict, so a migrated
+#    model wins and an unmigrated one still resolves. Delete the fallback
+#    once export_from_dicts has run.
+# 
+#    Drafts ARE served here -- the builder has to fetch one back to carry
+#    on editing it -- but they are absent from the lister, so nothing in
+#    the feed can surface one. That asymmetry IS the draft mechanism until
+#    there is real identity: reachable by someone who knows the id, not by
+#    browsing.
+#    """
+#    entry = pathway_store.get(sample_id) or PATHWAY_MODELS.get(sample_id)
+#    if entry is None:
+#        raise FileNotFoundError(sample_id)
+#    return {"arrays": {"scenario": [1]}, "meta": dict(_as_sample(entry))}
+# 
+# 
+#def _pathway_lister(limit: int, offset: int) -> dict:
+#    merged = dict(PATHWAY_MODELS)
+#    merged.update(pathway_store.published())
+#    ids = list(merged.keys())
+#    page = ids[offset:offset + limit]
+#    return {"samples": [{"record_id": i,
+#                         "label": _as_sample(merged[i]).get("note", i)}
+#                        for i in page],
+#            "total": len(ids), "offset": offset}
+# 
+# 
+## ── write ────────────────────────────────────────────────────────────────
+# 
+#def _pathway_saver(payload: dict, author: str = "unknown") -> dict:
+#    """
+#    Validate, then write. In that order, always.
+# 
+#    The builder runs the same checks in the browser, which is what makes
+#    authoring pleasant -- but those run on the author's machine, and a
+#    POST need not come from our page. This is the copy that counts.
+# 
+#    What is stored is the bare MODEL, never a wrapper. A wrapper is a
+#    viewing choice -- blocked, conditions -- and belongs to a card, not to
+#    the thing being saved.
+#    """
+#    model = payload.get("model") if isinstance(payload, dict) else None
+#    if model is None:
+#        model = payload
+#    # Tolerate a wrapper being posted: unwrap it rather than storing a
+#    # model nested inside one and then failing validation on a missing
+#    # "species" that is really one level down.
+#    if isinstance(model, dict) and "pathway" in model and "species" not in model:
+#        model = model["pathway"]
+# 
+#    report = validate_pathway(model)
+#    if not report["ok"]:
+#        return {"ok": False, "errors": report["errors"],
+#                "warnings": report["warnings"]}
+# 
+#    try:
+#        result = pathway_store.save(
+#            model,
+#            author=author,
+#            pathway_id=(payload or {}).get("id"),
+#            overwrite=bool((payload or {}).get("overwrite")),
+#        )
+#    except FileExistsError as exc:
+#        return {"ok": False, "errors": [str(exc)],
+#                "hint": "send overwrite: true to replace your draft"}
+#    except (ValueError, PermissionError) as exc:
+#        return {"ok": False, "errors": [str(exc)]}
+#    except OSError as exc:
+#        return {"ok": False, "errors": [f"could not write: {exc}"]}
+# 
+#    return {"ok": True, "id": result["id"], "created": result["created"],
+#            "status": "draft", "warnings": report["warnings"],
+#            "walk": report["walk"]}
+# 
+# 
+#data_source_store.register("pathway_model",
+#    provider      = _pathway_provider,
+#    lister        = _pathway_lister,
+#    saver         = _pathway_saver,      # <- the only addition to the original
+#    adapter       = "multi_to_arrays",
+#    primary_field = "scenario",
+#    fs_field      = None,
+#    label         = "Metabolic pathway",
+#    description   = "Species and reactions in SBML's shape",
+#    schema        = {"fields": ["meta.pathway"],
+#                     "fs": None, "domain": "biology.pathway"})
+# 
+## ---------------------------------------------------------------------------
+## ONE-OFF MIGRATION -- run once, from the repo root, then delete
+## PATHWAY_MODELS and the fallbacks above:
+##
+##   python -c "from catalog.sources.biology import PATHWAY_MODELS as M; \
+##              from catalog.sources import biology_pathway_store as s; \
+##              print(s.export_from_dicts(M), 'written')"
+##
+## Check the JSON into git. That is the review gate, and it is a better one
+## than anything an API will have for a while.
+## ---------------------------------------------------------------------------
+
+
+
+
+
+from catalog.sources import biology_pathway_store as pathway_store
+from catalog.sources.biology_pathway_validate import validate as validate_pathway
+
+
+def _as_sample(entry: dict) -> dict:
+    """
+    Accept either form and return a sample wrapper.
+
+    PATHWAY_MODELS entries are already wrappers. Saved drafts are bare
+    models. The tell is "species": a wrapper never has one and a model
+    always does.
+    """
+    if "pathway" in entry and "species" not in entry:
+        return entry                                  # already a wrapper
+    return {"pathway": entry,
+            "note": entry.get("note") or entry.get("name") or "Saved pathway"}
+
+
+# ── read ─────────────────────────────────────────────────────────────────
+
 def _pathway_provider(sample_id: str) -> dict:
-    s = PATHWAY_MODELS.get(sample_id)
-    if s is None:
+    """
+    Same shape as _ets_provider: no signal, only a configuration. The
+    arrays entry is a placeholder the adapter needs; everything real
+    rides in meta.
+
+    JSON files are consulted first, then the legacy dict, so a migrated
+    model wins and an unmigrated one still resolves. Delete the fallback
+    once export_from_dicts has run.
+
+    Drafts ARE served here -- the builder has to fetch one back to carry
+    on editing it -- but they are absent from the lister, so nothing in
+    the feed can surface one. That asymmetry IS the draft mechanism until
+    there is real identity: reachable by someone who knows the id, not by
+    browsing.
+    """
+    entry = pathway_store.get(sample_id) or PATHWAY_MODELS.get(sample_id)
+    if entry is None:
         raise FileNotFoundError(sample_id)
-    return {"arrays": {"scenario": [1]}, "meta": dict(s)}
+    return {"arrays": {"scenario": [1]}, "meta": dict(_as_sample(entry))}
 
 
 def _pathway_lister(limit: int, offset: int) -> dict:
-    ids = list(PATHWAY_MODELS.keys())
+    merged = dict(PATHWAY_MODELS)
+    merged.update(pathway_store.published())
+    ids = list(merged.keys())
     page = ids[offset:offset + limit]
-    return {"samples": [{"record_id": i, "label": PATHWAY_MODELS[i]["note"]}
+    return {"samples": [{"record_id": i,
+                         "label": _as_sample(merged[i]).get("note", i)}
                         for i in page],
             "total": len(ids), "offset": offset}
+
+
+# ── write ────────────────────────────────────────────────────────────────
+
+def _pathway_saver(payload: dict, author: str = "unknown") -> dict:
+    """
+    Validate, then write. In that order, always.
+
+    The builder runs the same checks in the browser, which is what makes
+    authoring pleasant -- but those run on the author's machine, and a
+    POST need not come from our page. This is the copy that counts.
+
+    What is stored is the bare MODEL, never a wrapper. A wrapper is a
+    viewing choice -- blocked, conditions -- and belongs to a card, not to
+    the thing being saved.
+    """
+    model = payload.get("model") if isinstance(payload, dict) else None
+    if model is None:
+        model = payload
+    # Tolerate a wrapper being posted: unwrap it rather than storing a
+    # model nested inside one and then failing validation on a missing
+    # "species" that is really one level down.
+    if isinstance(model, dict) and "pathway" in model and "species" not in model:
+        model = model["pathway"]
+
+    report = validate_pathway(model)
+    if not report["ok"]:
+        return {"ok": False, "errors": report["errors"],
+                "warnings": report["warnings"]}
+
+    requested_id = (payload or {}).get("id")
+    overwrite = bool((payload or {}).get("overwrite"))
+
+    # Describe the collision BEFORE writing, not after refusing. "Already
+    # exists" tells the author nothing about what is in the way, and the
+    # id is slugged from the name -- so two pathways called "Glycolysis"
+    # collide as a matter of course rather than by mishap.
+    if not overwrite:
+        clash = pathway_store.describe(
+            pathway_store.resolve_id(model, requested_id))
+        if clash:
+            return {"ok": False, "conflict": clash,
+                    "errors": [f'"{clash["id"]}" already exists'],
+                    "hint": "send overwrite: true to replace your draft"}
+
+    try:
+        result = pathway_store.save(
+            model,
+            author=author,
+            pathway_id=requested_id,
+            overwrite=overwrite,
+        )
+    except FileExistsError as exc:
+        return {"ok": False, "errors": [str(exc)],
+                "hint": "send overwrite: true to replace your draft"}
+    except (ValueError, PermissionError) as exc:
+        return {"ok": False, "errors": [str(exc)]}
+    except OSError as exc:
+        return {"ok": False, "errors": [f"could not write: {exc}"]}
+
+    return {"ok": True, "id": result["id"], "created": result["created"],
+            "status": "draft", "warnings": report["warnings"],
+            "walk": report["walk"]}
 
 
 data_source_store.register("pathway_model",
     provider      = _pathway_provider,
     lister        = _pathway_lister,
+    saver         = _pathway_saver,      # <- the only addition to the original
     adapter       = "multi_to_arrays",
     primary_field = "scenario",
     fs_field      = None,
@@ -1993,3 +2360,21 @@ data_source_store.register("pathway_model",
     description   = "Species and reactions in SBML's shape",
     schema        = {"fields": ["meta.pathway"],
                      "fs": None, "domain": "biology.pathway"})
+
+
+# ---------------------------------------------------------------------------
+# ONE-OFF MIGRATION -- it exports the MODELS, not the wrappers, so the
+# per-sample variants (blocked, conditions) stay in PATHWAY_MODELS where
+# they belong:
+#
+#   python -c "from catalog.sources.biology import PATHWAY_MODELS as M; \
+#              from catalog.sources import biology_pathway_store as s; \
+#              print(s.export_from_dicts({k: v['pathway'] for k, v in M.items()}), 'written')"
+#
+# That writes one file per SAMPLE, so _TCA lands three times under three
+# ids -- three identical models differing only in a wrapper that is not
+# being exported. Deduplicate by hand before checking in, or hold off on
+# the migration entirely: the fallback above means nothing is broken
+# while PATHWAY_MODELS stays, and the sample/model split deserves a
+# decision rather than a script.
+# ---------------------------------------------------------------------------
