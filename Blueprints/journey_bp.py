@@ -25,6 +25,10 @@ from Services.analytics_store   import AnalyticsStore
 # components, schemas and recipes, in that order.
 from catalog import journey_store, dsp_store, rendering_store
 
+
+from catalog.page_meta import meta_for 
+
+
 analytics_store = AnalyticsStore(cache_dir="data_cache")
 
 
@@ -78,6 +82,9 @@ def journey(journey_name):
         dsp_entrypoints=dsp_entrypoints,
         rendering_entrypoints=rendering_entrypoints,
         data_source_configs=data_source_configs,
+
+        page_meta=meta_for(journey_name, f"/journey/{journey_name}"), 
+        
         # Single-journey mode -- all cards use the same recipe
         shorts_batch=None,
     )
@@ -171,7 +178,7 @@ def shorts():
         journey_layout=primary["layout"],
         dsp_entrypoints=dsp_entrypoints,
         rendering_entrypoints=rendering_entrypoints,
-        data_source_configs=data_source_configs,
+        data_source_configs=data_source_configs,   
         shorts_batch={"recipes": recipes, "pattern": pattern},
     )
 
