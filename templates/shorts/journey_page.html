@@ -3,6 +3,16 @@
 <head>
 <meta charset="UTF-8">
 
+{#  page_meta is passed by /journey/<name>; /feed, /shorts and /seed do
+    not pass it. `pm.title | default(...)` is NOT enough on its
+    own -- Jinja's default filter rescues a missing ATTRIBUTE, but
+    reading .title off an undefined VARIABLE raises UndefinedError, so
+    those three routes would have returned 500 rather than falling back.
+    Normalising to an empty dict here makes the defaults below do what
+    they look like they do, and means a route added later cannot
+    reintroduce the same 500.  #}
+{%- set pm = page_meta | default({}, true) -%}
+
 <!-- ═══════════════════════════════════════════════════════════════════
      IDENTITY FIRST, AHEAD OF THE INLINE CSS.
 
@@ -21,42 +31,40 @@
      duplicate tag does not merge, it shadows.
      ═══════════════════════════════════════════════════════════════════ -->
 
-<title>Kymograph — algorithms, one step at a time</title>
-<meta name="description" content="Short animated explainers for signal processing, cryptography and biochemistry. Watch an algorithm run, one step at a time.">
-
-<!-- ── LINK PREVIEWS ───────────────────────────────────────────────────
-     Absolute URLs, hardcoded. Open Graph requires absolute, and
-     url_for(_external=True) takes its scheme from the WSGI environ --
-     behind PythonAnywhere's proxy that can come out as http://, which
-     several scrapers reject and which is a dead URL on .dev anyway.
-
-     Bump ?v= whenever the image changes. Scrapers cache the old one for
-     days and never re-fetch on their own. -->
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="Kymograph">
-<meta property="og:title" content="Kymograph">
-<meta property="og:description" content="Algorithms, one step at a time. Short animated explainers for signal processing, cryptography and biochemistry.">
-<meta property="og:url" content="https://www.kymograph.dev/journey/ecg">
-<meta property="og:image" content="https://www.kymograph.dev/static/icons/og_preview.png?v=1">
-<meta property="og:image:type" content="image/png">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="The Kymograph mark — a recording drum with an ECG trace — above an electrocardiogram and the words: algorithms, one step at a time.">
-
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Kymograph">
-<meta name="twitter:description" content="Algorithms, one step at a time.">
-<meta name="twitter:image" content="https://www.kymograph.dev/static/icons/og_preview.png?v=1">
+<title>{{ pm.title | default('Kymograph — algorithms, one step at a time') }}</title>
+<link rel="canonical" href="{{ pm.url | default('https://www.kymograph.dev/') }}">
+<meta name="description" content="{{ pm.description | default('Short animated explainers for signal processing, cryptography and biochemistry.') }}">
 
 <!-- ── TAB AND APP ICONS ───────────────────────────────────────────────
      favicon.ico first, and it should also answer at the site root:
      crawlers and older browsers request /favicon.ico by hard-coded path
      and never read these tags at all. -->
+
 <link rel="icon" href="/static/icons/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png">
 <link rel="manifest" href="/static/icons/site.webmanifest">
+
+
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Kymograph">
+<meta property="og:title" content="{{ pm.title | default('Kymograph') }}">
+<meta property="og:description" content="{{ pm.description | default('Algorithms, one step at a time.') }}">
+<meta property="og:url" content="{{ pm.url | default('https://www.kymograph.dev/') }}">
+<meta property="og:image" content="{{ pm.image | default('https://www.kymograph.dev/static/icons/og_preview.png?v=1') }}">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Kymograph mark — a recording drum with an ECG trace — above an electrocardiogram and the words: algorithms, one step at a time.">
+
+<!--meta properties added here-->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ pm.title | default('Kymograph') }}">
+<meta name="twitter:description" content="{{ pm.description | default('Algorithms, one step at a time.') }}">
+<meta name="twitter:image" content="{{ pm.image | default('https://www.kymograph.dev/static/icons/og_preview.png?v=1') }}">
+
 
 <!-- Matches the icon ground (#0a0c12) rather than pure black, so the
      Android browser bar blends with the card instead of sitting a shade
