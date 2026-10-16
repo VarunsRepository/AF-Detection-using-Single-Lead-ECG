@@ -77,6 +77,8 @@ from Engine.Engine import run_ecg_pipeline,  get_dropdown_options #, peak_detect
 #import neurokit2 as nk  # to leverage the functions of neurokit2 to identify, the different segments of sample 
 
 
+
+
 #Now using blueprint
 featureEngg_bp = Blueprint('features', __name__)
 
@@ -84,6 +86,11 @@ featureEngg_bp = Blueprint('features', __name__)
 
 app = Flask(__name__)         
 
+
+
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory(app.static_folder, "icons/favicon.ico")
 
 
 ###################### the code for managing Physionet IO starts here ######################
@@ -394,10 +401,12 @@ app.register_blueprint(reels_bp)
 
 app.register_blueprint(frontend_bp, url_prefix='/rust_frontend')
 
+
+
 # think of it as the main() function of this web-sites programs  
 if __name__ == '__main__':
     # run  the app on the entire LAN, site is accessible by Phone/Tablets/etc any device on the same WiFi 
-    app.run(host='0.0.0.0', port=8080, debug=False)
+    app.run(host='0.0.0.0', port=8080, debug=True)
     
     # Run the app only on the local machine
     #app.run(port=8080, debug=True)
