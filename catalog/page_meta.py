@@ -167,6 +167,20 @@ JOURNEY_META = {
                         "Ten rounds need eleven keys."),
         "image": f"{SITE_URL}/static/icons/og_aes_expansion.png?v=1",
     },
+        "spectrum": {
+        "title": "Where the energy lives: an ECG spectrum — Kymograph",
+        "description": ("A recording can look clean in time and still carry a "
+                        "quarter of its power at 50 Hz. The same ECG as a "
+                        "Welch power spectrum, band by band."),
+        "image": f"{SITE_URL}/static/icons/og_spectrum.png?v=1",
+    },
+    "beats": {
+        "title": "Every ECG beat, overlaid on its own R — Kymograph",
+        "description": ("Each beat re-centred on its R-apex so they stack. A "
+                        "tight bundle is consistent morphology; fuzz where P "
+                        "should be is the atria fibrillating."),
+        "image": f"{SITE_URL}/static/icons/og_beats.png?v=1",
+    },
 }
 
 
