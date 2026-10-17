@@ -62,6 +62,7 @@ JOURNEY_META = {
                         "the paper and run on PhysioNet records: bandpass, "
                         "derivative, squaring, integration, adaptive "
                         "thresholding."),
+                        "image": f"{SITE_URL}/static/icons/og_ecg.png?v=1",
     },
     "beats": {
         "title": "Heart rate variability from RR intervals — Kymograph",
@@ -74,6 +75,7 @@ JOURNEY_META = {
         "description": ("A signal pulled apart into detail and approximation "
                         "bands by the discrete wavelet transform, one level "
                         "at a time, with each band shown as it is removed."),
+                        "image": f"{SITE_URL}/static/icons/og_dwt.png?v=1",                        
     },
     "spectrum": {
         "title": "Spectral decomposition of a signal — Kymograph",
@@ -116,6 +118,7 @@ JOURNEY_META = {
         "description": ("The citric acid cycle and others as species and "
                         "reactions, walked one step at a time — block a "
                         "step and watch the downstream stall."),
+                        "image": f"{SITE_URL}/static/icons/og_pathway.png?v=1",                        
     },
     "ets": {
         "title": "The electron transport chain — Kymograph",
@@ -128,6 +131,13 @@ JOURNEY_META = {
         "description": ("From a photon striking a leaf to a carbon fixed in "
                         "the Calvin cycle, drawn as one continuous chain "
                         "rather than two unrelated diagrams."),
+    },
+    "protocols": {
+        "title": "",
+        "description": ("see how chips talk to other chips or Devices , "
+                        "at the hardware level"
+                        ),        
+        "image": f"{SITE_URL}/static/icons/og_protocols.png?v=1",
     },
 }
 
