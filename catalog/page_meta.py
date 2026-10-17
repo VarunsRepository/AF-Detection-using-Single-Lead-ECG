@@ -140,7 +140,6 @@ JOURNEY_META = {
         "image": f"{SITE_URL}/static/icons/og_protocols.png?v=1",
     },
 }
-}
 
 
 def meta_for(journey_name: str | None = None, path: str = "/") -> dict:
