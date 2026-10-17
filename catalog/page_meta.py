@@ -139,6 +139,34 @@ JOURNEY_META = {
                         "happens when two devices disagree about them."),
         "image": f"{SITE_URL}/static/icons/og_protocols.png?v=1",
     },
+        "simd": {
+        "title": "SIMD: four sums, one instruction — Kymograph",
+        "description": ("A 128-bit register holds four values side by side "
+                        "and adds them together. Plus the packing step that "
+                        "can cost more than the arithmetic saves."),
+        "image": f"{SITE_URL}/static/icons/og_simd.png?v=1",
+    },
+    "spn": {
+        "title": "Confuse, then diffuse: an SPN cipher — Kymograph",
+        "description": ("Heys' 16-bit cipher, small enough to draw every bit. "
+                        "Substitution stays inside a nibble; the permutation "
+                        "scatters bits across all four."),
+        "image": f"{SITE_URL}/static/icons/og_spn.png?v=1",
+    },
+        "aes_round": {
+        "title": "Inside an AES round, step by step — Kymograph",
+        "description": ("SubBytes changes every byte without moving one; "
+                        "ShiftRows moves them without changing one. Ten "
+                        "rounds, four operations, drawn on a 4x4 grid."),
+        "image": f"{SITE_URL}/static/icons/og_aes_round.png?v=1",
+    },
+    "aes_expansion": {
+        "title": "AES key expansion: eleven keys from one — Kymograph",
+        "description": ("RotWord, SubWord and a round constant transform one "
+                        "word of the previous key; the rest cascade by XOR. "
+                        "Ten rounds need eleven keys."),
+        "image": f"{SITE_URL}/static/icons/og_aes_expansion.png?v=1",
+    },
 }
 
 
