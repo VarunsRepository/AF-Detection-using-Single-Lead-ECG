@@ -133,12 +133,13 @@ JOURNEY_META = {
                         "rather than two unrelated diagrams."),
     },
     "protocols": {
-        "title": "",
-        "description": ("see how chips talk to other chips or Devices , "
-                        "at the hardware level"
-                        ),        
+        "title": "UART, SPI, I²C and CAN, decoded off the wire — Kymograph",
+        "description": ("Four buses as signals rather than diagrams — the "
+                        "instants a receiver samples the line, and what "
+                        "happens when two devices disagree about them."),
         "image": f"{SITE_URL}/static/icons/og_protocols.png?v=1",
     },
+}
 }
 
 
