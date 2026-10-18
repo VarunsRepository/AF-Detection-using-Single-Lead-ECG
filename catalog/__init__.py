@@ -42,6 +42,7 @@ from catalog.packs import compute  as _pack_compute  # noqa: E402,F401
 from catalog.packs import biology  as _pack_biology  # noqa: E402,F401
 from catalog.packs import protocols as _pack_protocols # noqa: E402,F401
 from catalog.packs import silicon 
+from catalog.packs import aero as _pack_aero 
 
 # 4. Recipes -- these reference everything above, so they come last
 from catalog.journeys import ecg                 # noqa: E402,F401
@@ -58,6 +59,7 @@ from catalog.journeys import pathway             # noqa: E402,F401
 from catalog.journeys import test_journeys       # noqa: E402,F401
 from catalog.journeys import protocols as _j_protocols # noqa: E402,F401
 from catalog.journeys import silicon  
+from catalog.journeys import aero as _j_aero 
 
 # Components registered without a contract. Reported at startup because
 # "all contracts valid" reads identically whether a pipeline was checked

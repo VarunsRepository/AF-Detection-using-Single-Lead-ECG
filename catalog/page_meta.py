@@ -188,6 +188,13 @@ JOURNEY_META = {
                         "tracking density, and packages counted as chips."),
         "image": f"{SITE_URL}/static/icons/og_silicon.png?v=1",
     },
+        "suction": {
+        "title": "Downforce without speed: the fan cars — Kymograph",
+        "description": ("A fan and a rubber skirt press a car onto the road "
+                        "while it is standing still. Chaparral 2J, Brabham "
+                        "BT46B, and a modern claim worth checking."),
+        "image": f"{SITE_URL}/static/icons/og_suction.png?v=1",
+    },
 }
 
 
