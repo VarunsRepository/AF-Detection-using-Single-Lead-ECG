@@ -18,3 +18,4 @@ from catalog.sources import compute # noqa: F401
 from catalog.sources import biology
 from catalog.sources import protocols   # noqa: F401
 from catalog.sources import silicon     # noqa: F401
+from catalog.sources import aero 
