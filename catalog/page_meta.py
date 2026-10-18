@@ -174,12 +174,19 @@ JOURNEY_META = {
                         "Welch power spectrum, band by band."),
         "image": f"{SITE_URL}/static/icons/og_spectrum.png?v=1",
     },
-    "beats": {
+        "beats": {
         "title": "Every ECG beat, overlaid on its own R — Kymograph",
         "description": ("Each beat re-centred on its R-apex so they stack. A "
                         "tight bundle is consistent morphology; fuzz where P "
                         "should be is the atria fibrillating."),
         "image": f"{SITE_URL}/static/icons/og_beats.png?v=1",
+    },
+        "silicon": {
+        "title": "What \u201c3nm\u201d actually measures \u2014 Kymograph",
+        "description": ("Fifty years of transistor counts, and two reasons "
+                        "not to trust them: a node label that stopped "
+                        "tracking density, and packages counted as chips."),
+        "image": f"{SITE_URL}/static/icons/og_silicon.png?v=1",
     },
 }
 
