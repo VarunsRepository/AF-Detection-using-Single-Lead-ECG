@@ -30,6 +30,11 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
 
     const activeJourneys = new Map();
     const cardElements   = new Map();
+    // sampleId -> the stop() for that card's gesture hints. Held so a
+    // hint can never outlive the card it belongs to: without this a
+    // pending hint fires after the viewer has scrolled on and draws a
+    // ring around a control on a DIFFERENT short.
+    const hintStops      = new Map();
     // sampleId -> card index (position in the feed). Drives which
     // pattern entry, and therefore which recipe, the card uses.
     const cardIndexMap   = new Map();
@@ -86,18 +91,24 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
         return { samples, total };
     }
 
-    // ── "More from this journey" chip ──────────────────────────────────
-    // Curated feeds only. A tour shows ONE recording per journey, so the
-    // obvious next question is "is there more of this?" -- and the
-    // ordinary feed at /journey/<name> is exactly that. An ordinary feed
-    // needs no chip: it already IS the long version.
+    // ── "More from" chip ───────────────────────────────────────────────
+    // Curated feeds only, and it is the one rung of the ladder:
     //
-    // ?sample= carries the current recording ACROSS, so the tap lands on
-    // the card just watched and the rest of the feed continues
-    // underneath it. That parameter already exists and is validated
-    // server-side (see the shared-link block in journey_bp.py), so a
-    // stale id degrades to an ordinary feed rather than to a card that
-    // sits there failing to fetch.
+    //   /seed        one card per domain   chip -> /tour/<domain>
+    //   /tour/ecg    one card per journey  chip -> /journey/<name>?sample=
+    //   /journey/ecg every record          no chip: already the long version
+    //
+    // Always the same question -- more of this? -- so the viewer never
+    // learns there is a hierarchy; they just keep finding more when they
+    // want more. Which rung a card is on comes from the stop (see `tour`
+    // in catalog/tours.py), never from guessing here.
+    //
+    // ?sample= carries the current recording ACROSS on the journey hop,
+    // so the tap lands on the card just watched and the rest of the feed
+    // continues underneath it. That parameter already exists and is
+    // validated server-side (see the shared-link block in journey_bp.py),
+    // so a stale id degrades to an ordinary feed rather than to a card
+    // that sits there failing to fetch.
     //
     // MUST LIVE INSIDE startJourneyScrollFeed. It reads isCurated,
     // getPatternEntry, getRecipeForCard and track -- all four are locals
@@ -112,11 +123,27 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
         const entry = getPatternEntry(cardIndex);
         if (!entry?.journey) return null;
 
-        const label = getRecipeForCard(cardIndex)?.label || entry.journey;
+        // TWO LEVELS, ONE CHIP. A stop that names a `tour` is a stop on
+        // the master tour, and its card stands for a whole domain -- so
+        // the chip leads to that domain's tour, not straight into one
+        // journey's 8,528 records. Everywhere else it leads to the
+        // journey, carrying the sample across.
+        //
+        // No ?sample= on the tour hop, deliberately: a tour picks its own
+        // stops, and the one it opens with is already this same recording
+        // (both draw cursor 0 of the same lister). Passing it would be a
+        // parameter /tour/ does not read.
+        const toTour = Boolean(entry.tour);
+        const label  = toTour
+            ? (entry.label || entry.tour)
+            : (getRecipeForCard(cardIndex)?.label || entry.journey);
+
         const a = document.createElement("a");
         a.className   = "more-from";
-        a.href        = `/journey/${encodeURIComponent(entry.journey)}`
-                      + `?sample=${encodeURIComponent(sampleId)}`;
+        a.href        = toTour
+            ? `/tour/${encodeURIComponent(entry.tour)}`
+            : `/journey/${encodeURIComponent(entry.journey)}`
+              + `?sample=${encodeURIComponent(sampleId)}`;
         a.textContent = `More from ${label}`;
 
         // The card's own click handler reads tap POSITION -- left third
@@ -125,7 +152,14 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
         // title element already does exactly this, for the same reason.
         a.addEventListener("click", (e) => {
             e.stopPropagation();
-            track("journey_opened", sampleId, { to_journey: entry.journey });
+            // One event for both hops, distinguished by which field is
+            // set. to_tour from the front door is the answer to "which
+            // domain do people actually want?" -- nothing else in the app
+            // answers it, because until now every session began in the
+            // same mixed feed and every signal was confounded.
+            track("journey_opened", sampleId, toTour
+                ? { to_tour: entry.tour }
+                : { to_journey: entry.journey });
         });
         return a;
     }
@@ -455,6 +489,23 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
                     // screen, so the splash has done its job.
                     globalThis.__bootSplash?.dismiss();
                 }
+
+                // GESTURE HINTS. Started here rather than in buildCard
+                // because a hint is only honest once the card is the one
+                // being looked at -- cards are built up to three ahead of
+                // the viewer, and a hint that counted itself as "shown"
+                // while off screen would burn its one appearance on
+                // nobody. Optional in exactly the way analytics is: if
+                // the script failed to load, the feed must not care.
+                if (!hintStops.has(sampleId)
+                    && typeof startGestureHints === "function") {
+                    const cardIdx = cardIndexMap.get(sampleId) ?? 0;
+                    hintStops.set(sampleId, startGestureHints(entry.target, {
+                        uiShell:   getRecipeForCard(cardIdx)?.uiShell,
+                        isCurated,
+                    }) || (() => {}));
+                }
+
                 track("card_entered", sampleId);
                 // Card is on screen -- are we near the end of what's loaded?
                 maybeLoadMore(sampleId);
@@ -464,6 +515,11 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
                     elapsed_ms: control ? Math.round(control.lastElapsedMs) : null,
                 });
                 cancelSweepAnimation(sampleId);
+                // Tear the hints down with the card, and DROP the entry so
+                // scrolling back up can offer one again -- the queue's own
+                // seen-list is what prevents a repeat, not this map.
+                hintStops.get(sampleId)?.();
+                hintStops.delete(sampleId);
             }
         });
     }, {

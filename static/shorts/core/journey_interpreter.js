@@ -349,6 +349,14 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 seg.classList.remove("current");
                 void fill.offsetWidth; // force reflow -- without this, the browser may batch the class removal+re-addition together and never actually restart anything
                 fill.style.animationDuration = `${durationMs}ms`;
+                // CLEAR THE SCRUB SEEK. A scrub leaves a negative
+                // animation-delay on this element to hold the dot at the
+                // dragged position, and nothing else removes it -- so a
+                // restart, a rail tap or a re-entry into this stage would
+                // reuse it and the fill would begin part-done. Resetting
+                // here rather than in scrubEnd keeps it in the one place
+                // that already owns "this stage starts now".
+                fill.style.animationDelay = "0ms";
                 seg.classList.add("current");
             } else {
                 seg.classList.remove("current");
@@ -682,6 +690,26 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 btn.className = "rail-btn";
                 btn.title = control.ui.label;
 
+                // STABLE HANDLES for anything that needs to find one
+                // specific button later -- gesture_hints.js, currently.
+                //
+                // Neither of the obvious handles works. POSITION is
+                // meaningless: this rail is rebuilt on every stage change
+                // and choices() adds buttons at runtime, so
+                // ".rail-btn:nth-child(3)" is a different control on
+                // every card. TITLE is worse than meaningless: three
+                // lines below, refreshButtonContent() rewrites it to
+                // "Algorithm: pan_tompkins", so a selector matching
+                // "Algorithm" matches for a few milliseconds and then
+                // never again.
+                //
+                // railMethod is the better of the two: ui.label is recipe
+                // prose and differs between journeys, while the action
+                // method is the dispatcher's own verb and is identical
+                // everywhere.
+                btn.dataset.railLabel  = control.ui.label;
+                btn.dataset.railMethod = control.action.method;
+
                 function refreshButtonContent() {
                     const valueDisplay = VALUE_DISPLAY_METHODS[control.action.method];
                     if (valueDisplay) {
@@ -944,6 +972,37 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
     let scrub = null;
     let suppressClickUntil = 0;
 
+    // ── SEEKING THE PROGRESS DOT ────────────────────────────────────────
+    // The current dot's fill is a CSS ANIMATION (.segment.current .fill
+    // { animation-name: fillBar }) with its duration set per stage. That
+    // is why pause works by setting animationPlayState: the animation
+    // runs on its own clock, entirely independent of the sweep.
+    //
+    // Which is also why scrubbing did not move it. The drag writes
+    // elapsed directly and cancels the sweep loop; the CSS animation
+    // never hears about either, so the dot carried on filling at its
+    // original pace while the trace jumped.
+    //
+    // A paused animation with a NEGATIVE animation-delay renders its
+    // state at that offset -- so -3000ms on an 8000ms fill draws the dot
+    // 37.5% full and holds there. That seeks the same keyframes the
+    // sweep already uses instead of introducing a second, inline way of
+    // drawing the same thing that could then disagree with it.
+    //
+    // Inline transform would NOT work here: a paused animation still
+    // applies its computed value, and animations beat inline styles in
+    // the cascade.
+    // NOT named currentFill: togglePause already declares a local const
+    // by that name, and a helper shadowed inside one function but not
+    // another is the kind of thing that reads as working code.
+    const activeFillEl = () =>
+        progressBarEl?.querySelector(".segment.current .fill") ?? null;
+
+    function seekFill(fill, ms) {
+        if (!fill) return;
+        fill.style.animationDelay = `-${Math.max(0, ms)}ms`;
+    }
+
     function scrubStart(e) {
         const ctl = activeSweepControl.get(sampleId);
         if (!ctl) return;
@@ -970,6 +1029,11 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             scrub.moved = true;
             cancelSweepAnimation(sampleId);
             chartContainer.setPointerCapture?.(e.pointerId);
+            // Freeze the dot only once the gesture has COMMITTED to being
+            // a scrub. Pausing it at pointerdown would make every tap
+            // stutter the progress dot.
+            scrub.fill = activeFillEl();
+            if (scrub.fill) scrub.fill.style.animationPlayState = "paused";
         }
 
         // The card's width is one whole stage, so the gesture scales with
@@ -978,6 +1042,10 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         scrub.at = Math.max(0, Math.min(scrub.total,
                             scrub.from + (dx / width) * scrub.total));
         activeSweepControl.get(sampleId)?.drawFn(scrub.at);
+        // The dot now tracks the finger, forwards AND backwards -- the
+        // clamp above keeps the scrub inside this stage, so only the
+        // current dot ever changes and the completed ones stay completed.
+        seekFill(scrub.fill, scrub.at);
     }
 
     function scrubEnd() {
@@ -991,6 +1059,41 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         if (!s.wasPaused) {
             const ctl = activeSweepControl.get(sampleId);
             if (ctl) startSweepLoop(sampleId, ctl.totalDurationMs, ctl.drawFn, s.at);
+
+            // The dot carries on from the scrubbed position: the negative
+            // delay is left in place, so running it again continues from
+            // there rather than restarting at zero.
+            if (s.fill) s.fill.style.animationPlayState = "running";
+
+            // THE SAME DESYNC, ONE LAYER DOWN. The auto-advance timer was
+            // set during buildStage for the FULL stage duration and knows
+            // nothing about the drag -- so scrubbing back to the start
+            // still advanced at the original deadline, and scrubbing to
+            // the end left the card sitting finished, waiting.
+            //
+            // Three clocks have to agree after a scrub: the sweep, the
+            // dot, and this. Fixing the dot alone would have left the
+            // least visible one wrong, which is the one that costs an
+            // evening later.
+            if (autoAdvanceTimer) {
+                clearTimeout(autoAdvanceTimer);
+                autoAdvanceTimer = null;
+            }
+            if (journeyJson.journeyRules.autoAdvance
+                && currentStageIndex < journeyJson.stages.length - 1) {
+                const remaining = Math.max(0, s.total - s.at);
+                autoAdvanceEndTime = performance.now() + remaining;
+                autoAdvanceTimer = setTimeout(
+                    () => goToStage(currentStageIndex + 1), remaining);
+            }
+        } else {
+            // Still paused, and the dot stays seeked where the finger
+            // left it -- scrubbing a paused card is how you LOOK at a
+            // particular moment, so moving the dot back would be lying
+            // about which moment is on screen.
+            if (autoAdvanceRemainingMs != null) {
+                autoAdvanceRemainingMs = Math.max(0, s.total - s.at);
+            }
         }
         // A drag ends in a click event too; without this every scrub
         // would also toggle pause.
