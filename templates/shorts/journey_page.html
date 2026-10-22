@@ -945,6 +945,16 @@
 
     <script src="{{ url_for('static', filename='shorts/core/dispatcher.js') }}"></script>
     <script src="{{ url_for('static', filename='shorts/core/journey_interpreter.js') }}"></script>
+
+    <!-- Gesture hints -- the animated touch marks on the rail, the chart
+         and the "more from" chip. Loaded before journey_scroll_feed.js,
+         which starts them when a card becomes the active one.
+
+         Optional in exactly the way event_collector.js is: the feed
+         guards with `typeof startGestureHints === "function"`, so a
+         failed load costs the hints and nothing else. -->
+    <script src="{{ url_for('static', filename='shorts/gesture_hints.js') }}"></script>
+
     <script src="{{ url_for('static', filename='shorts/core/journey_scroll_feed.js') }}"></script>
 
     <script>
