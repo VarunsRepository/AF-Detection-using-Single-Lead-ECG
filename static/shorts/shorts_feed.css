@@ -808,6 +808,15 @@ html, body {
    A tour stop is one recording; this is the way to the other 8,527.
    --------------------------------------------------------------------- */
 .more-from {
+    /* align-self IS THE FIX, and inline-block is not.
+       The bottom zone is a flex COLUMN, so this is a flex item and its
+       width comes from align-items, which defaults to `stretch` -- that
+       silently overrides display:inline-block and the box grows to the
+       full column. Measured: 195px of text in a 1008px box at 1440
+       wide, and 1814px at 2560. On a phone it looked right only because
+       the old max-width:72% cap happened to land near the text width.
+       flex-start makes it size to its content at every viewport. */
+    align-self: flex-start;
     display: inline-block;
     margin-top: 8px;
     padding: 5px 12px;
@@ -821,12 +830,27 @@ html, body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 72%;
+    /* Now only a TRUNCATION cap, not the thing setting the width.
+       100% keeps a long domain label inside a narrow phone; 40ch stops
+       any future label turning the chip into a banner. A percentage
+       alone was what tied the chip's size to the screen's. */
+    max-width: min(100%, 40ch);
     /* The text zone collapses by default and the chip must not collapse
-       with it -- it is an affordance, not prose. If it turns out to be
-       hidden until the title is tapped, that is the zone's max-height
-       rule reaching it; add `max-height:none; opacity:1;` here. */
+       with it -- it is an affordance, not prose. The collapse rules in
+       journey_page.html scope themselves to .stage-caption and
+       .stage-description, so the chip is untouched and shows while
+       collapsed. Stated explicitly so a later blanket rule on the zone's
+       children cannot take it out silently. */
     opacity: 1;
+    max-height: none;
+
+    /* WITHOUT THIS THE CHIP IS NOT TAPPABLE. The bottom zone sets
+       touch-action:none so an absolutely-positioned overlay covering the
+       lower third of the card cannot swallow a vertical swipe -- and
+       that also kills taps on anything inside it. .stage-title already
+       re-enables its own for exactly this reason (see its rule in
+       journey_page.html); the chip has to do the same. */
+    touch-action: manipulation;
 }
 
 .more-from::after {
@@ -839,3 +863,147 @@ html, body {
     border-color: var(--accent);
     color: var(--accent);
 }
+/* ---------------------------------------------------------------------
+   GESTURE HINTS -- the animated touch marks, see gesture_hints.js.
+
+   z-index 44 puts them OVER the rail (40) and the caption (35), because
+   the whole point is a ring drawn around a rail button; under the pause
+   indicator (45), which is feedback for something the viewer just did
+   and so always wins.
+
+   pointer-events:none on the layer AND on every child. This is not
+   belt-and-braces: a hint that swallows the tap it is advertising is
+   worse than no hint, and the layer covers the entire card. Same rule
+   .stage-caption and .pause-indicator already follow.
+   --------------------------------------------------------------------- */
+.ghint {
+    position: absolute;
+    inset: 0;
+    z-index: 44;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.ghint * { pointer-events: none; }
+
+.ghint-visible { opacity: 1; }
+
+/* The touch point itself -- a soft filled dot, the shape every phone
+   platform uses for "a finger is here". Positioned by JS from the
+   target's own box, so the translate keeps it CENTRED on that point
+   rather than hanging off its corner. */
+.ghint-dot {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    transform: translate(-50%, -50%);
+}
+
+/* The ring is a pseudo-element so the dot's own transform (the centring
+   translate) and the ring's animation never fight over one property --
+   animating transform on the dot itself would cancel the centring and
+   drop every hint 10px up and to the left. */
+.ghint-dot::after {
+    content: "";
+    position: absolute;
+    inset: -11px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    opacity: 0;
+}
+
+/* TAP -- ring expands outward twice and fades. */
+.ghint-tap::after {
+    animation: ghintTap 1.5s ease-out infinite;
+}
+
+@keyframes ghintTap {
+    0%   { transform: scale(0.55); opacity: 0; }
+    18%  { transform: scale(0.8);  opacity: 0.95; }
+    70%  { transform: scale(1.7);  opacity: 0; }
+    100% { transform: scale(1.7);  opacity: 0; }
+}
+
+/* HOLD -- ring closes IN and stays a moment before releasing, which is
+   what distinguishes it from a tap at a glance: tap goes outward and
+   vanishes, hold comes inward and dwells. */
+.ghint-hold::after {
+    animation: ghintHold 2.3s ease-in-out infinite;
+}
+
+@keyframes ghintHold {
+    0%   { transform: scale(1.9); opacity: 0; }
+    22%  { transform: scale(1.1); opacity: 0.95; }
+    62%  { transform: scale(1.0); opacity: 0.95; }
+    85%  { transform: scale(1.0); opacity: 0; }
+    100% { transform: scale(1.9); opacity: 0; }
+}
+
+/* SWIPE -- the dot itself travels, with the ring held steady at the
+   start of the stroke so the motion reads as "from here, to there".
+   The travel is on the dot's own transform, so it has to carry the
+   centring translate through every keyframe. */
+.ghint-swipe-up    { animation: ghintSwipeUp   1.8s ease-in-out infinite; }
+.ghint-swipe-left  { animation: ghintSwipeLeft 1.8s ease-in-out infinite; }
+.ghint-drag-h      { animation: ghintDragH     2.4s ease-in-out infinite; }
+
+@keyframes ghintSwipeUp {
+    0%   { transform: translate(-50%, -50%);          opacity: 0;    }
+    15%  { transform: translate(-50%, -50%);          opacity: 1;    }
+    75%  { transform: translate(-50%, calc(-50% - 58px)); opacity: 0.1; }
+    100% { transform: translate(-50%, calc(-50% - 58px)); opacity: 0;   }
+}
+
+@keyframes ghintSwipeLeft {
+    0%   { transform: translate(-50%, -50%);          opacity: 0;    }
+    15%  { transform: translate(-50%, -50%);          opacity: 1;    }
+    75%  { transform: translate(calc(-50% - 58px), -50%); opacity: 0.1; }
+    100% { transform: translate(calc(-50% - 58px), -50%); opacity: 0;   }
+}
+
+@keyframes ghintDragH {
+    0%,
+    100% { transform: translate(calc(-50% - 26px), -50%); opacity: 0.25; }
+    20%  { transform: translate(calc(-50% - 26px), -50%); opacity: 1;    }
+    60%  { transform: translate(calc(-50% + 26px), -50%); opacity: 1;    }
+    80%  { transform: translate(calc(-50% + 26px), -50%); opacity: 0.25; }
+}
+
+/* The words. Deliberately a pill rather than a tooltip with a tail: a
+   tail has to point somewhere, and the thing it would point at is
+   already ringed. Same visual language as .stage-caption so it does not
+   read as a different system. */
+.ghint-label {
+    position: absolute;
+    transform: translateY(-50%);
+    max-width: 52%;
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 0.78rem;
+    line-height: 1.3;
+    color: var(--text);
+    background: rgba(13, 17, 23, 0.88);
+    border: 1px solid var(--border);
+    padding: 7px 11px;
+    border-radius: 8px;
+    text-align: left;
+}
+
+.ghint-label-left { text-align: right; }
+
+/* REDUCED MOTION -- a looping animated hand over the content is exactly
+   what this media query exists for. The hint still appears and still
+   says what the control does; it just holds still, with the ring shown
+   statically so there is something to look at.
+
+   Set on a CLASS the JS adds after reading the media query, rather than
+   inside an @media block, because the same decision also shortens the
+   hold time in JS -- one read, one source of truth, instead of CSS and
+   JS each deciding separately and disagreeing. */
+.ghint-still .ghint-dot          { animation: none !important; }
+.ghint-still .ghint-dot::after   { animation: none !important;
+                                   opacity: 0.9; transform: scale(1.15); }
