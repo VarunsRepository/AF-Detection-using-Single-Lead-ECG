@@ -798,3 +798,44 @@ html, body {
     opacity: 1;
 }
 
+
+
+
+
+
+/* ---------------------------------------------------------------------
+   "More from this journey" -- curated feeds only, see buildMoreChip().
+   A tour stop is one recording; this is the way to the other 8,527.
+   --------------------------------------------------------------------- */
+.more-from {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 5px 12px;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 72%;
+    /* The text zone collapses by default and the chip must not collapse
+       with it -- it is an affordance, not prose. If it turns out to be
+       hidden until the title is tapped, that is the zone's max-height
+       rule reaching it; add `max-height:none; opacity:1;` here. */
+    opacity: 1;
+}
+
+.more-from::after {
+    content: " \2192";
+    opacity: 0.65;
+}
+
+.more-from:active {
+    transform: scale(0.96);
+    border-color: var(--accent);
+    color: var(--accent);
+}
