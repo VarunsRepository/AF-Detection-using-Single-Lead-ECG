@@ -41,6 +41,7 @@ class AnalyticsStore:
         "stage_started", "stage_completed",
         "paused", "resumed", "restarted",
         "algorithm_switched", "renderer_switched", "speed_changed",
+        "journey_opened", # to accomodate the change wherein we added a button to add curated cards for a journey in a tour
     }
 
     def __init__(self, cache_dir: str = "data_cache"):
