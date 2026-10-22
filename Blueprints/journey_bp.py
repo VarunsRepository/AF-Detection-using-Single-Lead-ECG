@@ -296,6 +296,14 @@ def _build_tour(stops):
         # journey_scroll_feed.js does `label: entry.label ?? null`.
         if stop.get("label"):
             entry["label"] = stop["label"]
+        # Only the master tour sets this. It is the card's "more from"
+        # target: with it the chip leads to /tour/<tour>, without it to
+        # /journey/<journey>. The client cannot work this out for itself
+        # -- a journey can belong to several tours (silicon is in both
+        # "compute" and "hardware"), so a reverse lookup would be
+        # guessing. The stop says where it came from instead.
+        if stop.get("tour"):
+            entry["tour"] = stop["tour"]
         pattern.append(entry)
 
     # EVERY sampleId MUST BE UNIQUE. The feed keys a running journey by
