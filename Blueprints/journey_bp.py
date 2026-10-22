@@ -13,7 +13,14 @@
 #
 #   Adding a journey now means a new file in catalog/journeys/ and one
 #   import in catalog/__init__.py. This file does not change.
+#
+#   SEED_TOUR used to live here too, and was edited thirteen times before
+#   anyone noticed it was content sitting in a routes file. Tours are now
+#   data in catalog/tours.py; adding one changes nothing here.
 # ---------------------------------------------------------------------------
+
+import hmac
+import os
 
 from flask import Blueprint, render_template, abort, jsonify, request
 
@@ -24,10 +31,8 @@ from Services.analytics_store   import AnalyticsStore
 # Importing the catalog is what registers everything -- sources,
 # components, schemas and recipes, in that order.
 from catalog import journey_store, dsp_store, rendering_store
-
-
-from catalog.page_meta import meta_for 
-
+from catalog.page_meta import meta_for
+from catalog.tours import tour_store, DEFAULT_TOUR
 
 analytics_store = AnalyticsStore(cache_dir="data_cache")
 
@@ -82,9 +87,7 @@ def journey(journey_name):
         dsp_entrypoints=dsp_entrypoints,
         rendering_entrypoints=rendering_entrypoints,
         data_source_configs=data_source_configs,
-
-        page_meta=meta_for(journey_name, f"/journey/{journey_name}"), 
-        
+        page_meta=meta_for(journey_name, f"/journey/{journey_name}"),
         # Single-journey mode -- all cards use the same recipe
         shorts_batch=None,
     )
@@ -178,7 +181,8 @@ def shorts():
         journey_layout=primary["layout"],
         dsp_entrypoints=dsp_entrypoints,
         rendering_entrypoints=rendering_entrypoints,
-        data_source_configs=data_source_configs,   
+        data_source_configs=data_source_configs,
+        page_meta=meta_for(None, "/shorts"),
         shorts_batch={"recipes": recipes, "pattern": pattern},
     )
 
@@ -210,96 +214,138 @@ def pathway_builder():
 
 
 # ---------------------------------------------------------------------------
-# Seed feed -- one card per journey, across every domain
+# Tours -- an ordered set of cards, shared as one link
+#
+# /tour/ecg      four chosen cards across four journeys, then it ends
+# /seed          alias for the default tour, so old links keep working
+#
+# The route knows nothing about any particular tour. Adding one means
+# adding a dict entry in catalog/tours.py and nothing here changes --
+# the same rule that already holds for journeys and data sources.
 # ---------------------------------------------------------------------------
 
-# (journey name, source id). The ECG entries draw their sample from the
-# live record list; the cipher entries name a specific block, because
-# those samples are hand-authored and a particular one is the point --
-# aes_fips197 is the FIPS-197 worked example, spn_classic the standard
-# SPN demonstration.
-SEED_TOUR = [
-    ("ecg",            "ecg_single", None),
-    ("beats",          "ecg_single", None),
-    ("spectrum",       "ecg_single", None),
-    ("dwt",            "ecg_single", None),
-    ("aes_round",      "aes_block",  "aes_fips197"),
-    # A DIFFERENT block from aes_round above -- see the uniqueness note.
-    # It also reads better: key expansion depends on the KEY, so a tour
-    # stop showing a different key produces a visibly different schedule.
-    ("aes_expansion",  "aes_block",  "aes_ascii"),
-    ("spn",            "spn_block",  "spn_classic"),
-    ("sha1",           "sha1_message", "sha1_abc"),
-    ("simd",           "simd_vectors", "simd_basic"),
-    ("ets",            "ets_scenario", "ets_nadh"),
-    ("photosynthesis", "photo_scenario", "photo_c4_hot"),
-    ("pathway",        "pathway_model", "path_tca"),
-]
-
-
-@journey_bp.route('/seed')
-def seed_feed():
+def _build_tour(stops):
     """
-    A tour: one card per journey, spanning every domain the engine runs.
+    Turn a list of stops into the {recipes, pattern} the feed expects.
+
+    Returns (recipes, pattern). An empty pattern means nothing could be
+    built and the caller should 404.
 
     CURATED, not paginated. The normal feed draws every card's sample from
     ONE endpoint, which ties the whole feed to a single source -- fine for
-    8,528 ECG records, impossible for a tour where card 1 is an ECG
-    recording and card 5 is an AES block. So each pattern entry carries
-    its own sampleId and the client skips pagination entirely
-    (see isCurated in journey_scroll_feed.js).
+    8,528 ECG records, impossible for a tour whose first card is an ECG
+    recording and whose fifth is an AES block. Each pattern entry carries
+    its own sampleId and the client skips pagination entirely (see
+    isCurated in journey_scroll_feed.js).
 
-    Entries whose journey or sample is unavailable are DROPPED rather than
-    failing the page -- a tour missing one stop is still a tour.
-
-    EVERY sampleId MUST BE UNIQUE ACROSS THE TOUR. The feed keys a running
-    journey by sampleId ("if (!activeJourneys.has(sampleId))"), so a second
-    card with the same sample is treated as already playing and never
-    starts -- it just sits there blank, with no error anywhere. Two stops
-    originally shared aes_fips197 and card 6 silently refused to load.
-    The check below turns that into a log line instead of a mystery.
+    A stop whose journey or sample is unavailable is DROPPED rather than
+    failing the page. A tour missing one stop is still a tour.
     """
-    # ECG sample ids come from the live list, so the tour works on any
-    # install regardless of which records were uploaded.
-    ecg_ids = []
-    lister = data_source_store.get_lister("ecg_single")
-    if lister:
-        try:
-            ecg_ids = [s["record_id"] for s in lister(8, 0).get("samples", [])]
-        except Exception as e:
-            print(f"[SEED] could not list ECG records: {e}")
+    # Record ids per source, fetched at most once each. A tour with four
+    # ECG stops needs four DIFFERENT recordings, so the cursor is per
+    # source rather than per stop -- which is the whole reason /tour/ecg
+    # works at all.
+    pools, cursors = {}, {}
 
-    recipes, pattern, ecg_cursor = {}, [], 0
-    for journey, source_id, fixed_sample in SEED_TOUR:
-        package = journey_store.build_journey(journey)
+    def next_from(source_id):
+        if source_id not in pools:
+            lister = data_source_store.get_lister(source_id)
+            ids = []
+            if lister:
+                try:
+                    ids = [s["record_id"]
+                           for s in lister(16, 0).get("samples", [])]
+                except Exception as e:
+                    print(f'[TOUR] could not list "{source_id}": {e}')
+            pools[source_id], cursors[source_id] = ids, 0
+        ids, i = pools[source_id], cursors[source_id]
+        if i >= len(ids):
+            return None
+        cursors[source_id] = i + 1
+        return ids[i]
+
+    recipes, pattern = {}, []
+
+    for stop in stops:
+        name = stop.get("journey")
+        package = journey_store.build_journey(name) if name else None
         if not package:
-            print(f'[SEED] journey "{journey}" is not registered -- skipping')
+            print(f'[TOUR] journey "{name}" is not registered -- skipping')
             continue
 
-        if fixed_sample is not None:
-            sample_id = fixed_sample
-        else:
-            if ecg_cursor >= len(ecg_ids):
-                print(f'[SEED] no ECG record left for "{journey}" -- skipping')
+        sample_id = stop.get("sample")
+        if sample_id is None:
+            # THE SOURCE COMES FROM THE RECIPE, never from the tour. A
+            # tour that named its own source could name one the journey
+            # does not use, and nothing would catch it.
+            source_id = (package["stages"][0].get("dataSource", {}) or {}
+                         ).get("sourceId")
+            if not source_id:
+                print(f'[TOUR] "{name}" stage 0 declares no sourceId '
+                      f'-- skipping')
                 continue
-            sample_id = ecg_ids[ecg_cursor]
-            ecg_cursor += 1
+            sample_id = next_from(source_id)
+            if sample_id is None:
+                print(f'[TOUR] no record left in "{source_id}" for '
+                      f'"{name}" -- skipping')
+                continue
 
-        recipes[journey] = package
-        pattern.append({"journey": journey, "sampleId": sample_id})
+        recipes[name] = package
+        entry = {"journey": name, "sampleId": sample_id}
+        # The feed already carries this through to analytics --
+        # journey_scroll_feed.js does `label: entry.label ?? null`.
+        if stop.get("label"):
+            entry["label"] = stop["label"]
+        pattern.append(entry)
 
+    # EVERY sampleId MUST BE UNIQUE. The feed keys a running journey by
+    # sampleId, so a second card with the same sample is treated as
+    # already playing and never starts -- blank, with no error anywhere.
+    # Two seed stops once shared aes_fips197 and card 6 silently refused
+    # to load. This turns that into a log line instead of a mystery.
+    #
+    # Checked HERE as well as at import because lister-drawn samples are
+    # not known until now.
     seen = {}
     for entry in pattern:
-        if entry["sampleId"] in seen:
-            print(f'[SEED] WARNING: "{entry["sampleId"]}" is used by both '
-                  f'"{seen[entry["sampleId"]]}" and "{entry["journey"]}". '
-                  f'The feed keys journeys by sampleId, so the second card '
-                  f'will render BLANK. Give each tour stop its own sample.')
-        seen[entry["sampleId"]] = entry["journey"]
+        sid = entry["sampleId"]
+        if sid in seen:
+            print(f'[TOUR] WARNING: "{sid}" is used by both "{seen[sid]}" '
+                  f'and "{entry["journey"]}". The feed keys journeys by '
+                  f'sampleId, so the second card will render BLANK. Give '
+                  f'each stop its own sample.')
+        seen[sid] = entry["journey"]
 
-    if not pattern:
-        abort(500, description="No journeys available for the seed tour.")
+    return recipes, pattern
 
+
+def _tour_meta(tour_name, spec):
+    """
+    Link preview for a tour.
+
+    A tour is BUILT to be shared, so falling back to the generic site
+    card would be the one place a wrong preview actually costs
+    something. The tour already declares a label and a description, and
+    that is exactly what a preview needs -- no second source of truth.
+
+    Starts from meta_for() so the url and the default image are built by
+    the same code every other page uses, then overrides what the tour
+    knows better. Set "image" on a tour (a full URL) to give it a card of
+    its own.
+    """
+    meta = dict(meta_for(None, f"/tour/{tour_name}"))
+    if spec.get("label"):
+        meta["title"] = f'{spec["label"]} — Kymograph'
+    if spec.get("description"):
+        meta["description"] = spec["description"]
+    if spec.get("image"):
+        meta["image"] = spec["image"]
+    return meta
+
+
+def _render_tour(recipes, pattern, tour_name=None, page_meta=None):
+    """Template variables that assume a single journey come from the
+    first stop; the feed engine overrides them per card."""
     batch_stages = [s for r in recipes.values() for s in r["stages"]]
     primary = recipes[pattern[0]["journey"]]
 
@@ -312,11 +358,42 @@ def seed_feed():
         journey_ui_shell=primary["uiShell"],
         journey_playback_config=primary["playbackConfig"],
         journey_layout=primary["layout"],
+        tour_name=tour_name,
+        page_meta=page_meta,
         dsp_entrypoints=dsp_store.resolve(batch_stages),
         rendering_entrypoints=rendering_store.resolve(batch_stages),
         data_source_configs=data_source_store.resolve_for_stages(batch_stages),
         shorts_batch={"recipes": recipes, "pattern": pattern},
     )
+
+
+@journey_bp.route('/tour/<tour_name>')
+def tour(tour_name):
+    spec = tour_store.get(tour_name)
+    if spec is None:
+        known = ", ".join(tour_store.names())
+        abort(404, description=f'No tour "{tour_name}". Available: {known}')
+
+    recipes, pattern = _build_tour(spec["stops"])
+    if not pattern:
+        abort(500, description=f'No journeys available for tour "{tour_name}".')
+    return _render_tour(recipes, pattern, tour_name,
+                        page_meta=_tour_meta(tour_name, spec))
+
+
+@journey_bp.route('/seed')
+def seed_feed():
+    """The original curated tour. Kept as an alias so links that have
+    already been shared keep working -- /tour/seed is the same page."""
+    return tour(DEFAULT_TOUR)
+
+
+@journey_bp.route('/api/tours')
+def list_tours():
+    """What tours exist. Useful for a future index page, and for checking
+    a tour registered at all without loading the feed."""
+    return jsonify({"tours": tour_store.list_all(),
+                    "default": DEFAULT_TOUR})
 
 
 # ---------------------------------------------------------------------------
@@ -394,21 +471,16 @@ def list_sources():
     })
 
 
-
-
 # ---------------------------------------------------------------------------
-# Add to journey_bp.py, next to the existing /api/data routes.
-#
-# ONE route for every writable source, exactly as /api/data/<source>/<id>
-# is one route for every readable one. A source becomes writable by
-# registering a saver, not by anyone adding a route.
+# Writes -- ONE route for every writable source, exactly as
+# /api/data/<source>/<id> is one route for every readable one. A source
+# becomes writable by registering a saver, not by anyone adding a route.
 #
 # THE GATE
 #
-#   Reads stay public. Writes do not. This is the decision we made ahead of
-#   the work: gating the feed would mean logging in on every incognito
-#   window and every phone, for no safety gained, since the feed is public
-#   content anyway.
+#   Reads stay public. Writes do not. Gating the feed would mean logging
+#   in on every incognito window and every phone, for no safety gained,
+#   since the feed is public content anyway.
 #
 #   The check below is a shared token from the environment. That is NOT
 #   identity -- it cannot tell John from Ashlinda, and everyone who has it
@@ -420,40 +492,6 @@ def list_sources():
 #   it starts returning a user id from the session instead of a constant.
 #   Every caller already treats its return value as "who is writing this".
 # ---------------------------------------------------------------------------
-
-
-
-
-# ---------------------------------------------------------------------------
-# Add to journey_bp.py, next to the existing /api/data routes.
-#
-# ONE route for every writable source, exactly as /api/data/<source>/<id>
-# is one route for every readable one. A source becomes writable by
-# registering a saver, not by anyone adding a route.
-#
-# THE GATE
-#
-#   Reads stay public. Writes do not. This is the decision we made ahead of
-#   the work: gating the feed would mean logging in on every incognito
-#   window and every phone, for no safety gained, since the feed is public
-#   content anyway.
-#
-#   The check below is a shared token from the environment. That is NOT
-#   identity -- it cannot tell John from Ashlinda, and everyone who has it
-#   is the same person as far as the server is concerned. It is a lock on
-#   the door while the building is still empty, and it is honest about
-#   being that.
-#
-#   When real auth arrives, `_author()` is the only function that changes:
-#   it starts returning a user id from the session instead of a constant.
-#   Every caller already treats its return value as "who is writing this".
-# ---------------------------------------------------------------------------
-
-import hmac
-import os
-
-from flask import jsonify, request
-
 
 def _author() -> str | None:
     """
@@ -516,11 +554,6 @@ def save_sample(source_id):
     if not result.get("ok"):
         return jsonify(result), 400
     return jsonify(result), 201 if result.get("created") else 200
-
-
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -610,7 +643,6 @@ def validate_all_journeys():
     else:
         print("[SCHEMA] all journey contracts valid")
     return all_errors
-
 
 
 validate_all_journeys()
