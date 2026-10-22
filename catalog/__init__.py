@@ -30,6 +30,8 @@ journey_store = JourneyStore(cache_dir="data_cache")
 # 1. Data sources -- providers and their schemas
 from catalog import sources                      # noqa: E402,F401
 
+from catalog import tours 
+
 # 2. Components, BY DOMAIN. Each pack registers its algorithms and
 #    renderers together with their contracts -- one call per component
 #    instead of an entry in a components file plus a matching one in a
