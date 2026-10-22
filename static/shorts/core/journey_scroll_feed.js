@@ -86,6 +86,50 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
         return { samples, total };
     }
 
+    // ── "More from this journey" chip ──────────────────────────────────
+    // Curated feeds only. A tour shows ONE recording per journey, so the
+    // obvious next question is "is there more of this?" -- and the
+    // ordinary feed at /journey/<name> is exactly that. An ordinary feed
+    // needs no chip: it already IS the long version.
+    //
+    // ?sample= carries the current recording ACROSS, so the tap lands on
+    // the card just watched and the rest of the feed continues
+    // underneath it. That parameter already exists and is validated
+    // server-side (see the shared-link block in journey_bp.py), so a
+    // stale id degrades to an ordinary feed rather than to a card that
+    // sits there failing to fetch.
+    //
+    // MUST LIVE INSIDE startJourneyScrollFeed. It reads isCurated,
+    // getPatternEntry, getRecipeForCard and track -- all four are locals
+    // of this function, so at module scope the first line throws
+    // ReferenceError and the feed renders nothing at all.
+    //
+    // isCurated is a const declared further down, but this only READS it
+    // when called -- and every call happens inside loadFeedCards(), which
+    // is awaited after that declaration. Same reasoning as cardObserver.
+    function buildMoreChip(sampleId, cardIndex) {
+        if (!isCurated) return null;
+        const entry = getPatternEntry(cardIndex);
+        if (!entry?.journey) return null;
+
+        const label = getRecipeForCard(cardIndex)?.label || entry.journey;
+        const a = document.createElement("a");
+        a.className   = "more-from";
+        a.href        = `/journey/${encodeURIComponent(entry.journey)}`
+                      + `?sample=${encodeURIComponent(sampleId)}`;
+        a.textContent = `More from ${label}`;
+
+        // The card's own click handler reads tap POSITION -- left third
+        // restarts, right third advances a stage. Without stopPropagation
+        // the chip would navigate AND skip a stage on the way out. The
+        // title element already does exactly this, for the same reason.
+        a.addEventListener("click", (e) => {
+            e.stopPropagation();
+            track("journey_opened", sampleId, { to_journey: entry.journey });
+        });
+        return a;
+    }
+
     // ── Card builder ──────────────────────────────────────────────────────
     function buildCard(sampleId, cardIndex) {
         const recipe = getRecipeForCard(cardIndex);
@@ -146,6 +190,23 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
             const zoneEl = card.querySelector(`.layout-zone[data-zone="${zone}"]`);
             (zoneEl || card.querySelector('.layout-zone[data-zone="top"]')).appendChild(el);
         });
+
+
+
+//Code to add curarted cards of a kind of a journey 
+                // Sits in whichever zone holds the title, so it lands under the
+        // title the way YouTube's does -- without assuming that zone is
+        // "bottom", since layout is recipe-controlled.
+        const moreChip = buildMoreChip(sampleId, cardIndex);
+        if (moreChip) {
+            (titleEl.closest(".layout-zone")
+             || card.querySelector('.layout-zone[data-zone="bottom"]')
+            ).appendChild(moreChip);
+        }
+
+
+
+
 
         const railEl = card.querySelector(".stage-rail");
         railEl.dataset.zone = layout.railControls;
