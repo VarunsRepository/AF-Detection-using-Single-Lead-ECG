@@ -1,15 +1,12 @@
 {
-    "name": "Kymograph",
-    "short_name": "Kymograph",
-    "description": "Algorithms, one step at a time",
-    "start_url": "/seed",
-    "scope": "/",
-    "display": "standalone",
+    "name": "ECG Shorts",
+    "short_name": "ECG",
+    "description": "ECG signal processing journeys in a Shorts-style feed",
+    "start_url": "/shorts",
+    "display": "fullscreen",
     "orientation": "portrait",
-
-    "background_color": "#0a0c12",
-    "theme_color": "#0a0c12",
-
+    "background_color": "#000000",
+    "theme_color": "#000000",
     "icons": [
         {
             "src": "/static/icons/icon-192.png",
