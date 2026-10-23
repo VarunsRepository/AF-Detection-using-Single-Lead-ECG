@@ -563,6 +563,52 @@ html, body {
     align-items: center;
     justify-content: center;
     position: relative; /* anchors the swatch-dot badge, see below */
+
+    /* ── WHY TAPS WERE FLAKY ON IPHONE ───────────────────────────────
+       iOS Safari has IGNORED user-scalable=no since iOS 10. The
+       viewport meta in journey_page.html sets it and reads as though
+       double-tap zoom is off; on iPhone it is not. So every tap on an
+       element without touch-action waits roughly 300ms to see whether a
+       second tap is coming, and a tap arriving inside that window is
+       treated as the start of a zoom gesture and discarded.
+       That is the "works most of the time" symptom exactly: taps feel
+       sluggish, and a quick second one does nothing at all.
+       touch-action: manipulation opts this element out of double-tap
+       zoom, which removes the wait and the swallowed tap. */
+    touch-action: manipulation;
+
+    /* The grey box iOS paints over a tapped control, which arrives late
+       and lingers -- it reads as lag. Feedback comes from :active
+       instead, which is immediate. */
+    -webkit-tap-highlight-color: transparent;
+
+    /* A long press on a control should not start a text selection or
+       pop the callout bar. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+/* ── HIT AREA, WITHOUT CHANGING THE LOOK ─────────────────────────────
+   The button is 40px and Apple's own minimum is 44pt; with an 8px gap
+   between six of them, a thumb aimed at the middle of one lands in the
+   gap often enough to notice. Growing the circle would crowd the render,
+   which is the thing the rail is placed low-right to protect -- so the
+   TARGET grows and the circle does not.
+
+   The arithmetic has one trap in it, found by measuring rather than
+   deriving: an absolutely-positioned pseudo-element's containing block
+   is the PADDING box, and the 1px border makes that 38px, not 40. So
+   -4px produced a 46px target on 48px centres and left a 2px dead strip
+   between every pair of buttons -- better than before and still wrong.
+   -5px gives exactly 48px: neighbours touch, nothing overlaps, no dead
+   pixels. Verified with elementFromPoint down the rail's centre line. */
+.rail-btn::before {
+    content: "";
+    position: absolute;
+    top: -5px; bottom: -5px; left: -5px; right: -5px;
+    border-radius: 50%;
+    /* No background: invisible, but still a pointer target. */
 }
 
 /* Text labels on value-showing buttons (algorithm, renderer). These
@@ -1007,3 +1053,35 @@ html, body {
 .ghint-still .ghint-dot          { animation: none !important; }
 .ghint-still .ghint-dot::after   { animation: none !important;
                                    opacity: 0.9; transform: scale(1.15); }
+
+/* ---------------------------------------------------------------------
+   EVERY OTHER TAP TARGET gets the same treatment as .rail-btn, for the
+   same reason: iOS ignores user-scalable=no, so anything without
+   touch-action carries the double-tap-zoom wait and can have a tap
+   swallowed. Listed explicitly rather than applied to `button` globally
+   so a future non-tap control cannot inherit it by accident.
+   --------------------------------------------------------------------- */
+.explain-toggle,
+.explain-step-btn,
+.explain-close-btn,
+.explain-simple-deeper,
+.summary-dismiss,
+.onboarding-next,
+.onboarding-skip,
+.segment,
+.more-from {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* NOT given an expanded target, deliberately.
+   The obvious ::before trick does not work here: .segment carries
+   overflow:hidden to clip the fill disc, and a clipped pseudo-element is
+   not hit-tested either -- measured, the target stayed 8px. Making it
+   work needs a wrapper element around each dot, which is a change to
+   buildProgressBar(), not to this file.
+   Left undone on purpose rather than shipped as CSS that looks like it
+   helps: nothing is wired to these dots yet anyway (buildProgressBar
+   attaches no click handler, despite the cursor:pointer and the comment
+   above claiming they are tappable). Wiring them and giving them a real
+   target is one job, not two. */
