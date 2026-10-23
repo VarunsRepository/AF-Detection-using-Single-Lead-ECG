@@ -656,7 +656,11 @@
            occupies roughly bottom 12-90px -- entirely beneath it. Only
            the EXPANDED text rises into the rail's column, and that case
            is handled below with padding, not by narrowing the bar. */
-        bottom: calc(12px + env(safe-area-inset-bottom));
+        /* Lifted from 12px to clear the scrub bar, which is 26px tall
+           and sits at the safe-area bottom at z-index 36 -- above this
+           zone. At 12px the bar overlapped the lowest child, which is
+           the "more from" chip, and stole taps on it. */
+        bottom: calc(34px + env(safe-area-inset-bottom));
         left: 0;
         right: 0;
         /* Below the rail (z-index 40), so wherever the two could ever
