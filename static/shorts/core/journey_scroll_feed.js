@@ -256,8 +256,28 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
 
         card.addEventListener("click", (e) => {
             if (e.target.closest(".stage-rail")) return;
+            if (e.target.closest(".scrub-bar")) return;
             const cardRect = card.getBoundingClientRect();
-            if (e.clientX > cardRect.right - 80) return;
+
+            // DEAD ZONE DERIVED FROM THE RAIL, NOT A MAGIC 80px.
+            //
+            // This is why left/right taps worked on a laptop and only
+            // sometimes on a phone. The zone is a fixed 80px, which is 6%
+            // of a 1280px card and 21% of a 390px one -- and it eats the
+            // OUTER part of the right third, so the usable right-third
+            // went from 129px nominal to 49px actual on a phone. A third
+            // of the screen that is really an eighth.
+            //
+            // The rail's own box is the honest boundary, plus a small
+            // margin for thumbs. The closest() check above already
+            // handles a direct hit on a button; this only keeps taps just
+            // beside one from counting as "next stage".
+            const rail = card.querySelector(".stage-rail");
+            const railBox = rail?.getBoundingClientRect();
+            const guardFrom = railBox && railBox.width
+                ? railBox.left - 10
+                : cardRect.right - 56;   // fallback: rail not built yet
+            if (e.clientX > guardFrom) return;
             const journey = activeJourneys.get(sampleId);
             if (!journey) return;
             const relativeX   = (e.clientX - cardRect.left) / cardRect.width;
@@ -488,6 +508,14 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
                     // First journey running -- there is now something on
                     // screen, so the splash has done its job.
                     globalThis.__bootSplash?.dismiss();
+                } else {
+                    // Already built, coming back into view. Without this
+                    // the card sat frozen: the exit branch below cancels
+                    // its sweep and nothing ever restarted it. Optional-
+                    // chained so an older interpreter without the method
+                    // simply behaves as before rather than throwing in
+                    // the observer callback.
+                    activeJourneys.get(sampleId)?.resumeIfPlaying?.();
                 }
 
                 // GESTURE HINTS. Started here rather than in buildCard
@@ -514,7 +542,13 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
                 track("card_exited", sampleId, {
                     elapsed_ms: control ? Math.round(control.lastElapsedMs) : null,
                 });
-                cancelSweepAnimation(sampleId);
+                // suspend() stops the sweep AND the auto-advance timer
+                // together; the bare cancelSweepAnimation left stages
+                // stepping forward off screen. Falls back to the old
+                // behaviour if the method is not there.
+                const j = activeJourneys.get(sampleId);
+                if (j?.suspend) j.suspend();
+                else cancelSweepAnimation(sampleId);
                 // Tear the hints down with the card, and DROP the entry so
                 // scrolling back up can offer one again -- the queue's own
                 // seen-list is what prevents a repeat, not this map.

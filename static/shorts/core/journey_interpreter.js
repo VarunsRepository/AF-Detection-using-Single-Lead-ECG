@@ -163,6 +163,11 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
     let autoAdvanceTimer = null;
     let autoAdvanceEndTime = null; // absolute performance.now() timestamp the current timer should fire at -- used to compute remaining time when pausing
     let autoAdvanceRemainingMs = null; // set only while paused
+    // Deliberately SEPARATE from autoAdvanceRemainingMs. A card can be
+    // paused by the viewer AND scrolled off screen, and one store would
+    // have each overwrite the other -- so resuming would either restart
+    // a paused card or lose the remaining time entirely.
+    let offscreenRemainingMs = null;
 
     // Pause is per-JOURNEY-INSTANCE (per card), unlike Speed -- pausing
     // one card shouldn't pause a DIFFERENT card you scroll to next.
@@ -361,8 +366,35 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             } else {
                 seg.classList.remove("current");
             }
+            // Clear what armFillsForSeek() wrote. Without this an
+            // inline animation-name:fillBar survives on a segment that is
+            // no longer .current, so a dot that should sit still keeps
+            // filling -- the CSS only grants the animation to the current
+            // one, and an inline value outranks it.
+            fill.style.animationName = "";
             fill.style.animationPlayState = "running"; // reset -- a fresh stage always starts unpaused visually
         });
+
+        // The scrub bar's fill is the same animation over the same
+        // duration, set from the same call. Driving it anywhere else is
+        // how the dot came to ignore scrubbing in the first place.
+        const sf = scrubFillEl();
+        if (sf) {
+            sf.style.animationName      = "";   // back to the CSS value
+            sf.style.animationDuration  = `${durationMs}ms`;
+            sf.style.animationDelay     = "0ms";
+            sf.style.animationPlayState = "running";
+        } else if (chartContainer?.closest(".journey-card")) {
+            // SAY SO rather than carry on. A missing duration here does
+            // not look like a missing duration -- it looks like a bar
+            // that is full from the start, which reads as a rendering
+            // bug a long way from its cause. Deliberately not given a
+            // default duration instead: a plausible-looking 8s would
+            // have hidden this rather than reported it.
+            console.warn("[PROGRESS] scrub bar not built yet, so its fill "
+                + "has no duration and will render FULL. ensureScrubBar() "
+                + "must run before updateProgressBar() in buildStage().");
+        }
     }
 
     // Resolves ONE stage's dataSource -- either a real HTTP fetch (Stage 1,
@@ -558,6 +590,20 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 stageOutputMeta[stageJson.stageOutput.exportKey] = data?.meta ?? {};
             }
         }
+        // BEFORE updateProgressBar, and that order is load-bearing.
+        //
+        // The bar's fill has no animation-duration in CSS -- JS sets it
+        // per stage. Created after updateProgressBar, the element did not
+        // exist when the duration was assigned, so it kept the CSS
+        // default of 0s: the animation completed instantly and
+        // fill-mode:forwards held the END state, which is a bar that is
+        // FULL from the first frame of every stage. The dot was fine
+        // because it is built once, up front, by buildProgressBar().
+        //
+        // Created lazily and once per card: the element outlives every
+        // stage, so only its duration changes.
+        ensureScrubBar();
+
         runAndRender(cached ? cached.dspOutput : null);
 
         // Collapse the text overlay on every stage change. Without this,
@@ -901,6 +947,23 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             autoAdvanceTimer = null;
         }
         isPaused = false; // a fresh stage always starts playing, never inherits the previous stage's paused state
+        // ...AND NEITHER DOES THE GLYPH. flashPlayback() leaves a
+        // .playback-flash element on the card whose paused animation is
+        // `forwards`, so it HOLDS at full opacity on purpose -- it is an
+        // affordance saying "tap to resume", not a confirmation. Nothing
+        // removed it on a stage change, so: pause stage 2, step to stage
+        // 3, come back, and the play triangle was still sitting there
+        // over a stage that was running. isPaused was correct the whole
+        // time; the only thing wrong was the picture of it.
+        //
+        // Removed rather than hidden, same reasoning as the boot splash:
+        // it sits at z-index 45 and a stale overlay is worse than none.
+        clearPlaybackFlash();
+        // Belonged to the stage being left. Harmless today because
+        // pausing recomputes it, but it is a value from one stage
+        // sitting in a variable another stage reads.
+        autoAdvanceRemainingMs = null;
+        offscreenRemainingMs = null;
         cancelSweepAnimation(sampleId);
         currentStageIndex = index;
         await buildStage(currentStageIndex);
@@ -937,6 +1000,14 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         el.classList.remove("paused", "playing");
         void el.offsetWidth;
         el.classList.add(paused ? "paused" : "playing");
+    }
+
+    // The one place that owns taking the glyph away. Every path that
+    // changes stage goes through goToStage, so there is exactly one
+    // call site -- which is why this could not drift again.
+    function clearPlaybackFlash() {
+        chartContainer?.closest(".journey-card")
+                      ?.querySelector(".playback-flash")?.remove();
     }
 
     // Brief text confirmation, reusing the playback indicator's slot so
@@ -998,18 +1069,135 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
     const activeFillEl = () =>
         progressBarEl?.querySelector(".segment.current .fill") ?? null;
 
+    // ── SCRUB BAR (experiment) ──────────────────────────────────────────
+    // A visible strip along the bottom: progress indicator at rest, a
+    // grabbable control when touched. ABSOLUTE mapping -- touch at 70% of
+    // the width and you are at 70% of the stage, like every video player
+    // anyone has ever used.
+    //
+    // WHY A BAR BEATS DRAGGING ANYWHERE
+    //   The invisible drag shares one surface with three other gestures
+    //   (centre tap pauses, right tap advances, left tap restarts), and
+    //   that conflict is a bug generator: a thumb roll of 18px turned a
+    //   tap into a scrub and swallowed it. A strip of its own cannot
+    //   conflict with anything, and it needs no gesture hint because it
+    //   looks like what it is.
+    //
+    // DRIVEN BY THE SAME CSS ANIMATION AS THE STORY DOT, deliberately.
+    // Both run `fillBar` for the stage's duration and both are seeked the
+    // same way, so they cannot drift apart -- which is exactly the bug
+    // that made the dot ignore scrubbing in the first place. No per-frame
+    // JavaScript either: the sweep loop does not have to know this exists.
+    //
+    // KEPT DELIBERATELY SEPARABLE. This function, scrubBarEls(), the
+    // wiring block at the bottom and one CSS block are the whole feature.
+    // Delete those four and nothing else notices.
+    function ensureScrubBar() {
+        const card = chartContainer?.closest(".journey-card");
+        if (!card) return null;
+        let bar = card.querySelector(".scrub-bar");
+        if (bar) return bar;
+
+        bar = document.createElement("div");
+        bar.className = "scrub-bar";
+        // Decorative to a screen reader: the stage has its own progress
+        // semantics via the dots, and a drag target is not operable
+        // without a pointer anyway.
+        bar.setAttribute("aria-hidden", "true");
+        bar.innerHTML = `<div class="scrub-track"><div class="scrub-fill"></div>`
+                      + `</div><div class="scrub-knob"></div>`;
+        card.appendChild(bar);
+        wireScrubBar(bar);
+        return bar;
+    }
+
+    const scrubFillEl = () =>
+        chartContainer?.closest(".journey-card")
+                      ?.querySelector(".scrub-fill") ?? null;
+
+    // Both indicators, always together. Every place that used to touch
+    // one now goes through here, so adding a third would be one edit and
+    // forgetting one is not possible.
+    function eachFill(fn) {
+        [activeFillEl(), scrubFillEl()].forEach(f => { if (f) fn(f); });
+    }
+
+    // ── ARM BEFORE SEEKING, ONCE PER GESTURE ────────────────────────────
+    // A CSS animation that has FINISHED sits in its after-phase, and with
+    // animation-fill-mode:forwards it is pinned at the end state and
+    // ignores a changed animation-delay entirely. Measured: on a finished
+    // 600ms fill, delays of -0, -150, -300 and -450ms all rendered
+    // scaleX(1).
+    //
+    // So seeking a completed stage did nothing -- which is the OTHER half
+    // of "scrubbing back at the end of a stage does not work". The first
+    // half was the auto-advance timer firing mid-gesture; this half is the
+    // indicator physically unable to move.
+    //
+    // Re-triggering the animation puts it back in its active phase, after
+    // which delay changes seek exactly. Same remove / reflow / re-add
+    // trick updateProgressBar already uses to restart the dot.
+    //
+    // Called ONCE when a gesture begins, not per move: the forced reflow
+    // is the expensive part, and after one arm the whole drag is just
+    // delay assignments. Verified -- delays of -0 through -600ms on a
+    // 600ms fill then produced 0.000, 0.250, 0.500, 0.750, 1.000.
+    function armFillsForSeek() {
+        eachFill(f => {
+            f.style.animationName = "none";
+            void f.offsetWidth;              // the restart
+            f.style.animationName = "fillBar";
+            f.style.animationPlayState = "paused";
+        });
+    }
+
     function seekFill(fill, ms) {
         if (!fill) return;
         fill.style.animationDelay = `-${Math.max(0, ms)}ms`;
     }
 
+    // The gesture maps the room ACTUALLY AVAILABLE either side of the
+    // finger onto the stage, rather than the card's full width onto it.
+    //
+    // THE BUG THIS FIXES: the old mapping was
+    //     at = from + (dx / cardWidth) * total
+    // so rewinding from 10s of a 10s stage to zero needed a drag of one
+    // whole card width to the left. Put your finger in the middle and
+    // only half a width exists to the left of it, so the furthest back
+    // you could ever reach in one gesture was half the stage -- and the
+    // progress dot could therefore never be emptied, which is how it
+    // showed up.
+    //
+    // Mapping the available room instead means the card's left edge is
+    // ALWAYS 0 and its right edge is ALWAYS the end of the stage,
+    // wherever the finger went down. Each direction is linear and they
+    // meet continuously at dx = 0, so there is no jump at the moment the
+    // scrub commits.
+    //
+    // THE FLOOR CANNOT DO BOTH JOBS, which took a test to notice. A
+    // generous floor stops a finger that lands 8px from the edge
+    // rewinding the whole stage in 8px -- but it also means the physical
+    // edge no longer maps to 0, so from x=40 the furthest back you could
+    // reach was 3.4s of an 8s stage. That is the original bug again, just
+    // confined to the margins.
+    //
+    // So the floor is set to the COMMIT THRESHOLD instead. Below 18px of
+    // available room a scrub in that direction cannot commit at all, so
+    // those are the only start positions where the mapping is twitchy --
+    // and they were already unusable. Everywhere a gesture can start, the
+    // edge maps to the end of the stage exactly.
+    const MIN_SCRUB_ROOM_PX = 18;   // == SCRUB_THRESHOLD_PX, deliberately
+
     function scrubStart(e) {
         const ctl = activeSweepControl.get(sampleId);
         if (!ctl) return;
+        const box = chartContainer.getBoundingClientRect();
         scrub = {
             x: e.clientX, y: e.clientY,
             from: ctl.lastElapsedMs ?? 0,
             total: ctl.totalDurationMs,
+            roomLeft:  Math.max(MIN_SCRUB_ROOM_PX, e.clientX - box.left),
+            roomRight: Math.max(MIN_SCRUB_ROOM_PX, box.right - e.clientX),
             wasPaused: isPaused,
             moved: false,
             at: ctl.lastElapsedMs ?? 0,
@@ -1029,6 +1217,86 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
     // instead of half-claiming it.
     const SCRUB_THRESHOLD_PX = 18;
     const SCRUB_DOMINANCE    = 1.3;
+
+    // ── The bar's own gesture ────────────────────────────────────────────
+    // Absolute, so there is no gain to tune and no dependence on where
+    // the finger landed -- the two things that made the drag-anywhere
+    // scrub awkward to get right. A tap on the bar seeks; a drag along it
+    // scrubs; both are the same code.
+    //
+    // No commit threshold either: the strip does nothing else, so there
+    // is no tap to protect.
+    function wireScrubBar(bar) {
+        let dragging = false;
+
+        const seekTo = (clientX) => {
+            const ctl = activeSweepControl.get(sampleId);
+            if (!ctl) return;
+            const box = bar.getBoundingClientRect();
+            const frac = Math.max(0, Math.min(1,
+                (clientX - box.left) / Math.max(1, box.width)));
+            const at = frac * ctl.totalDurationMs;
+            ctl.lastElapsedMs = at;
+            ctl.drawFn(at);
+            eachFill(f => seekFill(f, at));
+            bar.style.setProperty("--scrub-frac", frac);
+        };
+
+        bar.addEventListener("pointerdown", (e) => {
+            dragging = true;
+            bar.classList.add("grabbing");
+            bar.setPointerCapture?.(e.pointerId);
+            // The stage must not advance or sweep while a finger owns the
+            // playhead -- the same reason scrubbing the card cancels the
+            // auto-advance timer.
+            cancelSweepAnimation(sampleId);
+            if (autoAdvanceTimer) {
+                clearTimeout(autoAdvanceTimer);
+                autoAdvanceTimer = null;
+            }
+            armFillsForSeek();
+            seekTo(e.clientX);
+            e.stopPropagation();
+            e.preventDefault();
+        });
+
+        bar.addEventListener("pointermove", (e) => {
+            if (!dragging) return;
+            seekTo(e.clientX);
+            e.stopPropagation();
+        });
+
+        const release = (e) => {
+            if (!dragging) return;
+            dragging = false;
+            bar.classList.remove("grabbing");
+            e?.stopPropagation();
+
+            const ctl = activeSweepControl.get(sampleId);
+            const at = ctl?.lastElapsedMs ?? 0;
+
+            // A card the viewer paused stays paused: they are inspecting
+            // a moment, and starting playback because they touched the
+            // bar would take it away from them.
+            if (isPaused || !ctl) return;
+
+            startSweepLoop(sampleId, ctl.totalDurationMs, ctl.drawFn, at);
+            eachFill(f => { f.style.animationPlayState = "running"; });
+
+            if (journeyJson.journeyRules.autoAdvance
+                && currentStageIndex < journeyJson.stages.length - 1) {
+                const remaining = Math.max(0, ctl.totalDurationMs - at);
+                autoAdvanceEndTime = performance.now() + remaining;
+                autoAdvanceTimer = setTimeout(
+                    () => goToStage(currentStageIndex + 1), remaining);
+            }
+        };
+        bar.addEventListener("pointerup", release);
+        bar.addEventListener("pointercancel", release);
+        // Taps on the strip must never reach the card's tap-position
+        // handler, or seeking would also pause or skip a stage.
+        bar.addEventListener("click", (e) => e.stopPropagation());
+    }
 
     function scrubMove(e) {
         if (!scrub) return;
@@ -1062,11 +1330,10 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 autoAdvanceTimer = null;
             }
 
-            // Freeze the dot only once the gesture has COMMITTED to being
-            // a scrub. Pausing it at pointerdown would make every tap
-            // stutter the progress dot.
-            scrub.fill = activeFillEl();
-            if (scrub.fill) scrub.fill.style.animationPlayState = "paused";
+            // Freeze AND arm, only once the gesture has COMMITTED to
+            // being a scrub. Doing it at pointerdown would make every tap
+            // stutter the progress indicators.
+            armFillsForSeek();
         }
 
         // Belt and braces against the same class of failure from another
@@ -1080,16 +1347,17 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             return;
         }
 
-        // The card's width is one whole stage, so the gesture scales with
-        // however long that stage happens to be.
-        const width = chartContainer.clientWidth || 360;
-        scrub.at = Math.max(0, Math.min(scrub.total,
-                            scrub.from + (dx / width) * scrub.total));
+        // Left edge is 0, right edge is the end of the stage, from
+        // wherever the finger started. See MIN_SCRUB_ROOM_PX above.
+        const at = dx < 0
+            ? scrub.from * (1 + dx / scrub.roomLeft)
+            : scrub.from + (scrub.total - scrub.from) * (dx / scrub.roomRight);
+        scrub.at = Math.max(0, Math.min(scrub.total, at));
         live.drawFn(scrub.at);
-        // The dot now tracks the finger, forwards AND backwards -- the
+        // Both indicators track the finger, forwards AND backwards. The
         // clamp above keeps the scrub inside this stage, so only the
         // current dot ever changes and the completed ones stay completed.
-        seekFill(scrub.fill, scrub.at);
+        eachFill(f => seekFill(f, scrub.at));
     }
 
     function scrubEnd() {
@@ -1104,10 +1372,10 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             const ctl = activeSweepControl.get(sampleId);
             if (ctl) startSweepLoop(sampleId, ctl.totalDurationMs, ctl.drawFn, s.at);
 
-            // The dot carries on from the scrubbed position: the negative
-            // delay is left in place, so running it again continues from
-            // there rather than restarting at zero.
-            if (s.fill) s.fill.style.animationPlayState = "running";
+            // Both carry on from the scrubbed position: the negative
+            // delay is left in place, so running them again continues
+            // from there rather than restarting at zero.
+            eachFill(f => { f.style.animationPlayState = "running"; });
 
             // THE SAME DESYNC, ONE LAYER DOWN. The auto-advance timer was
             // set during buildStage for the FULL stage duration and knows
@@ -1141,7 +1409,20 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         }
         // A drag ends in a click event too; without this every scrub
         // would also toggle pause.
-        suppressClickUntil = performance.now() + 350;
+        //
+        // ONLY IF THE SCRUB ACTUALLY WENT ANYWHERE. This is the other
+        // half of why taps worked on a laptop and not on a phone: a mouse
+        // click moves zero pixels, a thumb tap rolls fifteen to twenty.
+        // Cross the commit threshold by a hair and the click was
+        // suppressed for 350ms, so the tap did nothing at all -- and the
+        // playhead had barely moved, so there was nothing on screen to
+        // explain why.
+        //
+        // A gesture that shifted the position by under 2% of the stage
+        // was a tap with a wobble, whatever the pixels said. Let the tap
+        // through.
+        const moved = Math.abs(s.at - s.from) > s.total * 0.02;
+        if (moved) suppressClickUntil = performance.now() + 350;
     }
 
     chartContainer.addEventListener("pointerdown", scrubStart);
@@ -1159,8 +1440,6 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         isPaused = !isPaused;
         flashPlayback(isPaused);
 
-        const currentFill = progressBarEl && progressBarEl.querySelector(".segment.current .fill");
-
         if (isPaused) {
             // activeSweepControl still holds lastElapsedMs after
             // cancelling -- resuming continues from exactly where it
@@ -1173,7 +1452,7 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 autoAdvanceTimer = null;
             }
 
-            if (currentFill) currentFill.style.animationPlayState = "paused";
+            eachFill(f => { f.style.animationPlayState = "paused"; });
         } else {
             const control = activeSweepControl.get(sampleId);
             if (control) {
@@ -1186,7 +1465,7 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 autoAdvanceRemainingMs = null;
             }
 
-            if (currentFill) currentFill.style.animationPlayState = "running";
+            eachFill(f => { f.style.animationPlayState = "running"; });
         }
     }
 
@@ -1204,5 +1483,52 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         restart() { goToStage(currentStageIndex); },
 
         togglePause,
+
+        // ── OFF SCREEN SHOULD MEAN STOPPED ──────────────────────────────
+        // The feed cancels the sweep when a card scrolls away but nothing
+        // stopped the AUTO-ADVANCE timer, so a card kept stepping through
+        // its stages while nobody was looking -- scroll back and you are
+        // on a different stage than you left, sometimes with no animation
+        // running at all, because the sweep was cancelled after the last
+        // buildStage that started one.
+        //
+        // That reads as broken playback, and it is the same class of
+        // problem as the stale glyph: a thing that was stopped and a
+        // thing that was not.
+        //
+        // Both halves now stop together and resume together, which is
+        // also what Shorts and Reels do.
+        suspend() {
+            cancelSweepAnimation(sampleId);
+            if (autoAdvanceTimer) {
+                clearTimeout(autoAdvanceTimer);
+                offscreenRemainingMs = autoAdvanceEndTime - performance.now();
+                autoAdvanceTimer = null;
+            }
+            eachFill(f => { f.style.animationPlayState = "paused"; });
+        },
+
+        resumeIfPlaying() {
+            // A card the viewer deliberately paused stays paused. Coming
+            // back to it must not start it playing -- they stopped it on
+            // purpose, and the glyph is still saying so.
+            if (isPaused) return;
+
+            const c = activeSweepControl.get(sampleId);
+            if (c && c.lastElapsedMs < c.totalDurationMs) {
+                startSweepLoop(sampleId, c.totalDurationMs, c.drawFn,
+                               c.lastElapsedMs);
+            }
+            eachFill(f => { f.style.animationPlayState = "running"; });
+
+            if (journeyJson.journeyRules.autoAdvance
+                && offscreenRemainingMs != null
+                && currentStageIndex < journeyJson.stages.length - 1) {
+                autoAdvanceEndTime = performance.now() + offscreenRemainingMs;
+                autoAdvanceTimer = setTimeout(
+                    () => goToStage(currentStageIndex + 1), offscreenRemainingMs);
+            }
+            offscreenRemainingMs = null;
+        },
     };
 }
