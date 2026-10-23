@@ -726,6 +726,17 @@
         cursor: pointer;
         position: relative;
         padding-right: 20px;    /* room for the chevron */
+        /* A TALLER TARGET. One line of title is about 24px, which is
+           half Apple's 44pt minimum -- and this is the control that
+           opens the description, so a miss reads as "the panel does not
+           work". Padding rather than min-height, because -webkit-line-clamp
+           and a min-height fight each other.
+           12px, not the 10px I first guessed: measured, one line of this
+           title is ~21px rather than 24, so 10px each side came to 41 --
+           close enough to look right and still under the minimum. */
+        padding-top: 12px;
+        padding-bottom: 12px;
+        -webkit-tap-highlight-color: transparent;
         /* The zone above sets touch-action:none so it cannot swallow a
            swipe. That would also kill the tap, so the title re-enables
            its own touch handling -- tap works, swipe passes through
@@ -742,7 +753,9 @@
         content: '';
         position: absolute;
         right: 2px;
-        top: 0.55em;
+        /* Follows the title's new top padding, or it would float above
+           the first line of text. */
+        top: calc(0.55em + 12px);
         width: 6px; height: 6px;
         border-right:  2px solid currentColor;
         border-bottom: 2px solid currentColor;
@@ -1229,6 +1242,20 @@
             updateHud();
             setInterval(updateHud, 200);
         }
+
+        // ── MAKE :active FIRE IMMEDIATELY ON IOS ────────────────────
+        // A WebKit quirk with a long history: :active styles are not
+        // applied on touch unless the document has a touch listener.
+        // Without one, .rail-btn:active { transform: scale(0.92) } never
+        // runs on an iPhone -- so a tap that DID register looked
+        // identical to one that did not, which is most of why the
+        // controls felt unreliable rather than merely slow. Half of
+        // "responsive" is being told the tap landed.
+        //
+        // An empty passive listener is the whole fix. Passive so it can
+        // never delay a scroll, and on document rather than each button
+        // so it survives every rail rebuild.
+        document.addEventListener("touchstart", () => {}, { passive: true });
 
         // ── Splash control ──────────────────────────────────────────
         // Exposed globally so journey_scroll_feed can dismiss it at the
