@@ -1085,3 +1085,100 @@ html, body {
    attaches no click handler, despite the cursor:pointer and the comment
    above claiming they are tappable). Wiring them and giving them a real
    target is one job, not two. */
+
+/* ---------------------------------------------------------------------
+   SCRUB BAR -- experimental, see ensureScrubBar() in journey_interpreter.js.
+
+   A progress indicator at rest, a control when touched. Thin enough to
+   ignore, with a tap target four times its height, and absolute
+   mapping: 70% along is 70% through the stage.
+
+   WHY IT EXISTS: the drag-anywhere scrub shares one surface with three
+   other gestures, and a thumb roll of 18px turned a tap into a scrub
+   that swallowed it. A strip of its own cannot conflict with anything,
+   and it needs no gesture hint because it looks like a control.
+
+   z-index 36: above the bottom text zone (30) so it is always grabbable,
+   below the rail (40) and the playback glyph (45).
+
+   SELF-CONTAINED ON PURPOSE. This block plus four pieces of
+   journey_interpreter.js are the whole feature -- delete both and
+   nothing else changes.
+   --------------------------------------------------------------------- */
+.scrub-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    /* Clear of the home indicator, and of the collapsed title above it. */
+    bottom: env(safe-area-inset-bottom);
+    height: 26px;              /* the TARGET; the line itself is 3px */
+    z-index: 36;
+    display: flex;
+    align-items: flex-end;
+    padding: 0 0 5px;
+    /* The strip owns horizontal movement so a drag along it is never
+       claimed as a feed swipe. Vertical is given up with it -- 26px of
+       the card cannot scroll the feed, which is the same trade Shorts
+       makes for its own bar. */
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+}
+
+.scrub-track {
+    position: relative;
+    flex: 1 1 auto;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.18);
+    overflow: hidden;
+    transition: height 0.12s ease, background 0.12s ease;
+}
+
+/* Same keyframes as the story dot (fillBar), same duration, seeked the
+   same way -- so the two can never disagree about where the stage is. */
+.scrub-fill {
+    position: absolute;
+    inset: 0;
+    transform: scaleX(0);
+    transform-origin: left;
+    background: var(--dot-active, var(--accent));
+    animation-name: fillBar;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+    /* Duration is set per stage by updateProgressBar(). */
+}
+
+/* Touched: the line thickens so the finger has something to feel it has
+   hold of, and brightens so the fill is readable under a thumb. */
+.scrub-bar.grabbing .scrub-track {
+    height: 7px;
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* A head on the fill, shown only while dragging -- at rest the bar
+   should read as information, not as a control begging to be used.
+   Positioned from --scrub-frac, which the drag handler sets. */
+.scrub-knob {
+    position: absolute;
+    bottom: 1px;
+    left: calc(var(--scrub-frac, 0) * 100%);
+    width: 13px;
+    height: 13px;
+    margin-left: -6.5px;
+    border-radius: 50%;
+    background: var(--dot-active, var(--accent));
+    box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    transform: scale(0.4);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    pointer-events: none;
+}
+
+.scrub-bar.grabbing .scrub-knob {
+    opacity: 1;
+    transform: scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .scrub-track, .scrub-knob { transition: none; }
+}

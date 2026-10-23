@@ -72,8 +72,16 @@
 
     // Exposed so the dev HUD can make hints showable again without
     // clearing every other key the app stores.
+    //
+    // Takes the live layer down too. A reset that forgot what had been
+    // seen but left one on screen was half a reset: the next hint in the
+    // queue would find liveHint still set and silently decline to show,
+    // so calling reset() and expecting to see the sequence again gave
+    // nothing until the stale one happened to fade. It also made a test
+    // harness non-deterministic, which is how it was found.
     function resetHints() {
         memory.clear();
+        clearLive();
         try {
             Object.keys(window.localStorage)
                   .filter(k => k.startsWith("kg.hint."))
@@ -189,7 +197,15 @@
         liveHint = null;
     }
 
-    function showHint(card, hint, targetEl) {
+    // onFinished fires once this hint has faded and been removed, so the
+    // runner can offer the NEXT one. Without it the queue stalls after
+    // the first hint: hint 2's timer fires while hint 1 is still up,
+    // sees liveHint set, returns -- and nothing ever asks again. It
+    // happened to recover only because a stage change at ~8s rebuilt the
+    // rail and the MutationObserver retried, which is luck, not a
+    // mechanism, and would not have happened at all on a single-stage
+    // card or a stage long enough to outlast the viewer.
+    function showHint(card, hint, targetEl, onFinished) {
         clearLive();
 
         const reduced = window.matchMedia
@@ -249,7 +265,11 @@
         setTimeout(() => {
             if (liveHint !== layer) return;    // something else replaced it
             layer.classList.remove("ghint-visible");
-            setTimeout(() => { if (liveHint === layer) clearLive(); }, 320);
+            setTimeout(() => {
+                if (liveHint !== layer) return;
+                clearLive();
+                onFinished?.();
+            }, 320);                           // matches the CSS fade
         }, holdMs);
 
         markSeen(hint.id);
@@ -311,15 +331,40 @@
         const now = () => Date.now();
         const t0 = now();
 
+        // A gap between hints, so two in a row read as two separate
+        // things rather than one continuous overlay. Long enough that
+        // the card is unobstructed in between, short enough that the
+        // second hint is still in the same visit.
+        const GAP_MS = 1400;
+
+        function next() {
+            if (stopped) return;
+            timers.push(setTimeout(attempt, GAP_MS));
+        }
+
         function attempt() {
-            if (stopped || liveHint) return;
+            if (stopped) return;
+            // SOMETHING ELSE IS ON SCREEN -- come back, do not give up.
+            //
+            // Each hint gets exactly one timer, so bailing here used to
+            // lose it permanently: a hint whose delay happened to land
+            // while another was still showing never appeared at all, and
+            // the only thing that could rescue it was an unrelated rail
+            // rebuild. Same shape as the chaining bug above -- a queue
+            // that stops asking.
+            //
+            // It showed up as a test failing one run in three, with a
+            // different assertion each time and nothing wrong with the
+            // assertion. Instrumenting it made it pass, which is the
+            // signature of a race rather than a mistake.
+            if (liveHint) { next(); return; }
             const t = now();
             for (const hint of queue) {
                 if (wasSeen(hint.id)) continue;
                 if (t < (readyAt.get(hint.id) ?? 0)) continue;
                 const el = resolveTarget(card, hint.target);
                 if (!el) continue;              // not on this stage; try later
-                if (showHint(card, hint, el)) return;
+                if (showHint(card, hint, el, next)) return;
             }
         }
 
