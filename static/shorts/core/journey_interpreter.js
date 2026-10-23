@@ -1016,19 +1016,52 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         };
     }
 
+    // Horizontal travel before a drag counts as a scrub.
+    //
+    // WAS 12px, WHICH WAS TOO LITTLE. A deliberate thumb tap rolls five
+    // to fifteen pixels on a phone, so an ordinary tap intended as
+    // pause-or-next crossed the threshold, became a scrub, and had its
+    // click suppressed for 350ms -- a control that did nothing, roughly
+    // one time in several. A real scrub crosses 18px without noticing.
+    //
+    // The dominance margin does the same job for the other axis: 1.3
+    // rather than a bare |dx| > |dy| leaves a diagonal swipe to the feed
+    // instead of half-claiming it.
+    const SCRUB_THRESHOLD_PX = 18;
+    const SCRUB_DOMINANCE    = 1.3;
+
     function scrubMove(e) {
         if (!scrub) return;
         const dx = e.clientX - scrub.x;
         const dy = e.clientY - scrub.y;
 
         if (!scrub.moved) {
-            // Commit only once the gesture is clearly sideways: a 12px
-            // threshold keeps a tap a tap, and requiring |dx| > |dy|
-            // leaves a diagonal swipe to the feed rather than grabbing it.
-            if (Math.abs(dx) < 12 || Math.abs(dx) <= Math.abs(dy)) return;
+            // Commit only once the gesture is clearly sideways.
+            if (Math.abs(dx) < SCRUB_THRESHOLD_PX
+                || Math.abs(dx) <= Math.abs(dy) * SCRUB_DOMINANCE) return;
             scrub.moved = true;
             cancelSweepAnimation(sampleId);
             chartContainer.setPointerCapture?.(e.pointerId);
+
+            // STOP THE STAGE ADVANCING UNDER THE FINGER.
+            //
+            // This is why scrubbing back near the end of a stage worked
+            // only sometimes. The sweep was cancelled on scrub but the
+            // auto-advance timer was not, so it still fired at its
+            // original deadline: start dragging at 7s of an 8s stage and
+            // a second later goToStage() built the NEXT stage, while the
+            // gesture carried on writing to a drawFn that now belonged
+            // to a different stage, scaled by the old one's duration.
+            // Near the start of a stage there was time to finish and it
+            // felt fine; near the end there was not.
+            //
+            // Nothing is lost by stopping it here: scrubEnd recomputes
+            // the remaining time from wherever the finger let go.
+            if (autoAdvanceTimer) {
+                clearTimeout(autoAdvanceTimer);
+                autoAdvanceTimer = null;
+            }
+
             // Freeze the dot only once the gesture has COMMITTED to being
             // a scrub. Pausing it at pointerdown would make every tap
             // stutter the progress dot.
@@ -1036,12 +1069,23 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             if (scrub.fill) scrub.fill.style.animationPlayState = "paused";
         }
 
+        // Belt and braces against the same class of failure from another
+        // direction -- a rail tap rebuilding the stage, a programmatic
+        // next(). If the live control's duration no longer matches the
+        // one this gesture started against, the stage changed underneath
+        // it: abandon rather than scrub the new stage on the old scale.
+        const live = activeSweepControl.get(sampleId);
+        if (!live || live.totalDurationMs !== scrub.total) {
+            scrub = null;
+            return;
+        }
+
         // The card's width is one whole stage, so the gesture scales with
         // however long that stage happens to be.
         const width = chartContainer.clientWidth || 360;
         scrub.at = Math.max(0, Math.min(scrub.total,
                             scrub.from + (dx / width) * scrub.total));
-        activeSweepControl.get(sampleId)?.drawFn(scrub.at);
+        live.drawFn(scrub.at);
         // The dot now tracks the finger, forwards AND backwards -- the
         // clamp above keeps the scrub inside this stage, so only the
         // current dot ever changes and the completed ones stay completed.
