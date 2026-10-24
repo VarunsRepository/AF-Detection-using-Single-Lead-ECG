@@ -254,9 +254,53 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
         const DOUBLE_TAP_THRESHOLD_MS = 350;
         let lastLeftTapTime = 0;
 
-        card.addEventListener("click", (e) => {
-            if (e.target.closest(".stage-rail")) return;
-            if (e.target.closest(".scrub-bar")) return;
+        // ── TAP DETECTION, FROM POINTER EVENTS, IN THE CAPTURE PHASE ──────
+        //
+        // This used to listen for a bubbling `click`, which is why
+        // next/previous-stage taps were unreliable on a phone and perfect
+        // on a laptop -- and why it was worst on stages with a plot.
+        //
+        // A plot stage puts Plotly SVG or a canvas inside .chart. Plotly
+        // binds its own touch handlers and calls preventDefault() on
+        // touchstart, and a touchstart whose default is prevented means
+        // the browser NEVER SYNTHESISES A CLICK. There was no event to
+        // bubble. Nothing was swallowing the tap; the tap never existed.
+        // A mouse click is generated regardless, hence the laptop.
+        //
+        // Pointer events are not synthesised, so they always arrive. And
+        // listening in the CAPTURE phase means the card sees the press
+        // before any descendant runs -- a child calling stopPropagation
+        // cannot hide it, which removes the whole class of "some library
+        // inside the chart ate my event".
+        //
+        // The trade is that `click`'s own definition of a tap (press and
+        // release on the same element, no drag) has to be restated here:
+        // same pointer, released quickly, and barely moved. The movement
+        // test is also what keeps a scrub from registering as a tap, so
+        // suppressClickUntil in journey_interpreter.js is now belt and
+        // braces rather than the mechanism.
+        const TAP_MAX_MS = 600;
+        const TAP_MAX_PX = 14;
+        // Anything with its own tap behaviour. These used to rely on
+        // stopPropagation during the bubble phase, which a capture-phase
+        // listener runs before -- so they have to be named explicitly.
+        const TAP_EXEMPT = ".stage-rail, .scrub-bar, .stage-title, .more-from";
+        let press = null;
+
+        card.addEventListener("pointerdown", (e) => {
+            press = { x: e.clientX, y: e.clientY,
+                      t: performance.now(), id: e.pointerId };
+        }, true);
+        card.addEventListener("pointercancel", () => { press = null; }, true);
+
+        card.addEventListener("pointerup", (e) => {
+            const p = press;
+            press = null;
+            if (!p || e.pointerId !== p.id) return;
+            if (performance.now() - p.t > TAP_MAX_MS) return;
+            if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > TAP_MAX_PX) return;
+            if (e.target?.closest?.(TAP_EXEMPT)) return;
+
             const cardRect = card.getBoundingClientRect();
 
             // DEAD ZONE DERIVED FROM THE RAIL, NOT A MAGIC 80px.
@@ -298,7 +342,7 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
                 }
                 lastLeftTapTime = now;
             }
-        });
+        }, true);
 
         return card;
     }
