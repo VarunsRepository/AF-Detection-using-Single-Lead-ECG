@@ -1182,3 +1182,440 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
     .scrub-track, .scrub-knob { transition: none; }
 }
+
+/* ---------------------------------------------------------------------
+   THE STAGE SHEET -- title, caption and description as a bottom sheet.
+   Paired with static/shorts/controls/sheet.js; see that file's header
+   for why this is a transform and not a height.
+
+   WHY THIS LIVES HERE AND NOT IN journey_page.html
+   The rules it replaces were in the template's inline <style>, which is
+   the third CSS home in this project and the one that wins every
+   specificity tie by virtue of coming last. That is how a caption reset
+   silently beat its own collapse rule and left the chevron anchored to
+   the wrong box. Section 44 step 1 is consolidating these; this block is
+   that step beginning, so nothing new goes back into the template.
+
+   SPECIFICITY IS DELIBERATE. Every rule that touches .stage-title,
+   .stage-caption or .stage-description is scoped through .stage-sheet
+   (0,3,0) rather than the (0,2,0) the template uses. That way the sheet
+   renders correctly EVEN IF the template deletions are skipped -- the
+   patch is cosmetic cleanup, not a prerequisite.
+
+   THE RAIL AND CHIP RULES AT THE BOTTOM ARE OVERRIDES. They restate
+   properties .rail-btn and .more-from already set further up this file,
+   at equal specificity, and win on source order alone. That is fragile
+   by nature -- it is here rather than edited in place because these
+   three controls now share one material and should be read together.
+   When section 44 step 1 consolidates the CSS, they merge.
+
+   Z-ORDER, bottom to top:
+      chart            (auto)
+      chip slot        31
+      scrim            38      <- dims the plot AND the scrub bar (36)
+      sheet            39
+      rail             40      <- fades with the sheet, so no fight
+      playback glyph   45
+   --------------------------------------------------------------------- */
+
+/* ── ONE MATERIAL ────────────────────────────────────────────────────
+   The sheet, the rail buttons and the "more from" chip are now cut from
+   the same stock: same tint, same edge, same shadow. Before this the
+   rail and chip were black at 45-50% with a #30363d hairline while the
+   sheet was a lifted slate panel, and they read as two unrelated
+   systems sharing a screen. Defined as tokens so the next control does
+   not have to guess the numbers.
+
+   Also lighter than plain black: rgba(0,0,0,0.5) over a dark plot is
+   nearly invisible as a SHAPE, which is why the rail needed a shadow to
+   be seen at all. A tinted panel reads as an object. */
+:root {
+    --panel:             rgba(22, 27, 34, 0.92);
+    --panel-deep:        rgba(13, 17, 23, 0.98);
+    --panel-edge:        rgba(255, 255, 255, 0.14);
+    --panel-edge-strong: rgba(255, 255, 255, 0.30);
+    --panel-shadow:      0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+/* The fallback matters: 48px is roughly one line of title plus the
+   grabber row, so a card whose sheet has not been measured yet is
+   visibly-but-slightly-wrong rather than invisible. sheet.js overwrites
+   this with the measured height and keeps it current. */
+.journey-card { --sheet-peek: 44px; --sheet-progress: 0; }
+
+/* --sheet-progress is 0 closed, 1 open, and ANY FRACTION IN BETWEEN
+   while a finger is on the handle. Everything that reacts to the sheet
+   reads it, so the scrim and the rail fade continuously with the drag
+   instead of snapping on release.
+
+   This was visible rather than theoretical: mid-drag the scrim had not
+   appeared at all and the rail (z-index 40) was painting straight over
+   the sheet (39), so the buttons ghosted through the prose until the
+   finger lifted and everything jumped into place. */
+.journey-card.sheet-open { --sheet-progress: 1; }
+
+/* Held while the finger is down. The transitions below are for SNAPS;
+   during a drag the JS is already writing a value every frame and a
+   transition on top of that is just lag. */
+.journey-card.sheet-dragging .sheet-scrim,
+.journey-card.sheet-dragging .stage-rail,
+.journey-card.sheet-dragging .card-chip-slot { transition: none; }
+
+.stage-sheet {
+    position: absolute;
+    left: 0;
+    right: 0;
+    /* Sits ABOVE the scrub bar (26px tall, anchored at the safe-area
+       bottom, z-index 36) rather than over it. Folding the scrub bar
+       into the peek band would look better and would marry two
+       experiments to each other, which we said we would not do. */
+    bottom: calc(26px + env(safe-area-inset-bottom));
+    /* Its OPEN height, always: the closed state is this box pushed down,
+       not a smaller box.
+
+       auto, so a two-sentence description gets a two-sentence sheet
+       rather than a half-empty slab -- and because the closed transform
+       is translateY(100% - peek), hugging the content Just Works, with
+       travelPx() following it. min-height keeps a short one from opening
+       by 40px and looking broken; max-height caps it in px as well as
+       vh so a tall desktop window does not hand over 900px of prose. */
+    height: auto;
+    min-height: 200px;
+    max-height: min(62vh, 520px);
+    z-index: 39;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+
+    transform: translateY(calc(100% - var(--sheet-peek)));
+    /* Decelerating, with no overshoot. A spring that overshoots reads as
+       playful on a tap and as broken at the end of a drag, because the
+       sheet keeps moving after the finger stopped. */
+    transition: transform 0.36s cubic-bezier(0.22, 0.61, 0.36, 1),
+                background 0.3s ease, box-shadow 0.3s ease;
+    will-change: transform;
+
+    /* THE CARD BOUNDARY: a panel, a hairline top edge, rounded top
+       corners and a shadow that lifts it off the render.
+
+       NO backdrop-filter, on purpose. Frosted glass would look better
+       here, but Safari samples the backdrop of a TRANSFORMED element
+       from its untransformed position, so the blur would visibly slide
+       against the sheet for the whole drag -- on the exact device this
+       control is for. Near-opaque costs us a little depth and no bugs. */
+    background: linear-gradient(to bottom, var(--panel), var(--panel-deep));
+    border-top: 1px solid var(--panel-edge);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -14px 34px rgba(0, 0, 0, 0.45);
+
+    /* The old zone set touch-action:none on the whole box, which made the
+       lower third of every card a region the feed could not swipe. Here
+       the handle takes `none` for itself and the body takes pan-y, so
+       everything else in the card keeps its gestures. */
+    touch-action: auto;
+    overflow: hidden;           /* clips the body while closed */
+}
+
+/* CLOSED, IT SHOULD BARELY BE THERE.
+   At full panel weight the peek read as a drawer parked over the plot
+   rather than a handle on it. Closed it keeps the edge -- which is the
+   whole point of the boundary -- but gives back the fill and most of the
+   shadow, so the render stays the loudest thing on the card. Opening
+   restores both, which also makes opening feel like something arriving
+   rather than merely sliding. */
+.stage-sheet:not(.is-open):not(.is-dragging) {
+    background: linear-gradient(to bottom,
+                rgba(22, 27, 34, 0.52), rgba(13, 17, 23, 0.80));
+    border-top-color: rgba(255, 255, 255, 0.11);
+    box-shadow: 0 -8px 22px rgba(0, 0, 0, 0.24);
+}
+
+/* TO CHECK THIS IS ACTUALLY ON, in the console:
+     getComputedStyle(document.querySelector(".stage-sheet")).backgroundImage
+   Closed it contains 0.52; open, 0.92. If it reads 0.92 while closed,
+   something later in the stylesheet is overriding it -- most likely a
+   second copy of this block. */
+
+.stage-sheet.is-open    { transform: translateY(0); }
+/* The finger owns the position; a transition here would fight it. */
+.stage-sheet.is-dragging { transition: none; }
+/* Set by sheet.js after reading the media query once, so CSS and JS
+   cannot disagree about whether motion is reduced. */
+.stage-sheet.sheet-still { transition: none; }
+/* Held for exactly one frame while --sheet-peek is rewritten. The peek
+   is part of the closed transform, so without this a title that wraps
+   onto a second line makes the sheet SLIDE to its new height -- and
+   clips that second line for the whole 360ms. See measurePeek(). */
+.stage-sheet.sheet-nosnap { transition: none; }
+
+/* ── The handle: grabber + title, and the only drag region ──────────── */
+/* FULL WIDTH, deliberately. The grabber is centred on the SHEET, so the
+   handle must span it; capping the handle would park the grabber at the
+   middle of the text column instead, which on a wide screen is nowhere
+   in particular. The cap goes on the title and the body below. */
+.sheet-handle {
+    flex: 0 0 auto;
+    padding: 0 20px 6px;
+    cursor: grab;
+    /* THIS is what stops the feed claiming the gesture. Without it the
+       browser decides the drag is a vertical scroll before pointermove
+       ever fires and the sheet never moves at all. */
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+}
+.stage-sheet.is-dragging .sheet-handle { cursor: grabbing; }
+.sheet-handle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    border-radius: 14px;
+}
+
+/* Trimmed from 38x4 at 9px margins to 34x4 at 7/6. Every pixel here is
+   a pixel of peek, and the peek is reserved on every card whether or not
+   anyone opens it -- the same arithmetic that killed the old 130px text
+   block. */
+.sheet-grab {
+    display: block;
+    width: 32px;
+    height: 4px;
+    margin: 6px auto 5px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.28);
+    transition: background 0.2s ease, width 0.2s ease;
+}
+.stage-sheet.is-open .sheet-grab,
+.stage-sheet.is-dragging .sheet-grab {
+    background: rgba(255, 255, 255, 0.52);
+    width: 44px;
+}
+
+/* CAP THE MEASURE, PINNED LEFT. The sheet spans the card, but the text
+   inside it must not: at 1100px that is ~130 characters a line, which
+   nobody reads. Pinned left rather than centred, so the column starts on
+   the same edge as the chip and the title does on a phone -- centred, it
+   floated between the left edge and the middle and belonged to neither. */
+.stage-sheet .stage-title,
+.sheet-body {
+    max-width: 720px;
+    margin-left: 0;
+    margin-right: auto;
+}
+
+/* No chevron any more. The grabber is a stronger affordance than a
+   chevron and it does not need a rotation state to say which way it is
+   going -- you can see which way the sheet is. */
+.stage-sheet .stage-title {
+    position: static;
+    margin: 0;
+    opacity: 1;
+    text-align: left;
+    font-family: 'Roboto', sans-serif;
+    font-weight: 700;
+    /* Was clamp(1.05rem, 3.9vw, 1.5rem). The 1.5rem ceiling is what made
+       the peek heavy on a laptop -- 24px type plus leading is a 30px line
+       for a label nobody is reading yet. The floor barely moves, because
+       on a phone this is the only text visible while closed. */
+    font-size: clamp(0.95rem, 3.2vw, 1.1rem);
+    line-height: 1.25;
+    color: var(--text);
+    /* A CEILING, not a height: "Ten Rounds" stays one line while "Four
+       Steps Per Round" does not become "Four Steps Per...". Two lines
+       simply make a taller peek, because the peek is measured. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    cursor: pointer;
+    /* The handle above already took the gesture; the title must not take
+       it back, or a drag starting on the words would do nothing. */
+    touch-action: none;
+    text-shadow: none;          /* it has a panel behind it now */
+}
+
+/* ── The body: caption + description, scrolling ─────────────────────── */
+.sheet-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 2px 20px calc(18px + env(safe-area-inset-bottom));
+
+    /* `scroll`, NOT `auto`. A non-overflowing `auto` element is not a
+       touch scrollport in Chrome, so with a short description the drag
+       would chain to the feed and flick the viewer to the next card
+       mid-sentence. `scroll` plus contain makes this a dead end for
+       scroll chaining whether or not there is anything to scroll. */
+    overflow-y: scroll;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    scrollbar-width: none;
+
+    opacity: 0;
+    transition: opacity 0.22s ease 0.04s;
+}
+.sheet-body::-webkit-scrollbar { display: none; }
+.stage-sheet.is-open .sheet-body,
+.stage-sheet.is-dragging .sheet-body { opacity: 1; }
+/* Clipped out of sight while closed, but belt and braces: an invisible
+   scrollport over the lower third of the card is exactly the bug that
+   made the feed stop responding last time. */
+.stage-sheet:not(.is-open):not(.is-dragging) .sheet-body {
+    pointer-events: none;
+}
+
+/* ONE container for the whole block, which is the thing the old overlay
+   never had: no per-element boxes, no borders, just type on the panel. */
+.stage-sheet .sheet-body .stage-caption,
+.stage-sheet .sheet-body .stage-description {
+    position: static;
+    opacity: 1;
+    pointer-events: auto;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    margin: 0 0 10px;
+    max-height: none;
+    text-align: left;
+    font-family: 'Roboto', sans-serif;
+    text-shadow: none;
+}
+.stage-sheet .sheet-body .stage-caption {
+    color: var(--text);
+    font-weight: 500;
+    font-size: clamp(0.88rem, 3vw, 1.05rem);
+    line-height: 1.45;
+}
+.stage-sheet .sheet-body .stage-description {
+    /* #9aa4b0, not the old #aaa and not var(--text-dim). --text-dim is
+       #747d8c, which measures 4.16:1 on this panel and fails WCAG AA for
+       body text -- it is on the open list to fix globally. This is the
+       value that pass will use, applied here early because this is now
+       the longest stretch of prose in the app. */
+    color: #9aa4b0;
+    font-weight: 400;
+    font-size: clamp(0.95rem, 3.2vw, 1.12rem);
+    line-height: 1.55;
+    margin-bottom: 4px;
+}
+
+/* ── Scrim ──────────────────────────────────────────────────────────── */
+/* Also, quietly, what stops the card's left/right tap zones firing while
+   someone is reading: the tap lands on the scrim, which closes the
+   sheet and goes no further. */
+.sheet-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 38;
+    background: rgba(0, 0, 0, 0.55);
+    opacity: var(--sheet-progress);
+    pointer-events: none;
+    touch-action: none;
+    transition: opacity 0.3s ease;
+}
+/* Only catches taps once it is actually OPEN. Mid-drag the handle holds
+   pointer capture and a live scrim underneath would be a second claimant
+   on the same finger. */
+.journey-card.sheet-open .sheet-scrim { pointer-events: auto; }
+
+/* ── What gets out of the way ───────────────────────────────────────── */
+/* The rail would otherwise float over the prose at z-index 40. Fading it
+   is better than re-stacking it: buttons on top of a sheet you are
+   reading are noise, and anything you would want from them is a tap
+   away once the sheet is closed. */
+.stage-rail,
+.card-chip-slot {
+    opacity: calc(1 - var(--sheet-progress));
+    transition: opacity 0.24s ease;
+}
+.journey-card.sheet-open .stage-rail,
+.journey-card.sheet-open .card-chip-slot {
+    pointer-events: none;
+}
+
+/* ── The rail, in the same material ─────────────────────────────────── */
+/* OVERRIDE of .rail-btn further up this file, at equal specificity and
+   later in source order. Only the three surface properties change; the
+   size, the touch-action fixes and the :active feedback all stand. */
+.rail-btn {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    box-shadow: var(--panel-shadow);
+}
+
+/* ── The "more from" chip, louder ───────────────────────────────────── */
+/* It is the only route from a tour stop to the 8,527 other recordings,
+   and at 0.7rem mono on 45% black it read as a caption. Bigger, bolder,
+   on the same panel as everything else, with a brighter edge and a
+   trailing chevron -- the chevron is what says "this goes somewhere"
+   rather than "this is a label".
+
+   Same equal-specificity override as .rail-btn above. */
+.more-from {
+    margin-top: 0;
+    padding: 8px 15px;
+    border-radius: 999px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge-strong);
+    box-shadow: var(--panel-shadow);
+    color: var(--text);
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    /* 44ch, up from 40, because the chevron now shares the box and the
+       cap is a TRUNCATION guard rather than the thing setting the width. */
+    max-width: min(100%, 44ch);
+    transition: background 0.15s ease, border-color 0.15s ease,
+                transform 0.1s ease;
+}
+.more-from::after {
+    content: "\203A";           /* › */
+    margin-left: 8px;
+    font-weight: 700;
+    opacity: 0.75;
+}
+.more-from:active {
+    transform: scale(0.96);
+    background: rgba(32, 38, 46, 0.96);
+    border-color: rgba(255, 255, 255, 0.42);
+}
+
+/* ── The chip gets its own slot ─────────────────────────────────────── */
+/* It used to live inside the text zone, under the title. It is not
+   description text, it is navigation -- and in the sheet it would either
+   make the peek two rows tall or hide behind a sheet nobody opened.
+   Above the sheet's top edge it stays permanently visible, which is
+   where YouTube puts the equivalent chip too.
+
+   right: 76px keeps it out of the rail's column (12px inset + 46px
+   button + breathing room), the same figure the old expanded padding
+   used. */
+.card-chip-slot {
+    position: absolute;
+    left: 20px;
+    right: 76px;
+    bottom: calc(var(--sheet-peek, 44px) + 26px
+                 + env(safe-area-inset-bottom) + 12px);
+    z-index: 31;
+    display: flex;
+    /* A row, so .more-from sizes to its own content. In the old flex
+       COLUMN it stretched to 1814px on a desktop until align-self
+       stopped it -- that fix is still in .more-from and is harmless
+       here. */
+    flex-direction: row;
+}
+.card-chip-slot:empty { display: none; }
+
+/* The centre zone reserves room for the PEEK only. Everything above the
+   peek is overlaid, never reflowed -- which is why the plot does not
+   resize when the sheet opens.
+
+   +18, down from +52. The old figure stopped the plot well clear of the
+   sheet, which meant the closed sheet's translucency had NOTHING BEHIND
+   IT and read as solid -- the effect was working and invisible. Now the
+   trace runs behind the peek, which is both the look that was wanted and
+   ~34px of render handed back on every card. */
+.journey-card .layout-zone[data-zone="center"] {
+    padding-bottom: calc(var(--sheet-peek, 44px) + 18px);
+}
