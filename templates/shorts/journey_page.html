@@ -647,178 +647,17 @@
     /* Story dots sit at the very top -- keep them below the notch. */
     .stage-bar { padding-top: calc(12px + env(safe-area-inset-top)); }
 
-    .layout-zone[data-zone="bottom"] {
-        position: absolute;
-        /* EDGE TO EDGE. This used to be right:80px to dodge the rail,
-           which left the bar visibly stopping short of the screen edge.
-           It does not need to dodge when collapsed: the rail is anchored
-           at bottom:100px and grows UPWARD, while the collapsed title
-           occupies roughly bottom 12-90px -- entirely beneath it. Only
-           the EXPANDED text rises into the rail's column, and that case
-           is handled below with padding, not by narrowing the bar. */
-        /* Lifted from 12px to clear the scrub bar, which is 26px tall
-           and sits at the safe-area bottom at z-index 36 -- above this
-           zone. At 12px the bar overlapped the lowest child, which is
-           the "more from" chip, and stole taps on it. */
-        bottom: calc(34px + env(safe-area-inset-bottom));
-        left: 0;
-        right: 0;
-        /* Below the rail (z-index 40), so wherever the two could ever
-           meet, the buttons stay on top and stay tappable. */
-        z-index: 30;
-        max-height: 45vh;       /* ceiling only -- the zone sizes to its
-                                   VISIBLE children, so collapsed it is
-                                   just the title's own height.
-                                   Capping the zone itself does NOT work:
-                                   with justify-content:flex-end a small
-                                   max-height pushes the title out of the
-                                   box instead of clipping to it. */
-        /* COLLAPSED: overflow hidden and touch-action:none, so this
-           absolutely-positioned overlay never captures a swipe. With
-           overflow-y:auto here the zone becomes a scrollable element
-           covering the lower third of the card -- a touch starting in
-           that region is claimed by it, and since collapsed there is
-           nothing to scroll, the feed stops responding entirely.
-           Scrolling is enabled only when expanded, below. */
-        overflow: hidden;
-        touch-action: none;
-        display: flex;
-        flex-direction: column;
-        justify-content: flex-end;
-        gap: 4px;
-        scrollbar-width: none;
-        /* No backdrop while collapsed -- just the title, floating.
-           A permanent dark band behind one line read as an unfinished
-           box. The backdrop appears only when expanded (rule below),
-           where the text genuinely needs contrast against the render. */
-        padding: 10px 20px 8px;
-        margin: 0;
-        border-radius: 0;
-        background: transparent;
-        transition: background 0.28s ease;
-    }
-    /* EXPANDED: now it may genuinely need to scroll (a long description),
-       so give it back overflow and its own touch handling. */
-    .layout-zone[data-zone="bottom"].text-expanded {
-        overflow-y: auto;
-        touch-action: pan-y;
-        /* Expanded, the text grows up into the rail's column. The BAR
-           stays full width; only the text is kept out from under the
-           buttons -- 12px rail inset + 46px button + breathing room. */
-        padding-right: 76px;
-        background: linear-gradient(to top,
-                    rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.72) 60%,
-                    rgba(0,0,0,0) 100%);
-    }
-    .layout-zone[data-zone="bottom"]::-webkit-scrollbar { display: none; }
-    .layout-zone[data-zone="bottom"].text-expanded::-webkit-scrollbar {
-        display: none;
-    }
+    /* ── BOTTOM TEXT OVERLAY -- MOVED ────────────────────────────────
+       The title, caption and description are now a bottom SHEET. Its
+       CSS lives in static/shorts/shorts_feed.css (search "THE STAGE
+       SHEET") and its behaviour in static/shorts/controls/sheet.js.
 
-    /* Title -- always visible, and the tap target that toggles the rest.
-       Two lines maximum so a long title cannot itself eat the screen. */
-    .journey-card .stage-title {
-        flex-shrink: 0;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;  /* a CEILING, not a fixed height -- "Ten
-                                   Rounds" still takes one line. One line
-                                   would truncate "Four Steps Per Round"
-                                   to "Four Steps Per...", losing the
-                                   thing the title is there to say. */
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        cursor: pointer;
-        position: relative;
-        padding-right: 20px;    /* room for the chevron */
-        /* A TALLER TARGET. One line of title is about 24px, which is
-           half Apple's 44pt minimum -- and this is the control that
-           opens the description, so a miss reads as "the panel does not
-           work". Padding rather than min-height, because -webkit-line-clamp
-           and a min-height fight each other.
-           12px, not the 10px I first guessed: measured, one line of this
-           title is ~21px rather than 24, so 10px each side came to 41 --
-           close enough to look right and still under the minimum. */
-        padding-top: 12px;
-        padding-bottom: 12px;
-        -webkit-tap-highlight-color: transparent;
-        /* The zone above sets touch-action:none so it cannot swallow a
-           swipe. That would also kill the tap, so the title re-enables
-           its own touch handling -- tap works, swipe passes through
-           everywhere else in the zone. */
-        touch-action: manipulation;
-        /* Carries its own contrast now that there is no band behind
-           it while collapsed. */
-        text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.6);
-    }
-
-    /* Chevron: the only hint that there is more to read. Rotates when
-       open. Without it the title looks like plain text and nobody taps. */
-    .journey-card .stage-title::after {
-        content: '';
-        position: absolute;
-        right: 2px;
-        /* Follows the title's new top padding, or it would float above
-           the first line of text. */
-        top: calc(0.55em + 12px);
-        width: 6px; height: 6px;
-        border-right:  2px solid currentColor;
-        border-bottom: 2px solid currentColor;
-        transform: rotate(45deg);
-        opacity: 0.45;
-        transition: transform 0.28s ease, opacity 0.2s ease;
-    }
-    .layout-zone[data-zone="bottom"].text-expanded .stage-title::after {
-        transform: rotate(-135deg);
-        opacity: 0.75;
-    }
-
-    /* Caption and description -- hidden until the title is tapped.
-       visibility (not just opacity) so they are removed from the
-       accessibility tree and cannot be tab-focused while hidden. */
-    /* Hidden text takes NO layout space.
-
-       SPECIFICITY IS LOAD-BEARING HERE. A reset rule further down this
-       file (".journey-card .stage-caption { position:static; opacity:1 }",
-       which undoes shorts_feed.css's old absolute positioning) has the
-       same specificity and comes LATER, so it silently won over earlier
-       collapse rules: the caption stayed opaque, its 8px padding leaked
-       through max-height:0, and the title lost position:relative so the
-       chevron anchored to the whole zone instead of the title.
-
-       Scoping these to .layout-zone[data-zone="bottom"] makes them
-       strictly more specific, so they win regardless of source order. */
-    .layout-zone[data-zone="bottom"] .stage-title {
-        position: relative;     /* anchor for the chevron */
-    }
-    .layout-zone[data-zone="bottom"] .stage-caption,
-    .layout-zone[data-zone="bottom"] .stage-description {
-        flex-shrink: 0;
-        max-height: 0;
-        opacity: 0;
-        overflow: hidden;
-        margin: 0;
-        /* max-height does not contain padding -- without zeroing it,
-           the caption's 8px padding shows as a sliver while "hidden". */
-        padding-top: 0;
-        padding-bottom: 0;
-        transition: max-height 0.28s ease, opacity 0.2s ease,
-                    padding 0.28s ease;
-    }
-    .layout-zone[data-zone="bottom"].text-expanded .stage-caption {
-        max-height: 6em;
-        opacity: 1;
-        /* No box of its own. shorts_feed.css gives the caption a dark
-           rounded panel; beside an unboxed description that looked
-           half-finished. One backdrop behind the whole block instead. */
-        background: transparent;
-        border: 0;
-        padding: 0;
-        font-weight: 500;
-    }
-    .layout-zone[data-zone="bottom"].text-expanded .stage-description {
-        max-height: 30vh;
-        opacity: 1;
-    }
+       What used to be here was ~170 lines animating max-height to a
+       fixed ceiling, which is why the panel ran at a different apparent
+       speed on every card and could not be dragged at all. Nothing of it
+       is needed any more; it is not commented out, it is gone, and this
+       is the signpost.
+       ---------------------------------------------------------------- */
 
     /* pan-y lets the feed keep vertical swipes while horizontal ones
        reach the scrub handlers. Without it the browser claims the
@@ -972,6 +811,12 @@
          failed load costs the hints and nothing else. -->
     <script src="{{ url_for('static', filename='shorts/gesture_hints.js') }}"></script>
 
+    <!-- The stage sheet: the pull-up panel holding the title,
+         caption and description. Must load BEFORE
+         journey_scroll_feed.js, which calls mountSheet() while it
+         builds each card; if it is missing the feed simply falls
+         back to a plain stacked text zone. -->
+    <script src="{{ url_for('static', filename='shorts/controls/sheet.js') }}"></script>
     <script src="{{ url_for('static', filename='shorts/core/journey_scroll_feed.js') }}"></script>
 
     <script>
