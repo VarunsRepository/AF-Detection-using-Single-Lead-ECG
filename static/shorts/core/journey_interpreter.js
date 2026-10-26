@@ -380,7 +380,26 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         // how the dot came to ignore scrubbing in the first place.
         const sf = scrubFillEl();
         if (sf) {
-            sf.style.animationName      = "";   // back to the CSS value
+            // RE-TRIGGERED, not merely re-configured.
+            //
+            // Setting animation-duration on an animation that has
+            // already finished does not restart it -- it UN-finishes it
+            // and the animation resumes at (time since its own start /
+            // the new duration). Measured: a fill that had completed,
+            // given a fresh 8000ms duration, jumped to scaleX 0.069
+            // rather than 0. That is exactly "the stage restarts but the
+            // bar carries on from where it was", and the further into a
+            // card you are the further along it lands.
+            //
+            // The story dot never had this because updateProgressBar
+            // removes and re-adds .current, and the CSS only grants
+            // fillBar to .segment.current .fill -- so the class toggle
+            // IS a re-trigger. The scrub fill takes its animation-name
+            // unconditionally from CSS, so nothing was ever retriggering
+            // it. Same trap as arming a seek; third time it has bitten.
+            sf.style.animationName = "none";
+            void sf.offsetWidth;                 // forced reflow
+            sf.style.animationName      = "fillBar";
             sf.style.animationDuration  = `${durationMs}ms`;
             sf.style.animationDelay     = "0ms";
             sf.style.animationPlayState = "running";
