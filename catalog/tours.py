@@ -86,6 +86,7 @@ TOURS = {
         "label": "Every journey",
         "description": "One card from every journey, across every domain.",
         "stops": [
+            {"journey": "ecg_primer",     "sample": None},
             {"journey": "ecg",            "sample": None},
             {"journey": "beats",          "sample": None},
             {"journey": "spectrum",       "sample": None},
@@ -112,8 +113,22 @@ TOURS = {
     # different recordings -- the per-source cursor handles that.
     "ecg": {
         "label": "Reading a heartbeat",
-        "description": "Four ways to look at the same kind of signal.",
+        "description": "Start from a flat line and end with a beat "
+                       "detector, in five short steps.",
         "stops": [
+            # THE PRIMER GOES FIRST, and that one line also changes the
+            # front door: MASTER_ORDER["ecg"] is None, meaning "this
+            # tour's first stop", so /seed now opens on the primer
+            # instead of on a raw ECG sweep. Deriving the master tour
+            # rather than hand-writing it is what makes that automatic.
+            #
+            # It also retires an open item. The front door's ECG card
+            # used to be pixel-identical to /journey/ecg's first card --
+            # same journey, same stage, same recording -- which read as
+            # "did it redirect me?". A primer that opens on a flat line
+            # cannot be confused for anything else.
+            {"journey": "ecg_primer", "sample": None,
+             "label": "What a heartbeat looks like"},
             {"journey": "ecg",      "sample": None,
              "label": "Finding every beat"},
             {"journey": "beats",    "sample": None,
@@ -200,6 +215,11 @@ TOURS = {
 # What is NOT overridable is the sample. The stop is taken whole, so the
 # sample id lives in exactly one place: the sub-tour that owns it.
 MASTER_ORDER = {
+    # Left on None ON PURPOSE, now that the ECG tour opens with the
+    # primer. The earlier argument for an override here was that a bare
+    # ECG sweep is the plainest card in the app and a poor cold open;
+    # the primer is the opposite of that, and it teaches rather than
+    # merely impressing, which is the better job for a first card.
     "ecg":      None,
     "life":     None,
     "crypto":   "aes_round",   # the FIPS-197 worked example, not the toy SPN

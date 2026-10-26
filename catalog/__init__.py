@@ -32,6 +32,7 @@ from catalog import sources                      # noqa: E402,F401
 
 from catalog import tours 
 
+
 # 2. Components, BY DOMAIN. Each pack registers its algorithms and
 #    renderers together with their contracts -- one call per component
 #    instead of an entry in a components file plus a matching one in a
@@ -45,6 +46,7 @@ from catalog.packs import biology  as _pack_biology  # noqa: E402,F401
 from catalog.packs import protocols as _pack_protocols # noqa: E402,F401
 from catalog.packs import silicon 
 from catalog.packs import aero as _pack_aero 
+from catalog.packs import ecg_primer as _pack_prime
 
 # 4. Recipes -- these reference everything above, so they come last
 from catalog.journeys import ecg                 # noqa: E402,F401
@@ -62,6 +64,7 @@ from catalog.journeys import test_journeys       # noqa: E402,F401
 from catalog.journeys import protocols as _j_protocols # noqa: E402,F401
 from catalog.journeys import silicon  
 from catalog.journeys import aero as _j_aero 
+from catalog.journeys import ecg_primer
 
 # Components registered without a contract. Reported at startup because
 # "all contracts valid" reads identically whether a pipeline was checked
