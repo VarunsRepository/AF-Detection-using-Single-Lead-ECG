@@ -10,6 +10,26 @@ const DEFAULT_LAYOUT = {
     plot: "center", railControls: "bottom",
 };
 
+// OPENING THE SHEET PAUSES THE JOURNEY.
+//
+// Not cosmetic, and the one judgement call in this feature. Stages
+// auto-advance every ~12s and the description is PER STAGE, so without
+// this the text being read is replaced mid-sentence by the next stage's
+// -- which is also why the interpreter used to slam the old overlay shut
+// on every stage change. Reading the explanation is the most engaged a
+// viewer ever is; yanking it away at that moment is hostile.
+//
+// Pausing makes the problem disappear rather than managing it: no stage
+// can change while the sheet is open, so there is nothing to collapse
+// and nothing to resynchronise. Closing resumes where it stopped.
+//
+// suspend()/resumeIfPlaying(), NOT togglePause(), because those two are
+// silent -- togglePause flashes the play/pause glyph, and a glyph that
+// fires because you opened the description is a lie about what you did.
+//
+// One line to turn off if it ever proves wrong.
+const SHEET_PAUSES_PLAYBACK = true;
+
 async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
                                         feedContainer, startSample = null }) {
 
@@ -169,6 +189,18 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
         const recipe = getRecipeForCard(cardIndex);
         const layout = { ...DEFAULT_LAYOUT, ...(recipe.layout || {}) };
 
+        // ── IS THIS CARD A SHEET? ──────────────────────────────────────
+        // Only when all three text elements land in the bottom zone,
+        // which is what every current recipe does. If a recipe ever
+        // splits them, the title would end up outside the handle and the
+        // sheet would have no peek -- an invisible control. That case
+        // falls back to the plain stacked zone instead, which is also
+        // what DEFAULT_LAYOUT's "top" placement has always produced.
+        const useSheet = layout.title === "bottom"
+                      && layout.caption === "bottom"
+                      && layout.description === "bottom"
+                      && typeof mountSheet === "function";
+
         const card = document.createElement("section");
         card.className    = "journey-card";
         card.dataset.sampleId = sampleId;
@@ -176,7 +208,14 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
             <div class="stage-bar"></div>
             <div class="layout-zone" data-zone="top"></div>
             <div class="layout-zone" data-zone="center"></div>
-            <div class="layout-zone" data-zone="bottom"></div>
+            <div class="card-chip-slot"></div>
+            <div class="layout-zone${useSheet ? " stage-sheet" : ""}" data-zone="bottom">${
+                useSheet
+                ? `<div class="sheet-handle">`
+                  + `<span class="sheet-grab" aria-hidden="true"></span>`
+                  + `</div><div class="sheet-body"></div>`
+                : ""
+            }</div>
             <div class="stage-rail"></div>
         `;
 
@@ -184,30 +223,13 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
         titleEl.className   = "stage-title";
         titleEl.textContent = "Loading...";
 
-        // Tapping the title reveals caption + description; tapping again
-        // hides them. The class goes on the ZONE rather than on either
-        // text element, because both appear together and the zone is what
-        // grows -- CSS then animates one max-height instead of two.
+        // NO CLICK LISTENER HERE ANY MORE.
         //
-        // stopPropagation matters: the card's own click handler treats a
-        // left tap as restart and a right tap as next-stage, so without it
-        // opening the text would also skip the stage.
-        titleEl.addEventListener("click", (e) => {
-            e.stopPropagation();
-            // Toggle the zone the title is in, whichever that is. Every
-            // current recipe puts title/caption/description in "bottom",
-            // but layout is recipe-controlled and could split them -- so
-            // toggle both the title's own zone and the caption's, rather
-            // than assuming they are the same element.
-            const zones = new Set([
-                titleEl.closest(".layout-zone"),
-                captionEl.closest(".layout-zone"),
-                descriptionEl.closest(".layout-zone"),
-            ].filter(Boolean));
-            const opening = !titleEl.closest(".layout-zone")
-                                    ?.classList.contains("text-expanded");
-            zones.forEach(z => z.classList.toggle("text-expanded", opening));
-        });
+        // Tapping the title used to toggle a .text-expanded class on the
+        // zone. That gesture now belongs to the sheet's handle, which the
+        // title sits inside -- mountSheet() handles tap AND drag from one
+        // set of pointer handlers, so the two cannot disagree about which
+        // state the panel is in. See static/shorts/controls/sheet.js.
 
         const captionEl = document.createElement("p");
         captionEl.className = "stage-caption";
@@ -218,35 +240,77 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
         const chartEl = document.createElement("div");
         chartEl.className = "chart";
 
-        [[titleEl, layout.title], [captionEl, layout.caption],
-         [descriptionEl, layout.description], [chartEl, layout.plot]
-        ].forEach(([el, zone]) => {
-            const zoneEl = card.querySelector(`.layout-zone[data-zone="${zone}"]`);
-            (zoneEl || card.querySelector('.layout-zone[data-zone="top"]')).appendChild(el);
-        });
+        // A sheet has two slots rather than one: the title is the PEEK
+        // (always visible, and the drag handle), the prose is the BODY.
+        // Any zone that is not a sheet keeps taking everything directly,
+        // exactly as before.
+        function slotFor(zoneName, role) {
+            const zoneEl = card.querySelector(`.layout-zone[data-zone="${zoneName}"]`)
+                        || card.querySelector('.layout-zone[data-zone="top"]');
+            if (!zoneEl.classList.contains("stage-sheet")) return zoneEl;
+            return zoneEl.querySelector(role === "peek" ? ".sheet-handle"
+                                                        : ".sheet-body");
+        }
+
+        [[titleEl,       layout.title,       "peek"],
+         [captionEl,     layout.caption,     "body"],
+         [descriptionEl, layout.description, "body"],
+         [chartEl,       layout.plot,        "body"]
+        ].forEach(([el, zone, role]) => slotFor(zone, role).appendChild(el));
 
 
 
-//Code to add curarted cards of a kind of a journey 
-                // Sits in whichever zone holds the title, so it lands under the
-        // title the way YouTube's does -- without assuming that zone is
-        // "bottom", since layout is recipe-controlled.
+// Curated cards only -- the one rung of the ladder, see buildMoreChip().
+        //
+        // ITS OWN SLOT NOW, just above the sheet's top edge, instead of
+        // inside the text zone under the title. Two reasons: it is
+        // navigation rather than description, and inside the sheet it
+        // would either make the peek two rows tall or hide behind a
+        // panel nobody opened. YouTube puts its equivalent chip in the
+        // same place, permanently visible above the description bar.
         const moreChip = buildMoreChip(sampleId, cardIndex);
         if (moreChip) {
-            (titleEl.closest(".layout-zone")
+            (card.querySelector(".card-chip-slot")
              || card.querySelector('.layout-zone[data-zone="bottom"]')
             ).appendChild(moreChip);
         }
 
-
-
-
-
         const railEl = card.querySelector(".stage-rail");
         railEl.dataset.zone = layout.railControls;
 
+        // ── MOUNT THE SHEET ────────────────────────────────────────────
+        // Optional in exactly the way analytics and the gesture hints are
+        // optional: if controls/sheet.js failed to load, useSheet is
+        // false, the zone stays a plain stacked column and the card still
+        // plays. Losing the feed to save a control would be the wrong
+        // trade.
+        //
+        // The journey does not exist yet -- it is built when the card
+        // first intersects -- so the callbacks look it up when they fire
+        // rather than closing over it.
+        const sheet = useSheet
+            ? mountSheet(card.querySelector(".stage-sheet"), {
+                  id: `sheet-${cardIndex}`,
+                  onOpen: () => {
+                      if (SHEET_PAUSES_PLAYBACK) {
+                          activeJourneys.get(sampleId)?.suspend?.();
+                      }
+                      // Not in VALID_EVENTS server-side until the one-line
+                      // change in the install notes lands, at which point
+                      // this answers the only question that matters about
+                      // this feature: does anyone open it at all.
+                      track("sheet_opened", sampleId);
+                  },
+                  onClose: () => {
+                      if (SHEET_PAUSES_PLAYBACK) {
+                          activeJourneys.get(sampleId)?.resumeIfPlaying?.();
+                      }
+                  },
+              })
+            : null;
+
         cardElements.set(sampleId, {
-            titleEl, captionEl, descriptionEl, chartEl, railEl,
+            titleEl, captionEl, descriptionEl, chartEl, railEl, sheet,
             progressBarEl: card.querySelector(".stage-bar"),
         });
 
@@ -284,7 +348,13 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
         // Anything with its own tap behaviour. These used to rely on
         // stopPropagation during the bubble phase, which a capture-phase
         // listener runs before -- so they have to be named explicitly.
-        const TAP_EXEMPT = ".stage-rail, .scrub-bar, .stage-title, .more-from";
+        // .stage-sheet covers the handle, the grabber, the title and the
+        // body in one selector; .sheet-scrim is how a tap-to-close is
+        // stopped from ALSO advancing a stage on its way out. Both are
+        // needed because this listener runs in the CAPTURE phase, which
+        // is before any stopPropagation a descendant could call.
+        const TAP_EXEMPT = ".stage-rail, .scrub-bar, .stage-title, .more-from, "
+                         + ".stage-sheet, .sheet-scrim, .card-chip-slot";
         let press = null;
 
         card.addEventListener("pointerdown", (e) => {
@@ -598,6 +668,12 @@ async function startJourneyScrollFeed({ apiEndpoint, journeyJson, shortsBatch,
                 // seen-list is what prevents a repeat, not this map.
                 hintStops.get(sampleId)?.();
                 hintStops.delete(sampleId);
+                // CLOSE THE SHEET WITH THE CARD. Silently: the close
+                // callback would call resumeIfPlaying() on a card that
+                // has just been suspended for leaving the screen, and
+                // restart it off-view. Scrolling back finds the card
+                // where it was, with the sheet shut.
+                cardElements.get(sampleId)?.sheet?.close({ silent: true });
             }
         });
     }, {
