@@ -1241,7 +1241,7 @@ html, body {
    grabber row, so a card whose sheet has not been measured yet is
    visibly-but-slightly-wrong rather than invisible. sheet.js overwrites
    this with the measured height and keeps it current. */
-.journey-card { --sheet-peek: 44px; --sheet-progress: 0; }
+.journey-card { --sheet-peek: 38px; --sheet-progress: 0; }
 
 /* --sheet-progress is 0 closed, 1 open, and ANY FRACTION IN BETWEEN
    while a finger is on the handle. Everything that reacts to the sheet
@@ -1265,10 +1265,12 @@ html, body {
     position: absolute;
     left: 0;
     right: 0;
-    /* Sits ABOVE the scrub bar (26px tall, anchored at the safe-area
-       bottom, z-index 36) rather than over it. Folding the scrub bar
-       into the peek band would look better and would marry two
-       experiments to each other, which we said we would not do. */
+    /* 26px up, clear of the scrub bar.
+       Briefly flush to the card edge while the peek was a bare grabber
+       and the title had to be hidden below the fold. With the title back
+       IN the peek that inverts: flush would put the title underneath the
+       scrub bar, which paints over it at z-index 41 -- a progress line
+       straight through the words. */
     bottom: calc(26px + env(safe-area-inset-bottom));
     /* Its OPEN height, always: the closed state is this box pushed down,
        not a smaller box.
@@ -1355,7 +1357,7 @@ html, body {
    in particular. The cap goes on the title and the body below. */
 .sheet-handle {
     flex: 0 0 auto;
-    padding: 0 20px 6px;
+    padding: 0 20px 5px;
     cursor: grab;
     /* THIS is what stops the feed claiming the gesture. Without it the
        browser decides the drag is a vertical scroll before pointermove
@@ -1372,22 +1374,29 @@ html, body {
     border-radius: 14px;
 }
 
-/* Trimmed from 38x4 at 9px margins to 34x4 at 7/6. Every pixel here is
-   a pixel of peek, and the peek is reserved on every card whether or not
-   anyone opens it -- the same arithmetic that killed the old 130px text
-   block. */
+/* INVISIBLE WHILE RETRACTED, and it still TAKES ITS SPACE.
+   opacity rather than display, deliberately: hiding it from layout would
+   shorten the handle, which would change --sheet-peek, which would move
+   the sheet -- so the title would jump every time you opened it. Holding
+   the space costs 12px of peek and buys a panel whose only visible
+   content at rest is the title.
+
+   Closed, the affordance is the title line and the sheet's own edge.
+   That is how Shorts does it; the pill is confirmation once you are
+   already pulling, not an invitation. */
 .sheet-grab {
     display: block;
     width: 32px;
     height: 4px;
-    margin: 6px auto 5px;
+    margin: 6px auto 0;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.28);
-    transition: background 0.2s ease, width 0.2s ease;
+    background: rgba(255, 255, 255, 0.45);
+    opacity: 0;
+    transition: opacity 0.2s ease, width 0.2s ease;
 }
 .stage-sheet.is-open .sheet-grab,
 .stage-sheet.is-dragging .sheet-grab {
-    background: rgba(255, 255, 255, 0.52);
+    opacity: 1;
     width: 44px;
 }
 
@@ -1417,12 +1426,14 @@ html, body {
        the peek heavy on a laptop -- 24px type plus leading is a 30px line
        for a label nobody is reading yet. The floor barely moves, because
        on a phone this is the only text visible while closed. */
-    font-size: clamp(0.95rem, 3.2vw, 1.1rem);
+    font-size: clamp(0.98rem, 3.3vw, 1.12rem);
     line-height: 1.25;
     color: var(--text);
-    /* A CEILING, not a height: "Ten Rounds" stays one line while "Four
-       Steps Per Round" does not become "Four Steps Per...". Two lines
-       simply make a taller peek, because the peek is measured. */
+    margin-top: 3px;
+    /* A CEILING, not a height. Back in the peek, so every line it takes
+       is a line reserved on every card forever -- "Ten Rounds" stays one
+       line, and nothing is ever allowed a third. The peek is measured,
+       so two lines simply make a taller one. */
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -1533,6 +1544,29 @@ html, body {
     pointer-events: none;
 }
 
+/* ── The scrub bar has to climb above the sheet ─────────────────────── */
+/* THE SHEET'S BOX IS NOT THE SHEET YOU SEE. Closed, it is a full-height
+   panel translated DOWN by (100% - peek), so while only 40px shows, the
+   box itself runs from the peek all the way past the bottom of the card
+   -- straight over the scrub bar's 26px strip. At z-index 39 against the
+   bar's 36, it swallowed every tap on it.
+   Measured, not deduced: closed, the sheet occupied 634..1067 while the
+   bar sat at 674..700, and elementFromPoint in the middle of the bar
+   returned .stage-caption. The scrub bar had been dead since the sheet
+   landed, silently, because it still LOOKED right.
+
+   41 puts it above the sheet (39) and the rail (40); they never overlap
+   spatially, so nothing is traded away. And it fades with the sheet like
+   the rail and chip do -- while the sheet is open, playback is paused
+   and there is nothing to scrub. */
+.scrub-bar {
+    z-index: 41;
+    opacity: calc(1 - var(--sheet-progress));
+    transition: opacity 0.24s ease;
+}
+.journey-card.sheet-dragging .scrub-bar { transition: none; }
+.journey-card.sheet-open .scrub-bar { pointer-events: none; }
+
 /* ── The rail, in the same material ─────────────────────────────────── */
 /* OVERRIDE of .rail-btn further up this file, at equal specificity and
    later in source order. Only the three surface properties change; the
@@ -1595,7 +1629,7 @@ html, body {
     position: absolute;
     left: 20px;
     right: 76px;
-    bottom: calc(var(--sheet-peek, 44px) + 26px
+    bottom: calc(var(--sheet-peek, 38px) + 26px
                  + env(safe-area-inset-bottom) + 12px);
     z-index: 31;
     display: flex;
@@ -1617,5 +1651,5 @@ html, body {
    trace runs behind the peek, which is both the look that was wanted and
    ~34px of render handed back on every card. */
 .journey-card .layout-zone[data-zone="center"] {
-    padding-bottom: calc(var(--sheet-peek, 44px) + 18px);
+    padding-bottom: calc(var(--sheet-peek, 38px) + 18px);
 }
