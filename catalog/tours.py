@@ -429,3 +429,99 @@ for _p in _master_problems:
     tour_store.note(_p)
 
 tour_store.report()
+
+
+# ---------------------------------------------------------------------------
+# ADD TO catalog/tours.py
+#
+# Paste this at the END of the file, after the TourStore class and after
+# `tour_store = TourStore(...)` (or wherever the shared instance is made --
+# it only needs TOURS and DEFAULT_TOUR, both defined above it).
+# ---------------------------------------------------------------------------
+
+
+# ── Which way is up ──────────────────────────────────────────────────────
+#
+# The chip walks the ladder DOWN: seed -> tour -> journey. This walks it
+# back UP, and it is derived from the same TOURS data for the same reason
+# the master tour is derived -- a hand-written parent map is a second
+# place to maintain the same truth, and the second place goes stale.
+#
+#   /journey/ecg    -> the tour that contains "ecg"
+#   /tour/ecg       -> /seed
+#   /seed           -> nothing. It is the front door.
+#
+# WHY NOT history.back(), WHICH IS WHAT YOUTUBE DOES
+#   Because most arrivals here are not from inside the app. A shared
+#   link, a bookmark, a LinkedIn preview -- in every one of those
+#   history.back() either does nothing or takes the viewer off the site
+#   entirely, which is the opposite of what a back arrow promises. The
+#   derived parent always exists and always leads somewhere useful.
+#   The client still PREFERS real history when it came from inside the
+#   app, because that restores scroll position; this is the fallback,
+#   and the fallback is the common case.
+#
+# A JOURNEY IN TWO TOURS
+#   MASTER_ORDER IS THE TIEBREAK, and it has to be. Searching TOURS in
+#   declaration order sent every single journey to /tour/everything --
+#   that tour contains all of them and is declared first, so it won every
+#   time. "everything" is a flat index, not a rung on the ladder, and a
+#   back arrow that always lands there would make the domain tours
+#   unreachable from below.
+#
+#   MASTER_ORDER already names exactly the tours the front door treats as
+#   domains, which IS the middle rung, so it is the right source for
+#   this. Anything outside it is a fallback. Within it, declaration order
+#   decides -- deterministic beats clever: an "ambiguous, so no button"
+#   rule would make the arrow blink out of existence on exactly the
+#   journeys that are best connected.
+
+def parent_of(journey_name: str | None = None,
+              tour_name: str | None = None) -> dict | None:
+    """
+    The one rung up from where the viewer is standing.
+
+    Returns {"href": ..., "label": ...} or None when there is no parent.
+    Pass whichever of the two the route knows; tour_name wins if both are
+    given, since a tour page is a tour page even though it renders a
+    journey's recipe.
+    """
+    if tour_name:
+        if tour_name == DEFAULT_TOUR:
+            return None                      # the front door has no up
+        return {"href": "/seed",
+                "label": TOURS.get(DEFAULT_TOUR, {}).get("label", "Start here")}
+
+    if not journey_name:
+        return None
+
+    def _hit(name):
+        tour = TOURS.get(name) or {}
+        for stop in tour.get("stops", []):
+            if stop.get("journey") == journey_name:
+                return {"href": f"/tour/{name}",
+                        "label": tour.get("label", name)}
+        return None
+
+    # The domain tours first, in the order the front door presents them.
+    for name in MASTER_ORDER:
+        found = _hit(name)
+        if found:
+            return found
+
+    # Then anything else that happens to carry it -- a themed tour added
+    # later and not yet promoted to the front door.
+    for name in TOURS:
+        if name == DEFAULT_TOUR or name in MASTER_ORDER:
+            continue
+        found = _hit(name)
+        if found:
+            return found
+
+    # A journey no tour mentions is reachable only by direct link. Sending
+    # it to /seed would be a lie about where it sits, but leaving a viewer
+    # with no way out of a dead end is worse -- and /seed is honestly
+    # "everything there is", which is the right answer to "get me out of
+    # here".
+    return {"href": "/seed",
+            "label": TOURS.get(DEFAULT_TOUR, {}).get("label", "Start here")}
