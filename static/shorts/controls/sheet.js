@@ -98,8 +98,9 @@ function mountSheet(sheetEl, opts = {}) {
     if (!sheetEl) return null;
     const handle = sheetEl.querySelector(".sheet-handle");
     const body   = sheetEl.querySelector(".sheet-body");
+    const grab   = sheetEl.querySelector(".sheet-grab");
     const card   = sheetEl.closest(".journey-card");
-    if (!handle || !body || !card) return null;
+    if (!handle || !body || !grab || !card) return null;
     if (!handle.querySelector(".stage-title")) return null;
 
     // ── Scrim ────────────────────────────────────────────────────────────
@@ -132,12 +133,22 @@ function mountSheet(sheetEl, opts = {}) {
     if (reduced) sheetEl.classList.add("sheet-still");
 
     // ── Peek height ──────────────────────────────────────────────────────
+    // THE WHOLE HANDLE, which means the title is inside the peek and
+    // visible while the sheet is shut.
+    //
+    // Briefly this measured only to the grabber, to get the closed height
+    // down to 20px. That works and looks wrong: a card at rest then has
+    // no label at all, and on a journey with no "more from" chip it has
+    // no text whatsoever. One line of title is ~20px on its own, so a
+    // peek that shows it cannot be much under 38 -- that is arithmetic,
+    // not taste, and the honest answer was to say so rather than ship the
+    // thin version and let it be discovered.
     function measurePeek() {
         const h = Math.round(handle.getBoundingClientRect().height);
         // 0 while the card is display:none or not yet laid out. Writing 0
         // would translate the sheet entirely off the card and leave no
         // handle to pull, so a bad measurement is DISCARDED rather than
-        // defaulted -- the CSS fallback in var(--sheet-peek, 48px) is the
+        // defaulted -- the CSS fallback in var(--sheet-peek, 38px) is the
         // visible-but-wrong state, which is the one you can see and fix.
         if (!h || h === peek) return;
         peek = h;
