@@ -32,7 +32,7 @@ from Services.analytics_store   import AnalyticsStore
 # components, schemas and recipes, in that order.
 from catalog import journey_store, dsp_store, rendering_store
 from catalog.page_meta import meta_for
-from catalog.tours import tour_store, DEFAULT_TOUR
+from catalog.tours import tour_store, DEFAULT_TOUR, parent_of
 
 analytics_store = AnalyticsStore(cache_dir="data_cache")
 
@@ -90,6 +90,8 @@ def journey(journey_name):
         page_meta=meta_for(journey_name, f"/journey/{journey_name}"),
         # Single-journey mode -- all cards use the same recipe
         shorts_batch=None,
+        #just added the below for back button
+        back_link=parent_of(journey_name=journey_name),
     )
 
 
@@ -372,6 +374,8 @@ def _render_tour(recipes, pattern, tour_name=None, page_meta=None):
         rendering_entrypoints=rendering_store.resolve(batch_stages),
         data_source_configs=data_source_store.resolve_for_stages(batch_stages),
         shorts_batch={"recipes": recipes, "pattern": pattern},
+        #just added now to add a back button functionality
+        back_link=parent_of(tour_name=tour_name),
     )
 
 
