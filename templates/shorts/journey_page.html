@@ -757,6 +757,70 @@
     <div id="_hz_unlock_el" aria-hidden="true"></div>
     <main id="feed" class="journey-feed"></main>
 
+
+
+    <!-- ── BACK ───────────────────────────────────────────────────────
+         Walks the ladder UP. The "more from" chip walks it down:
+            /seed -> /tour/<domain> -> /journey/<name>
+         and this is the same rungs in reverse. The href is resolved on
+         the SERVER by catalog.tours.parent_of(), so it works on a cold
+         open -- a shared link, a bookmark, a preview crawl -- where
+         there is no history to go back to.
+
+         Rendered only when there is a parent, so /seed has no button
+         rather than a disabled one. A control that is present and does
+         nothing is worse than an absent control.
+    -->
+    {% if back_link %}
+    <a id="back-btn"
+       class="back-btn"
+       href="{{ back_link.href }}"
+       aria-label="Back to {{ back_link.label }}"
+       title="Back to {{ back_link.label }}">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M15 5L8 12l7 7" fill="none" stroke="currentColor"
+                  stroke-width="2.2" stroke-linecap="round"
+                  stroke-linejoin="round"/>
+        </svg>
+    </a>
+    <script>
+    // PREFER REAL HISTORY, but only when we came from inside the app.
+    //
+    // history.back() restores scroll position, which a fresh navigation
+    // to the same URL cannot -- land back on /seed via the href and you
+    // are at card 1 again, having been at card 6. So when the referrer
+    // is same-origin, go back properly.
+    //
+    // Everything else falls through to the href, which is the common
+    // case here: most arrivals are shared links and bookmarks, where
+    // history.back() would leave the site entirely.
+    (function () {
+        var btn = document.getElementById("back-btn");
+        if (!btn) return;
+        var sameOrigin = false;
+        try {
+            sameOrigin = !!document.referrer
+                && new URL(document.referrer).origin === location.origin;
+        } catch (e) { /* malformed referrer -- treat as outside */ }
+        // history.length > 1 as well: a same-origin referrer with no
+        // history entry happens after a reload, and back() would then
+        // walk somewhere unrelated.
+        if (!sameOrigin || history.length <= 1) return;
+
+        btn.addEventListener("click", function (e) {
+            // Let a modified click do the normal thing -- new tab, new
+            // window, download. Hijacking those is the rudest habit a
+            // hand-rolled control can pick up.
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey
+                || e.button !== 0) return;
+            e.preventDefault();
+            history.back();
+        });
+    })();
+    </script>
+    {% endif %}
+
+    
     <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
     <script src="{{ url_for('static', filename='shorts/core/rail_controls.js') }}"></script>
     <script src="{{ url_for('static', filename='shorts/core/shared_signal_utils.js') }}"></script>
