@@ -758,6 +758,96 @@
     <main id="feed" class="journey-feed"></main>
 
 
+    <!-- ── CRAWLABLE INDEX ────────────────────────────────────────────
+         Paste directly after:   <main id="feed" class="journey-feed"></main>
+
+         The feed is built by JavaScript, so the body of this page ships
+         with no links in it at all. This is the sibling list: every tour
+         and every journey, with the words that say what each one leads
+         to.
+
+         <noscript> rather than a hidden div, on purpose. A permanently
+         hidden block of keyword-rich links is what cloaking looks like
+         from the outside whatever the intent; <noscript> says "here is
+         the content if you cannot run the feed", which is exactly true.
+
+         Googlebot runs JavaScript and sees the real feed. This is for
+         everything that does not -- which in 2026 is most of the AI
+         crawlers, and they are not a small audience for a site that
+         explains algorithms.
+
+         It is also, quietly, the page someone with JavaScript disabled
+         gets instead of a black screen. Worth styling for that reason
+         alone.
+         ---------------------------------------------------------------- -->
+    <noscript>
+      <div class="site-index">
+        <h1>Kymograph</h1>
+        <p>Short animated explainers. Each one runs a real algorithm on
+           real data and states what would prove it wrong. The feed needs
+           JavaScript — every page below is listed so you can find it
+           either way.</p>
+
+        {% if site_index and site_index.tours %}
+        <h2>Tours</h2>
+        <ul>
+          {% for t in site_index.tours %}
+          <li><a href="{{ t.href }}">{{ t.label }}</a>{% if t.blurb %} — {{ t.blurb }}{% endif %}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+
+        {% if site_index and site_index.journeys %}
+        <h2>Journeys</h2>
+        <ul>
+          {% for j in site_index.journeys %}
+          <li><a href="{{ j.href }}">{{ j.label }}</a>{% if j.blurb %} — {{ j.blurb }}{% endif %}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+
+        <p><a href="/lab">In-depth single-record analysis</a> — the
+           original tool: one ECG recording, every filter and metric,
+           with the controls exposed.</p>
+      </div>
+    </noscript>
+
+    <style>
+    /* Only ever rendered inside <noscript>, so there is no state in which
+       this competes with the feed. Deliberately plain: it is a document,
+       and a document that has to work without scripts should not pretend
+       to be an app. */
+    .site-index {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 40px 20px 80px;
+        font-family: 'Roboto', system-ui, sans-serif;
+        color: #d8dee9;
+        line-height: 1.6;
+    }
+    .site-index h1 { font-size: 1.8rem; margin: 0 0 12px; }
+    .site-index h2 {
+        font-size: 1.1rem;
+        margin: 32px 0 10px;
+        color: #9aa4b0;
+        font-family: "IBM Plex Mono", monospace;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    .site-index p  { color: #9aa4b0; margin: 0 0 8px; }
+    .site-index ul { list-style: none; padding: 0; margin: 0; }
+    .site-index li {
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        color: #9aa4b0;
+    }
+    .site-index a { color: #2edac4; text-decoration: none; font-weight: 600; }
+    .site-index a:hover { text-decoration: underline; }
+    </style>
+
+    
+
+
 
     <!-- ── BACK ───────────────────────────────────────────────────────
          Walks the ladder UP. The "more from" chip walks it down:
