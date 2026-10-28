@@ -22,8 +22,9 @@
 import hmac
 import os
 
-from flask import Blueprint, render_template, abort, jsonify, request
 
+from flask import Blueprint, render_template, abort, jsonify, request, Response
+  
 from Services.data_source_store import data_source_store
 from Services.Schema_Registry   import schema_registry
 from Services.analytics_store   import AnalyticsStore
@@ -31,7 +32,10 @@ from Services.analytics_store   import AnalyticsStore
 # Importing the catalog is what registers everything -- sources,
 # components, schemas and recipes, in that order.
 from catalog import journey_store, dsp_store, rendering_store
-from catalog.page_meta import meta_for
+
+from catalog.page_meta import meta_for, SITE_URL # page meta contans the w'app and linkedin image, siteURL is for pagerankers
+
+
 from catalog.tours import tour_store, DEFAULT_TOUR, parent_of
 
 analytics_store = AnalyticsStore(cache_dir="data_cache")
@@ -329,7 +333,7 @@ def _build_tour(stops):
     return recipes, pattern
 
 
-def _tour_meta(tour_name, spec):
+def _tour_meta(tour_name, spec, path=None):
     """
     Link preview for a tour.
 
@@ -343,7 +347,14 @@ def _tour_meta(tour_name, spec):
     knows better. Set "image" on a tour (a full URL) to give it a card of
     its own.
     """
-    meta = dict(meta_for(None, f"/tour/{tour_name}"))
+    # `path` overrides the derived one, because the master tour is served
+    # from BOTH "/" and "/seed" and the two must advertise the SAME
+    # canonical address. Without it, kymograph.dev would tell every
+    # scraper its og:url is "/tour/seed" -- two spellings of one page,
+    # which is precisely what meta_for()'s own docstring warns about: two
+    # cache entries at every scraper, and a share count split between
+    # them.
+    meta = dict(meta_for(None, path or f"/tour/{tour_name}"))
     if spec.get("label"):
         meta["title"] = f'{spec["label"]} — Kymograph'
     if spec.get("description"):
@@ -380,7 +391,11 @@ def _render_tour(recipes, pattern, tour_name=None, page_meta=None):
 
 
 @journey_bp.route('/tour/<tour_name>')
-def tour(tour_name):
+def tour(tour_name, path=None):
+    # `path` is a keyword the URL rule never supplies -- it is only ever
+    # passed when another route calls this function directly, which is how
+    # "/" and "/seed" both render the master tour while declaring one
+    # canonical url between them.
     spec = tour_store.get(tour_name)
     if spec is None:
         known = ", ".join(tour_store.names())
@@ -390,14 +405,35 @@ def tour(tour_name):
     if not pattern:
         abort(500, description=f'No journeys available for tour "{tour_name}".')
     return _render_tour(recipes, pattern, tour_name,
-                        page_meta=_tour_meta(tour_name, spec))
+                        page_meta=_tour_meta(tour_name, spec, path))
+
+
+@journey_bp.route('/')
+def home():
+    """
+    THE FRONT DOOR IS THE MASTER TOUR.
+
+    RENDERED here, not redirected to /seed. A redirect hands the preview
+    card, the search result and the share count to the second URL, and
+    leaves the domain itself -- the one address anyone actually types or
+    puts on a CV -- with nothing of its own.
+
+    What a first-time viewer lands on is MASTER_ORDER's first stop. The
+    front door is changed by changing the tour, never by editing this.
+    """
+    return tour(DEFAULT_TOUR, path="/")
 
 
 @journey_bp.route('/seed')
 def seed_feed():
-    """The original curated tour. Kept as an alias so links that have
-    already been shared keep working -- /tour/seed is the same page."""
-    return tour(DEFAULT_TOUR)
+    """
+    The original address. Kept because /seed is already shared in the
+    wild and people forward links without reading them.
+
+    It declares "/" as its canonical url rather than its own, so the two
+    spellings stay ONE page as far as every scraper is concerned.
+    """
+    return tour(DEFAULT_TOUR, path="/")
 
 
 @journey_bp.route('/api/tours')
@@ -637,6 +673,168 @@ def analytics_dashboard():
 # but must not stop the app starting, or one bad recipe takes down every
 # working journey with it.
 # ---------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ---------------------------------------------------------------------------
+# ADD TO Blueprints/journey_bp.py
+#
+# Paste this near the end, before validate_all_journeys(). It needs
+# tour_store, journey_store, DEFAULT_TOUR and SITE_URL -- the first three
+# are already imported at the top of that file; add SITE_URL to the
+# page_meta import:
+#
+#     from catalog.page_meta import meta_for, SITE_URL
+#
+# Also add `from flask import Response` to the flask import line.
+# ---------------------------------------------------------------------------
+
+from xml.sax.saxutils import escape as _xml_escape
+
+
+# ---------------------------------------------------------------------------
+# sitemap.xml and robots.txt
+#
+# WHY THESE EXIST AT ALL
+#   journey_page.html renders an EMPTY <main id="feed"></main>; every card
+#   is built by JavaScript from inlined recipe JSON. So a crawler arriving
+#   at "/" finds a correct <head> -- title, description, canonical, OG
+#   card -- and then zero <a href> elements. Nowhere to go. Without a
+#   sitemap the entire site is ONE discoverable URL no matter how many
+#   journeys exist.
+#
+#   The sitemap sidesteps that completely: it declares every URL directly,
+#   so discovery never depends on a link graph the HTML does not contain.
+#
+# GENERATED, NOT WRITTEN
+#   Reads the same stores the routes read. A new journey appears in the
+#   sitemap because it was registered, not because someone remembered.
+#   A hand-maintained sitemap is a second source of truth, and the second
+#   one always goes stale -- the same reason the master tour is derived
+#   from MASTER_ORDER rather than typed out.
+#
+# WHAT IS DELIBERATELY LEFT OUT
+#   /seed          the same page as "/", which is the canonical one.
+#                  Listing both invites Google to pick for you.
+#   /feed          the same page as /shorts. One of the pair is enough.
+#   /builder/...   an authoring tool, not content.
+#   /analytics     session ids and device data. Should never be indexed,
+#                  and robots.txt says so explicitly below.
+#   /api/...       JSON.
+#
+# NO lastmod, changefreq OR priority
+#   There is no honest lastmod to give -- recipes are Python files and
+#   their mtime says when the file was edited, not when the content
+#   changed. Google has said for years that it ignores changefreq and
+#   priority outright, and that it ignores lastmod it does not trust.
+#   An invented date is worse than no date.
+# ---------------------------------------------------------------------------
+
+def sitemap_paths() -> list[str]:
+    """
+    Every indexable path, in the order a reader would meet them.
+
+    Site-absolute paths, not full URLs -- the caller adds the origin, so
+    this function stays testable without a request context and there is
+    one place that knows what the site is called.
+    """
+    # "/" is the master tour. /lab is the in-depth analysis page, which
+    # belongs to lab_bp -- named here because the sitemap is a property of
+    # the SITE, not of this blueprint, and a page nobody lists is a page
+    # nobody finds.
+    paths = ["/", "/lab", "/shorts"]
+
+    # Tours, minus the default -- that one IS "/".
+    try:
+        paths += [f"/tour/{t['name']}"
+                  for t in tour_store.list_all()
+                  if t.get("name") and t["name"] != DEFAULT_TOUR]
+    except Exception as e:                      # a broken store must not
+        print(f"[SITEMAP] could not list tours: {e}")   # 500 the sitemap
+
+    # Every registered journey.
+    try:
+        paths += [f"/journey/{e['name']}"
+                  for e in journey_store.list_all_journeys()
+                  if e.get("name")]
+    except Exception as e:
+        print(f"[SITEMAP] could not list journeys: {e}")
+
+    # dict.fromkeys dedupes while preserving first-seen order. A duplicate
+    # URL in a sitemap is not fatal, but it is a claim that two addresses
+    # are two pages, which is the one thing this file exists to avoid.
+    return list(dict.fromkeys(paths))
+
+
+def sitemap_xml(paths: list[str], site_url: str) -> str:
+    """The <urlset> document, as a string. Pure, so it can be tested."""
+    base = site_url.rstrip("/")
+    body = "\n".join(
+        f"  <url><loc>{_xml_escape(base + p)}</loc></url>" for p in paths
+    )
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            f"{body}\n"
+            "</urlset>\n")
+
+
+@journey_bp.route("/sitemap.xml")
+def sitemap():
+    xml = sitemap_xml(sitemap_paths(), SITE_URL)
+    return Response(xml, mimetype="application/xml")
+
+
+@journey_bp.route("/robots.txt")
+def robots():
+    """
+    Open to crawlers, with the four paths that should never be indexed
+    named explicitly.
+
+    /analytics is the one that matters: it serves session ids, device
+    strings and watch times. It is not authenticated, so robots.txt is
+    not a security control -- it is a request, and a determined crawler
+    can ignore it. Treat the lack of auth on that route as the real
+    problem; this just stops it turning up in a search result.
+
+    The Sitemap line is absolute because the spec requires it, and
+    SITE_URL is the same constant every canonical url is built from.
+    """
+    lines = [
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /api/",
+        "Disallow: /analytics",
+        "Disallow: /builder/",
+        "Disallow: /shorts/analytics",
+        "",
+        f"Sitemap: {SITE_URL.rstrip('/')}/sitemap.xml",
+        "",
+    ]
+    return Response("\n".join(lines), mimetype="text/plain")
+
+
+
+
 
 def validate_all_journeys():
     all_errors = []
