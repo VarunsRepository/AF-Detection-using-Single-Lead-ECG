@@ -47,6 +47,7 @@ from catalog.packs import protocols as _pack_protocols # noqa: E402,F401
 from catalog.packs import silicon 
 from catalog.packs import aero as _pack_aero 
 from catalog.packs import ecg_primer as _pack_prime
+from catalog.packs import wireless as _pack_wireless  # noqa: E402,F401
 
 # 4. Recipes -- these reference everything above, so they come last
 from catalog.journeys import ecg                 # noqa: E402,F401
@@ -65,6 +66,8 @@ from catalog.journeys import protocols as _j_protocols # noqa: E402,F401
 from catalog.journeys import silicon  
 from catalog.journeys import aero as _j_aero 
 from catalog.journeys import ecg_primer
+from catalog.journeys import ble_connect           # noqa: E402,F401
+from catalog.journeys import ble_txpath            # noqa: E402,F401
 
 # Components registered without a contract. Reported at startup because
 # "all contracts valid" reads identically whether a pipeline was checked
