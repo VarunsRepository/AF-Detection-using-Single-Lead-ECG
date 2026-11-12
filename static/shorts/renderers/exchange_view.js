@@ -219,47 +219,59 @@ registerRenderingAlgorithm("exchange_view", {
             }
             const footH = (30 * useDPR) + legendLines.length * LEGEND_LINE_H + 18 * useDPR;
 
-            // Rows EXPAND to fill the band, capped so two of them do not
-            // become absurd, and the block is CENTRED when it does not
-            // fill. The previous hard 30px cap was the "so much space and
-            // yet clogging" problem: stage 3 has two rows and used 60px of
-            // a 250px band, while stage 6 crammed eleven into the same
-            // space. Filling and centring fixes both ends at once.
-            const bandTop = M.top;
-            const bandH = H - bandTop - glossH - footH;
-            const rowH = Math.min(52 * useDPR, bandH / N);
-
-            // MEASURED CONSTRAINT, not a preference. A readable bar plus a
-            // readable name beneath it needs about 44px of row. Stage 6 has
-            // eleven packets and cannot have both on a phone, so below that
-            // threshold the per-row names are dropped and the header
-            // carries the active packet's name instead. The bars still show
-            // direction, size and order -- which is what the transcript is
-            // for -- and the name you actually need is the current one.
-            const roomForNames = rowH >= 44 * useDPR;
-
-            const rowsH = rowH * N;
-            const rowsTop = bandTop + (bandH - rowsH) / 2;
-            const barH = Math.max(12 * useDPR, Math.min(24 * useDPR, rowH * 0.55));
-            // How far above its own bar a gap line can sit without
-            // crossing into the row above. Derived rather than fixed: a
-            // flat 7px offset cleared the row at stage 1 and poked 4px
-            // into it at stage 6, which is the same class of mistake as
-            // the hardcoded 80px dead zone in the rail.
-            const gapLift = Math.min(7 * useDPR, (rowH - barH) / 2 - 2 * useDPR);
-            // Under about 3px of lift the line is touching its own bar and
-            // reads as part of it, so on cramped rows only the ACTIVE
-            // packet gets one -- which is the only row carrying a figure
-            // anyway, and where the eye already is.
-            const gapLinesForAll = gapLift >= 3 * useDPR;
-
-            // ── which exchange, and where within it ───────────────────
+            // ── which exchange, and where within it ──
+            // Hoisted above the layout on purpose: the scroll offset
+            // is derived from the active row, so it has to exist first.─────────────────
             const slice = 1 / N;
             const active = Math.min(N - 1, Math.floor(t / slice));
             const within = Math.min(1, (t - active * slice) / slice);
             const building = Math.min(1, within / BUILD_FRAC);
             const transit  = within <= BUILD_FRAC ? 0
                 : Math.min(1, (within - BUILD_FRAC) / TRANSIT_FRAC);
+
+            // FIXED row height, and the transcript SCROLLS when the
+            // packets do not fit.
+            //
+            // The previous version sized rows to the count, which made a
+            // row 52px on stage 3 and 18px on stage 6 -- the same card
+            // looking like two different designs, and the dense stages
+            // squeezed below the point where a name fits under a bar.
+            //
+            // 46px is the smallest row holding a readable bar AND its
+            // name, so it is a floor, not a preference. Four fit a phone
+            // card: stages 1, 2, 3 and 5 are static, 4 and 6 scroll, and
+            // every row now looks identical on every stage.
+            const bandTop = M.top;
+            const bandH = H - bandTop - glossH - footH;
+            const rowH = 46 * useDPR;
+            const rowsH = rowH * N;
+            const scrolls = rowsH > bandH;
+            const barH = Math.max(12 * useDPR, Math.min(24 * useDPR, rowH * 0.55));
+
+            // AUTO ONLY, never draggable. The feed owns vertical gestures,
+            // so a user dragging the transcript would change card instead.
+            // This is driven entirely by the playhead.
+            //
+            // Keyed on (active + within), not the integer index, so it
+            // glides rather than jumping a row at a time. The active row
+            // sits about two thirds down the window: history above it, a
+            // hint of what is coming below.
+            let scrollY = 0;
+            if (scrolls) {
+                const want = (active + within + 0.5) * rowH - bandH * 0.68;
+                scrollY = Math.max(0, Math.min(rowsH - bandH, want));
+            }
+            const rowsTop = bandTop + (scrolls ? -scrollY : (bandH - rowsH) / 2);
+
+            // Always true now. The fixed row was chosen as the smallest
+            // that holds a bar and its name, so dropping names is no
+            // longer a case the layout has to handle.
+            const roomForNames = true;
+
+            // How far above its own bar a gap line can sit without
+            // crossing into the row above. Derived rather than fixed.
+            const gapLift = Math.min(7 * useDPR, (rowH - barH) / 2 - 2 * useDPR);
+            const gapLinesForAll = gapLift >= 3 * useDPR;
 
             // ── party columns ─────────────────────────────────────────
             ctx.textAlign = "left";
@@ -287,6 +299,14 @@ registerRenderingAlgorithm("exchange_view", {
             }
 
             // ── rows ──────────────────────────────────────────────────
+            // Clipped to the band. Without this a scrolled row paints over
+            // the party labels above and the glossary below, which is
+            // worse than the cramming it replaced.
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(0, bandTop - 2 * useDPR, W, bandH + 4 * useDPR);
+            ctx.clip();
+
             for (let i = 0; i < N; i++) {
                 const x = ex[i];
                 const y = rowsTop + i * rowH;
@@ -422,6 +442,30 @@ registerRenderingAlgorithm("exchange_view", {
                     corridorX0 + corridorW / 2,
                     cy + barH / 2 + 13 * useDPR);
                 ctx.globalAlpha = 1;
+            }
+
+            ctx.restore();
+
+            // ── position indicator, only when scrolling ───────────────
+            // Scrolling costs the one thing this renderer does better than
+            // a message-sequence diagram: seeing the whole conversation at
+            // once. This buys some of it back cheaply -- how far through
+            // you are, and how many there are.
+            if (scrolls) {
+                const trackX = W - M.right - 3 * useDPR;
+                const thumbH = Math.max(18 * useDPR, bandH * (bandH / rowsH));
+                const thumbY = bandTop + (scrollY / (rowsH - bandH))
+                                        * (bandH - thumbH);
+                ctx.fillStyle = "rgba(255,255,255,0.07)";
+                ctx.fillRect(trackX, bandTop, 3 * useDPR, bandH);
+                ctx.fillStyle = MUTED;
+                ctx.fillRect(trackX, thumbY, 3 * useDPR, thumbH);
+
+                ctx.textAlign = "right";
+                ctx.fillStyle = MUTED;
+                ctx.font = `${9 * useDPR}px "IBM Plex Mono", monospace`;
+                ctx.fillText(`${active + 1} / ${N}`,
+                             W - M.right - 10 * useDPR, bandTop - 7 * useDPR);
             }
 
             // ── the active packet, named in the header ────────────────
