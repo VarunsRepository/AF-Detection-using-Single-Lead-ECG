@@ -136,6 +136,23 @@ registerRenderingAlgorithm("exchange_view", {
         // animation actually is.
         let lastT = 0;
 
+        // POSTER STATE. This is a scroll feed: a card is rendered as it
+        // comes into view but the sweep only drives the card the feed has
+        // made active. Until then the only paint on screen is the initial
+        // draw(0) -- and frame zero of an animation is, correctly, an
+        // exchange in which nothing has been sent yet. That is what the
+        // user saw as "blank": not a crash, a card showing the honest
+        // beginning of something that had not started.
+        //
+        // So the un-animated state is drawn as a POSTER instead: the whole
+        // exchange, complete and legible, dimmed. A card that never
+        // animates is then still worth reading.
+        //
+        // Keyed on whether the sweep has TICKED, not on t === 0. A looping
+        // sweep passes through zero on every cycle, and keying on the value
+        // would flash the poster for one frame each time round.
+        let sweepStarted = false;
+
         const root   = getComputedStyle(document.documentElement);
         const accent = (typeof THEMES !== "undefined" && THEMES[themeIndex]?.traceColor)
                        || root.getPropertyValue("--accent").trim() || "#4aa3d8";
@@ -223,9 +240,13 @@ registerRenderingAlgorithm("exchange_view", {
             // Hoisted above the layout on purpose: the scroll offset
             // is derived from the active row, so it has to exist first.─────────────────
             const slice = 1 / N;
+            const poster = !sweepStarted;
             const active = Math.min(N - 1, Math.floor(t / slice));
             const within = Math.min(1, (t - active * slice) / slice);
-            const building = Math.min(1, within / BUILD_FRAC);
+            // Floored at 0.12 so the first frame shows the packet
+            // beginning to exist. Exactly zero is more literal and reads
+            // as a failure to render.
+            const building = Math.min(1, 0.12 + (within / BUILD_FRAC) * 0.88);
             const transit  = within <= BUILD_FRAC ? 0
                 : Math.min(1, (within - BUILD_FRAC) / TRANSIT_FRAC);
 
@@ -237,16 +258,17 @@ registerRenderingAlgorithm("exchange_view", {
             // looking like two different designs, and the dense stages
             // squeezed below the point where a name fits under a bar.
             //
-            // 46px is the smallest row holding a readable bar AND its
-            // name, so it is a floor, not a preference. Four fit a phone
-            // card: stages 1, 2, 3 and 5 are static, 4 and 6 scroll, and
-            // every row now looks identical on every stage.
+            // 58px now the transcript scrolls. The packet count no longer
+            // constrains the row, so the row can be chosen for how it
+            // READS rather than for how many have to fit: a 22px bar with
+            // 36px of air around it, where it was a 24px bar with 22px.
+            // Thinner bar, much more space between them.
             const bandTop = M.top;
             const bandH = H - bandTop - glossH - footH;
-            const rowH = 46 * useDPR;
+            const rowH = 58 * useDPR;
             const rowsH = rowH * N;
             const scrolls = rowsH > bandH;
-            const barH = Math.max(12 * useDPR, Math.min(24 * useDPR, rowH * 0.55));
+            const barH = Math.max(12 * useDPR, Math.min(24 * useDPR, rowH * 0.38));
 
             // AUTO ONLY, never draggable. The feed owns vertical gestures,
             // so a user dragging the transcript would change card instead.
@@ -258,7 +280,10 @@ registerRenderingAlgorithm("exchange_view", {
             // hint of what is coming below.
             let scrollY = 0;
             if (scrolls) {
-                const want = (active + within + 0.5) * rowH - bandH * 0.68;
+                // the poster is read from the top, not from wherever the
+                // animation would have been
+                const want = poster ? 0
+                    : (active + within + 0.5) * rowH - bandH * 0.68;
                 scrollY = Math.max(0, Math.min(rowsH - bandH, want));
             }
             const rowsTop = bandTop + (scrolls ? -scrollY : (bandH - rowsH) / 2);
@@ -316,7 +341,7 @@ registerRenderingAlgorithm("exchange_view", {
 
                 // not reached yet: an empty outline, so the length of the
                 // conversation is known from the first frame
-                if (i > active) {
+                if (!poster && i > active) {
                     const px = fromLeft ? corridorX0 + 4 * useDPR
                                         : corridorX1 - 4 * useDPR - w;
                     ctx.strokeStyle = DEAD;
@@ -329,7 +354,7 @@ registerRenderingAlgorithm("exchange_view", {
 
                 // the gap that preceded this packet, as a bar whose width
                 // is logarithmic in its real duration
-                if (x.gapBeforeUs > 0 && (gapLinesForAll || i === active)) {
+                if (x.gapBeforeUs > 0 && (gapLinesForAll || (!poster && i === active))) {
                     // The wait before this packet went out. Width is
                     // logarithmic in the duration because the real gaps
                     // span 200x -- a linear bar would make every 150 us
@@ -351,7 +376,7 @@ registerRenderingAlgorithm("exchange_view", {
                     ctx.moveTo(gx, gy); ctx.lineTo(gx + gw, gy);
                     ctx.stroke();
                     ctx.setLineDash([]);
-                    if (i === active) {
+                    if (!poster && i === active) {
                         // BESIDE the line, not above it. There is no
                         // vertical room above a bar that fills 55% of its
                         // row, and sideways there is plenty.
@@ -374,15 +399,34 @@ registerRenderingAlgorithm("exchange_view", {
                                         : corridorX1 - 4 * useDPR - w;
                 const endX   = fromLeft ? corridorX1 - 4 * useDPR - w
                                         : corridorX0 + 4 * useDPR;
-                const prog = i < active ? 1 : transit;
+                // every packet has arrived in the poster -- it is the
+                // finished exchange, not a moment during it
+                const prog = poster ? 1 : (i < active ? 1 : transit);
                 // ease so the packet leaves and arrives softly rather than
                 // sliding at constant speed, which reads as mechanical
                 const eased = prog < 0.5 ? 2 * prog * prog
                                          : 1 - Math.pow(-2 * prog + 2, 2) / 2;
                 const px = startX + (endX - startX) * eased;
 
-                const isActive = i === active;
-                const alpha = isActive ? 1 : 0.4;
+                const isActive = !poster && i === active;
+                const alpha = poster ? 0.62 : (isActive ? 1 : 0.4);
+
+                // THE FIX FOR THE BLANK FIRST FRAME. At t=0 the active
+                // packet reveals zero bytes -- correct, nothing has been
+                // sent yet -- so the card drew almost nothing and read as
+                // broken. Outlining its full extent from the first frame
+                // means the fields fill INTO a visible packet instead of
+                // appearing out of nowhere. Same device packet_stack_view
+                // already uses for the final packet size.
+                if (isActive) {
+                    ctx.strokeStyle = WARN;
+                    ctx.lineWidth = 1 * useDPR;
+                    ctx.globalAlpha = 0.55;
+                    ctx.setLineDash([3 * useDPR, 3 * useDPR]);
+                    ctx.strokeRect(px, cy - barH / 2, w, barH);
+                    ctx.setLineDash([]);
+                    ctx.globalAlpha = 1;
+                }
 
                 // the bytes, as filled boxes divided by field
                 let fx = px;
@@ -464,7 +508,7 @@ registerRenderingAlgorithm("exchange_view", {
                 ctx.textAlign = "right";
                 ctx.fillStyle = MUTED;
                 ctx.font = `${9 * useDPR}px "IBM Plex Mono", monospace`;
-                ctx.fillText(`${active + 1} / ${N}`,
+                ctx.fillText(poster ? `${N} / ${N}` : `${active + 1} / ${N}`,
                              W - M.right - 10 * useDPR, bandTop - 7 * useDPR);
             }
 
@@ -477,8 +521,16 @@ registerRenderingAlgorithm("exchange_view", {
             ctx.textAlign = "left";
             ctx.fillStyle = WARN;
             ctx.font = `600 ${13 * useDPR}px "IBM Plex Mono", monospace`;
-            ctx.fillText(`${a.name}  ·  ${a.onAirBytes} B`, M.left, 60 * useDPR);
-            if (a.note) {
+            if (poster) {
+                // Summarising the stage rather than naming packet 1, which
+                // the poster is not singling out.
+                const totalB = ex.reduce((acc, x) => acc + x.onAirBytes, 0);
+                ctx.fillText(`${N} packets  ·  ${totalB} B on air`,
+                             M.left, 60 * useDPR);
+            } else {
+                ctx.fillText(`${a.name}  ·  ${a.onAirBytes} B`, M.left, 60 * useDPR);
+            }
+            if (!poster && a.note) {
                 ctx.fillStyle = MUTED;
                 ctx.font = `${10 * useDPR}px "IBM Plex Mono", monospace`;
                 ctx.fillText(a.note, M.left, 76 * useDPR);
@@ -545,7 +597,10 @@ registerRenderingAlgorithm("exchange_view", {
         }
 
         draw(0);
-        startSweepLoop(sampleId, durationMs, e => draw(Math.min(1, e / durationMs)));
+        startSweepLoop(sampleId, durationMs, e => {
+            sweepStarted = true;
+            draw(Math.min(1, e / durationMs));
+        });
     },
 });
 

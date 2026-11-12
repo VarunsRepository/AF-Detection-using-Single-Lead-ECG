@@ -175,6 +175,50 @@ for (const [reId, dspId, params] of [
     sandbox.ResizeObserver = savedRO;
 }
 
+// REGRESSION, SECOND KIND. The first blank-card bug was a resize that
+// cleared the canvas without repainting (above). This is the other one:
+// in a scroll feed the sweep only drives the active card, so an inactive
+// card shows nothing but its initial draw(0) -- and frame zero of an
+// animation is an exchange in which nothing has been sent yet. A card
+// that is not animating must still draw its content.
+console.log("\nan un-animated card must still draw its content");
+{
+    const savedSweep = sandbox.startSweepLoop;
+    for (const stage of [1, 3, 6]) {
+        let cb = null;
+        sandbox.startSweepLoop = (s_, d_, c) => { cb = c; };
+        drawOps = 0;
+        const container = { innerHTML: "", style: {}, offsetWidth: 390,
+                            offsetHeight: 420, appendChild() {} };
+        try {
+            RE.exchange_view.render(container,
+                DSP.ble_connect.process(null, { stage }), {}, "chk", 500, 9000);
+            const poster = drawOps;            // sweep has not ticked
+            drawOps = 0; cb(0);
+            const animatedAtZero = drawOps;    // same t, now animating
+            drawOps = 0; cb(0);
+            const again = drawOps;             // a loop re-entering zero
+            if (poster <= 0) {
+                console.log(`  FAIL exchange_view stage ${stage} drew nothing un-animated`);
+                fails++;
+            } else if (poster < animatedAtZero) {
+                console.log(`  FAIL exchange_view stage ${stage} poster ${poster} < animated ${animatedAtZero}`);
+                fails++;
+            } else if (again !== animatedAtZero) {
+                // the poster must not come back once the sweep owns the card
+                console.log(`  FAIL exchange_view stage ${stage} flickers on loop: ${animatedAtZero} then ${again}`);
+                fails++;
+            } else {
+                ok(`stage ${stage} un-animated draws ${poster}, animated frame zero ${animatedAtZero}, no flicker`);
+            }
+        } catch (e) {
+            console.log(`  FAIL exchange_view stage ${stage} poster threw: ${e.message}`);
+            fails++;
+        }
+    }
+    sandbox.startSweepLoop = savedSweep;
+}
+
 console.log("\nrenderers must survive a DSPE error without throwing");
 for (const [reId, dspId] of [["packet_stack_view", "ble_encapsulation"],
                              ["tx_timeline_view", "ble_tx_timeline"],
