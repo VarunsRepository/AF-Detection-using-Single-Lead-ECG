@@ -548,20 +548,49 @@ html, body {
        protect in the first place. */
     width: 40px;
     height: 40px;
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.5); /* darker than before to compensate visually for backdrop-filter staying off (see note below) */
-    border: 1px solid var(--border);
-    color: var(--text);
+
+    /* ── NO CIRCLE, NO BORDER, NO PANEL ──────────────────────────────
+       The disc was doing one job -- saying "this is a button" -- and
+       paying for it with a tinted hole punched in the render, which is
+       the thing the rail is placed low-right to protect in the first
+       place. A filled glyph with a drop shadow says the same thing and
+       costs nothing, which is how YouTube and Shorts draw theirs.
+
+       THE BOX STAYS 40px. Only the surface goes. The layout box, the
+       8px gap, the 48px pointer target below and the whole arithmetic
+       in .rail-btn::before are unchanged -- nothing about the rail's
+       geometry is being renegotiated here.
+
+       The override near the bottom of this file is the rule that
+       actually wins; these are the fallbacks, kept in step with it. */
+    border-radius: 0;
+    background: none;
+    border: 0;
+    /* Brighter than --text (#d8dee9), and its own token so a theme can
+       set it: without a panel underneath, the glyph's only contrast is
+       against whatever the trace is doing behind it. */
+    color: var(--rail-icon, #eef2f7);
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); /* subtle depth, so the button stands out against the plot/video behind it -- matches Instagram's own icon rail */
-    transition: transform 0.1s ease;
+    /* THE SHADOW MOVED FROM THE BOX TO THE GLYPH. box-shadow on a
+       transparent element paints nothing at all; drop-shadow() follows
+       the alpha of the filled path, so each glyph gets its own outline
+       against a bright stretch of signal. */
+    box-shadow: none;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
+    transition: transform 0.1s ease, opacity 0.1s ease;
     /* backdrop-filter: blur(4px); -- TEMP DISABLED for iOS Safari diagnostic;
        WebKit has known bugs where blur-filtered elements become visually
        present but stop reliably receiving touch events. If controls start
        working again on iPhone with this off, this is the culprit. */
     display: flex;
+    /* A COLUMN now: glyph on top, current value beneath it. Four of
+       the rail's controls are DERIVED and exist to be compared, and
+       their value was only ever in btn.title -- which a phone does not
+       have. See paintRailButton() in journey_interpreter.js. */
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 1px;
     position: relative; /* anchors the swatch-dot badge, see below */
 
     /* ── WHY TAPS WERE FLAKY ON IPHONE ───────────────────────────────
@@ -606,7 +635,15 @@ html, body {
 .rail-btn::before {
     content: "";
     position: absolute;
-    top: -5px; bottom: -5px; left: -5px; right: -5px;
+    /* -5 BECAME -4 WHEN THE BORDER WENT, and the note above is why.
+       The containing block is the PADDING box: with a 1px border that
+       was 38px and -5px gave exactly 48. With no border it is 40, so
+       -5px would give a 50px target on 48px centres and neighbouring
+       targets would overlap by 2px -- the lower button in the rail
+       would quietly take a strip off the one above it, which is the
+       same class of bug as the dead strip, just inverted.
+       -4px restores exactly 48px: neighbours touch, nothing overlaps. */
+    top: -4px; bottom: -4px; left: -4px; right: -4px;
     border-radius: 50%;
     /* No background: invisible, but still a pointer target. */
 }
@@ -626,10 +663,78 @@ html, body {
 
 .rail-btn:active {
     transform: scale(0.92); /* tactile press feedback, matches Instagram/TikTok's own icon-rail response */
+    /* THE SCALE ALONE IS NOT ENOUGH ANY MORE. It used to land on a
+       tinted disc, so a press also darkened a visible shape. With
+       nothing behind the glyph a 8% shrink on a 24px mark is easy to
+       miss, and a control you cannot tell you pressed is the thing
+       this rail has already been debugged for twice. */
+    opacity: 0.6;
+}
+
+/* ── HOLD REGISTERED ─────────────────────────────────────────────────
+   Speed cycles forward on a tap and backward on a hold, and the hold
+   ACTS ON RELEASE (see the cycleSpeed pointer block in
+   journey_interpreter.js). This class is the only thing that tells the
+   viewer the hold landed -- without it a long press is indistinguishable
+   from a tap the control ignored for half a second.
+
+   AFTER :active ON PURPOSE. Both selectors are (0,2,0), so this wins on
+   source order alone while the finger is still down -- which is exactly
+   when it needs to, since :active is also true throughout a hold.
+   Growing rather than shrinking, for the same reason: the press is
+   already drawn as a shrink, so a hold has to go the other way to read
+   as a different gesture rather than a harder press. */
+.rail-btn.rail-held {
+    transform: scale(1.12);
+    opacity: 1;
+    filter: drop-shadow(0 0 6px var(--accent, #5cc24a));
 }
 
 .rail-btn svg {
     display: block; /* removes the few stray pixels of inline-baseline spacing SVGs get by default */
+    /* SIZED HERE, NOT IN THE MARKUP. The SVG strings carry width="24"
+       as a fallback, but a button that also shows a value label has to
+       give the glyph back 4px, and that is a layout decision rather
+       than a property of the icon. One rule beats editing nine SVGs. */
+    width: 24px;
+    height: 24px;
+}
+
+.rail-btn.has-value svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* ── THE CURRENT VALUE, UNDER THE GLYPH ──────────────────────────────
+   9px is small on purpose: this is a confirmation you read when you go
+   looking for it, not a label competing with the glyph for the glance.
+   The button is 40x40 whatever it holds, so a value going from "30MS"
+   to "7.5MS" cannot reflow the rail -- which is exactly what the old
+   tooltip-only approach was protecting against, and it no longer has
+   to, because the box is fixed.
+
+   Uppercase, because these are short codes ("PT", "GL", "ON") and a
+   lowercase "on" beside an uppercase "PT" reads as two systems.
+
+   THE FULL VALUE IS ALWAYS IN btn.title AS WELL, which is what makes
+   9px defensible: nothing is only available at this size. */
+.rail-value {
+    display: block;
+    max-width: 40px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    text-align: center;
+    color: var(--rail-icon, #eef2f7);
+    /* Its OWN shadow. The button's filter:drop-shadow reads on a 24px
+       shape and is invisible on the 1px stem of a 9px glyph. */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 .rail-speed-label {
@@ -654,10 +759,32 @@ html, body {
     border: 1.5px solid rgba(13, 17, 23, 0.9); /* separates the dot from whatever's behind the button */
 }
 
-.rail-invert[aria-pressed="true"] {
-    border-color: var(--accent);
+/* ── A TOGGLE THAT IS ON ─────────────────────────────────────────────
+   WAS .rail-invert[aria-pressed="true"], AND IT WAS DEAD CODE. That class
+   comes from the old stage_renderers rail; journey_interpreter.js gives
+   every button exactly one class, .rail-btn, so the selector matched
+   nothing on any journey page -- and nothing was setting aria-pressed
+   either, so it could not have fired even on a button that had the class.
+   Two halves of a feature, neither of them connected.
+
+   Now the generic form, and the interpreter sets the attribute. The
+   button carries this state ONLY while it is genuinely a boolean
+   control (see toggleStateOf), so Share and Theme never pick it up.
+
+   TWO SIGNALS, ON PURPOSE, because they say different things: the glyph
+   MIRRORS, which says which way the trace is now running, and the colour
+   changes, which says the control is engaged. The mirror alone is too
+   quiet at 24px on a card where the trace is also moving; the colour
+   alone would not say which direction.
+
+   The old background tint is gone with the rest of the rail's chrome --
+   a 15% green fill needs a box to fill. */
+.rail-btn[aria-pressed="true"] {
     color: var(--accent);
-    background: rgba(92, 194, 74, 0.15);
+}
+
+.rail-btn[aria-pressed="true"] .rail-value {
+    color: var(--accent);
 }
 
 /* ---------------------------------------------------------------------
@@ -1420,8 +1547,10 @@ html, body {
     margin: 0;
     opacity: 1;
     text-align: left;
-    font-family: 'Roboto', sans-serif;
-    font-weight: 700;
+    /* Themed. The fallbacks are the values that were hardcoded here, so a
+       page with no theme applied renders exactly as before. */
+    font-family: var(--title-font, 'Roboto', sans-serif);
+    font-weight: var(--title-weight, 700);
     /* Was clamp(1.05rem, 3.9vw, 1.5rem). The 1.5rem ceiling is what made
        the peek heavy on a laptop -- 24px type plus leading is a 30px line
        for a label nobody is reading yet. The floor barely moves, because
@@ -1488,7 +1617,7 @@ html, body {
     margin: 0 0 10px;
     max-height: none;
     text-align: left;
-    font-family: 'Roboto', sans-serif;
+    font-family: var(--prose-font, 'Roboto', sans-serif);
     text-shadow: none;
 }
 .stage-sheet .sheet-body .stage-caption {
@@ -1502,8 +1631,12 @@ html, body {
        #747d8c, which measures 4.16:1 on this panel and fails WCAG AA for
        body text -- it is on the open list to fix globally. This is the
        value that pass will use, applied here early because this is now
-       the longest stretch of prose in the app. */
-    color: #9aa4b0;
+       the longest stretch of prose in the app.
+
+       Now --prose-dim, and deliberately NOT --text-dim: keeping it a
+       separate token means a theme setting --text-dim cannot silently
+       undo this contrast fix. The fallback is the same value. */
+    color: var(--prose-dim, #9aa4b0);
     font-weight: 400;
     font-size: clamp(0.95rem, 3.2vw, 1.12rem);
     line-height: 1.55;
@@ -1567,14 +1700,39 @@ html, body {
 .journey-card.sheet-dragging .scrub-bar { transition: none; }
 .journey-card.sheet-open .scrub-bar { pointer-events: none; }
 
-/* ── The rail, in the same material ─────────────────────────────────── */
-/* OVERRIDE of .rail-btn further up this file, at equal specificity and
-   later in source order. Only the three surface properties change; the
-   size, the touch-action fixes and the :active feedback all stand. */
+/* ── The rail is the ONE control NOT in the panel material ──────────── */
+/* It used to be: same tint, same edge, same shadow as the sheet and the
+   chip. That was the right call for a FAMILY of controls and the wrong
+   one for this member of it, and the reason is WHERE each sits.
+
+   The sheet and the chip live at the edges of the card, against the
+   card's own background -- a panel there reads as an object arriving.
+   The rail sits ON the render, over the sweeping trace, and the same
+   panel there reads as a hole punched in the plot. Six of them stacked
+   down the right-hand side is a column of holes.
+
+   So the rail keeps the family's COLOUR and gives up its SURFACE: a
+   filled glyph, a drop shadow, nothing behind it.
+
+   --panel, --panel-edge and --panel-shadow are UNTOUCHED and still
+   dress the sheet, the chip and the back button. This is one control
+   leaving the material, not the material being retired.
+
+   STILL AN OVERRIDE of .rail-btn further up this file, at equal
+   specificity, winning on source order alone. Said again because that
+   rule has to be read together with this one -- it is the trap that
+   made an earlier rail change appear to do nothing. */
 .rail-btn {
-    background: var(--panel);
-    border: 1px solid var(--panel-edge);
-    box-shadow: var(--panel-shadow);
+    background: none;
+    border: 0;
+    box-shadow: none;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
+    /* --rail-radius IS NOW A NO-OP for the rail: with no fill and no
+       border there is nothing left to round. Left referenced rather
+       than deleted, deliberately -- a theme that already sets it gets a
+       harmless no change instead of a surprise, and Arcade can bring a
+       backing back by setting a `background` alongside it. */
+    border-radius: var(--rail-radius, 0);
 }
 
 /* ── The "more from" chip, louder ───────────────────────────────────── */
