@@ -305,8 +305,31 @@
         // QRS: the contiguous run around R that leaves the baseline,
         // including the negative Q and S shoulders.
         let a = rIdx, b = rIdx;
-        while (a > 0 && Math.abs(y[a - 1]) > eps) a--;
-        while (b < y.length - 1 && Math.abs(y[b + 1]) > eps) b++;
+        // A SUSTAINED return to baseline, not a single sample. The
+        // descent from R to S passes THROUGH the dead band on its way --
+        // one sample at |y| <= eps is the normal case for any beat with
+        // a positive R and a negative S, not an unlucky one. A
+        // one-sample test ends the QRS there, which then starts the
+        // T-wave search INSIDE the S wave, so the S gets measured as the
+        // T. And because every walk below starts from this boundary, PR
+        // and P duration came out wrong too.
+        //
+        // The quiet window is a DURATION, not a sample count: 17ms is
+        // far longer than a zero crossing and comfortably shorter than
+        // any real isoelectric segment, and it means the same thing at
+        // 125Hz as at 1000Hz. A sample count would silently become 48ms
+        // at the bottom of that range and 6ms at the top.
+        const QUIET = Math.max(2, Math.round(0.017 * fs));
+        const quietAt = (i, dir) => {
+            for (let k = 1; k <= QUIET; k++) {
+                const j = i + dir * k;
+                if (j < 0 || j >= y.length) return true;
+                if (Math.abs(y[j]) > eps) return false;
+            }
+            return true;
+        };
+        while (a > 0 && !quietAt(a, -1)) a--;
+        while (b < y.length - 1 && !quietAt(b, +1)) b++;
 
         // P: the first excursion before the QRS run.
         let pEnd = a;
@@ -430,11 +453,47 @@
         },
     };
 
+    // -----------------------------------------------------------------
+    // THE RULER CHECKS ITSELF.
+    //
+    // measureBeat exists so the drawing is checked rather than trusted.
+    // A ruler that is quietly wrong is worse than no ruler, because it
+    // reads as coverage -- it reported an impossible QT for a CORRECT
+    // beat, so it would equally have failed to complain about an
+    // incorrect one.
+    //
+    // Every bound below is this file's own NORMAL table. Nothing here is
+    // a threshold invented to make the test pass. If the generator
+    // drifts, or this walk breaks again, it is a console warning at load
+    // rather than a card quietly showing an impossible interval.
+    // -----------------------------------------------------------------
+    function selfCheck(fs) {
+        const m = measureBeat(makeCanonicalBeat(fs || 360));
+        const bad = [];
+        for (const k of ["pDurMs", "prMs", "qrsMs", "qtMs", "tMv"]) {
+            const rng = NORMAL[k];
+            if (!rng || !(k in m)) continue;
+            if (!(m[k] >= rng[0] && m[k] <= rng[1])) {
+                bad.push(`${k}=${Number(m[k]).toFixed(1)} ` +
+                         `(normal ${rng[0]}-${rng[1]})`);
+            }
+        }
+        if (bad.length) {
+            console.warn("[ECG-PRIMER] measureBeat disagrees with this " +
+                         "file's own NORMAL table: " + bad.join(", ") +
+                         ". The canonical beat is correct by " +
+                         "construction, so this is the RULER, not the " +
+                         "drawing.");
+        }
+        return { ok: bad.length === 0, measured: m, failures: bad };
+    }
+
     if (typeof registerDspAlgorithm === "function") {
         registerDspAlgorithm(impl.id, impl);
+        selfCheck(360);
     } else if (typeof module !== "undefined") {
         module.exports = { impl, makeCanonicalBeat, measureBeat,
                            makeBeat, makeBeatTrain, makeBeatLayers,
-                           NORMAL };
+                           NORMAL, selfCheck };
     }
 })();
