@@ -69,7 +69,23 @@ async function fetchSignal(sampleId) {
 // does cost a bit of per-frame tick recomputation -- a deliberate trade-off
 // for legible units over strict monitor-authenticity (real monitors mostly
 // skip numeric axes in favor of a calibration pulse + known sweep speed).
-const AXIS_LABEL_STYLE = { size: 13, color: "#9aa1ab", family: "IBM Plex Mono, monospace" };
+// A FUNCTION, not a const object, because it reads CSS custom properties
+// and a module-level const is evaluated at load time -- before
+// applyCurrentTheme() has written any of them. It would have captured the
+// empty string once and handed that to Plotly for the life of the page.
+//
+// Colour and family now come from the theme (--axis-label-color,
+// --axis-font); the size stays here because it is layout, not look.
+function axisLabelStyle(styles) {
+    const s = styles ?? getComputedStyle(document.documentElement);
+    const color = typeof themeColor === "function"
+        ? themeColor(s, "--axis-label-color", "#9aa1ab")
+        : (s.getPropertyValue("--axis-label-color").trim() || "#9aa1ab");
+    const family = typeof themeColor === "function"
+        ? themeColor(s, "--axis-font", "IBM Plex Mono, monospace")
+        : (s.getPropertyValue("--axis-font").trim() || "IBM Plex Mono, monospace");
+    return { size: 13, color, family };
+}
 
 // Picks a "nice," round grid step (0.1, 0.2, 0.5, 1, 2, 5, ...times a power
 // of ten) close to `range / targetTicks` -- the same kind of rounding real
@@ -101,6 +117,9 @@ function buildChartLayout(yMin, yMax, initialXRange) {
     const rootStyle = getComputedStyle(document.documentElement);
     const gridColor = rootStyle.getPropertyValue("--grid-color").trim();
     const zeroLineColor = rootStyle.getPropertyValue("--zero-line-color").trim();
+    // One call, passed down, rather than each helper calling
+    // getComputedStyle again -- each call forces a style recalculation.
+    const AXIS_LABEL_STYLE = axisLabelStyle(rootStyle);
 
     return {
         margin: { t: 10, r: 10, b: 30, l: 40 },
@@ -141,7 +160,8 @@ function buildChartLayout(yMin, yMax, initialXRange) {
             xanchor: "left", yanchor: "top",
             text: `□ = ${xStep}s / ${yStep}mV`,
             showarrow: false,
-            font: { size: 9, color: "#747d8c", family: "IBM Plex Mono, monospace" },
+            font: { size: 9, color: AXIS_LABEL_STYLE.color,
+                    family: AXIS_LABEL_STYLE.family },
         }],
     };
 }
@@ -264,9 +284,21 @@ function renderWaveformSweep(container, sampleId, totalDurationMs, t, y, fs) {
     const ECG_WINDOW_SECONDS = 3; // was 5 -- 3s shows ~3-4 beats at once rather than 5-6, leading edge moves more slowly. Closer to real diagnostic monitor feel.
     const windowSamples = Math.round(ECG_WINDOW_SECONDS * fs);
 
+    // Theme values through the CSS variables, not off THEMES directly --
+    // one path, same rule the renderers follow. width now follows the
+    // theme too, so this Plotly path is no longer the one renderer that
+    // ignores traceWidth.
+    const rootStyle = getComputedStyle(document.documentElement);
+    const traceColor = typeof themeColor === "function"
+        ? themeColor(rootStyle, "--trace-color", "#e8f4f8")
+        : (rootStyle.getPropertyValue("--trace-color").trim() || "#e8f4f8");
+    const traceWidth = typeof themeNumber === "function"
+        ? themeNumber(rootStyle, "--trace-width", 2)
+        : 2;
+
     const trace = {
         x: [t[0]], y: [y[0]], mode: "lines",
-        line: { color: THEMES[themeIndex].traceColor, width: 2, shape: "spline" },
+        line: { color: traceColor, width: traceWidth, shape: "spline" },
         hoverinfo: "skip",
     };
 

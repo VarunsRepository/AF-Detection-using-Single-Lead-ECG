@@ -12,7 +12,12 @@
 // progress bar (uiShell.showProgressBar), and real pause/resume
 // (playbackConfig.isPaused).
 //
-// Speed is now GENUINELY GLOBAL -- GLOBAL_SPEED_OPTIONS/globalSpeedIndex
+// Speed runs 0.25x to 2x in five steps, cycling on a tap and reversing
+// on a hold (see stepSpeed and the pointer wiring in buildRail), and its
+// glyph is a dial rather than a count of chevrons -- one chevron read as
+// PLAY and two as FAST-FORWARD, which are other controls on this card.
+//
+// Speed is GENUINELY GLOBAL -- GLOBAL_SPEED_OPTIONS/globalSpeedIndex
 // live at MODULE level, not inside this function, so every card in a
 // scrolling feed shares the SAME speed state instead of each getting its
 // own independent one reset to 1.0x. speedOptions itself is intentionally
@@ -27,43 +32,287 @@
 
 const STAGE_DURATION_MS = 8000; // was 5000 -- same 5s signal, takes 8s to sweep. Feels more natural for reading ECG detail.
 
-// GLOBAL, not per-journey-instance -- deliberately moved out of
+// THE LADDER. 0.25x and 0.5x exist because a long record swept in eight
+// seconds is faster than anyone can read a QRS complex off -- the slow
+// end is not a novelty, it is how you look at a beat. 1.5x and 2x stay;
+// 3x was considered and dropped, because five steps already means four
+// taps to get back to where you were and that is the real cost of a
+// single cycling button.
+//
+// GLOBAL, not per-journey-instance -- deliberately outside
 // interpretJourney() so every card in the scrolling feed shares this
 // SAME state. Scrolling to a new card no longer resets Speed to 1.0x.
-const GLOBAL_SPEED_OPTIONS = [0.5, 1.0, 1.5, 2.0];
+const GLOBAL_SPEED_OPTIONS = [0.25, 0.5, 1.0, 1.5, 2.0];
 let globalSpeedIndex = GLOBAL_SPEED_OPTIONS.indexOf(1.0);
 
-// Real, proven SVG markup, reused directly from the old system's rail
-// buttons (core/journey_feed.js) -- not redesigned from scratch. Keyed by
-// the recipe's own control.ui.icon field, so a recipe can reference any
-// of these by name without journey_interpreter.js needing to know which
-// button label goes with which icon.
+// ── WHICH WAY THE NEXT STEP GOES ────────────────────────────────────────
+// A tap steps forward, a HOLD steps back. One button, because the rail is
+// already six tall on some journeys and a dedicated minus would cost a
+// slot over the render -- see the pointer wiring in buildRail().
+//
+// A ONE-SHOT, reset inside stepSpeed(). Left sticky it would be a hidden
+// mode: a hold followed by an ordinary tap would run backwards too, and
+// nothing on screen would say why.
+let speedStepDirection = 1;
+
+function stepSpeed() {
+    const n = GLOBAL_SPEED_OPTIONS.length;
+    // (i - 1 + n) % n written as (i + n - 1) % n: JavaScript's % keeps the
+    // sign of the dividend, so a bare -1 at index 0 gives -1, not n-1,
+    // and GLOBAL_SPEED_OPTIONS[-1] is undefined rather than the fastest
+    // step. Wrapping both directions is what makes one button enough.
+    const delta = speedStepDirection < 0 ? n - 1 : 1;
+    globalSpeedIndex = (globalSpeedIndex + delta) % n;
+    speedStepDirection = 1;
+}
+
+// "1x", "1.5x", "0.25x" -- no trailing zeros, because "1.00x" in a 9px
+// label is three characters of nothing. CSS uppercases it.
+function formatSpeed(v) {
+    return `${Number(v).toFixed(2).replace(/\.?0+$/, "")}x`;
+}
+
+// ── RAIL GLYPHS: SOLID, TRANSPARENT, NO CHROME ─────────────────────────
+// Every glyph is a FILLED path in currentColor at 24x24, with secondary
+// parts carried on `opacity` rather than a second colour. That is what
+// makes the set theme-proof: one CSS variable colours all of it, and a
+// theme that lightens the card does not have to redraw anything.
+//
+// The old set was STROKED (stroke-width 2, fill none) and sat inside a
+// 40px tinted circle with a hairline border. Two problems, both visible
+// on a phone: over a sweeping trace that circle was the loudest object
+// on the card -- a hole punched in the thing the viewer came to watch --
+// and a 1px stroke over moving content is the first thing to disappear.
+// A filled shape with a drop shadow reads at a glance and needs nothing
+// behind it. Same reason Shorts and Reels draw their rails this way.
+//
+// Keyed by the recipe's own control.ui.icon field, so a recipe can
+// reference any of these by name without journey_interpreter.js needing
+// to know which button label goes with which icon.
 const RAIL_ICONS = {
-    icon_flip_vertical: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6M9 6l3-3 3 3"/><path d="M12 21v-6M9 18l3 3 3-3"/></svg>`,
-    icon_theme: `<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg>`,
-    icon_cycle: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
-    icon_renderer: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>`,
+    // A bar with its triangle MIRRORED below at 45% opacity -- the ghost
+    // half is the signal after the flip. Two solid triangles would be
+    // symmetrical and so would say nothing about direction.
+    icon_flip_vertical: `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M3 11.1h18v1.8H3z"/><path d="M4.5 8.6 12 2l7.5 6.6z"/><path d="M4.5 15.4 12 22l7.5-6.6z" opacity="0.45"/></svg>`,
+
+    // A half-lit disc: CONTRAST, not a colour swatch. Deliberately
+    // carries no hue of its own, because it has to mean the same thing
+    // in all five themes including the two loud ones.
+    icon_theme: `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><circle cx="12" cy="12" r="9.5" opacity="0.32"/><path d="M12 2.5a9.5 9.5 0 0 1 0 19z"/></svg>`,
+
+    // An ANNULUS with a gap plus an arrowhead, not a stroked arc: a
+    // filled ring's weight is independent of its rendered size, so this
+    // does not thin out beside the others if a theme scales the rail.
+    icon_cycle: `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M8.92 3.54A9 9 0 1 1 4.21 7.5l2.51 1.45A6.1 6.1 0 1 0 9.91 6.27z"/><path d="M7.36 4.93 2.52 6.53 8.4 9.92z"/></svg>`,
+
+    // Stacked planes fading back: same data, different surface. Was a
+    // monitor on a stand, which said "screen" rather than "which way of
+    // drawing".
+    icon_renderer: `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 2 21.5 7 12 12 2.5 7z"/><path d="M2.5 11.2 4.6 10.1 12 14l7.4-3.9 2.1 1.1L12 16.2z" opacity="0.6"/><path d="M2.5 15.4 4.6 14.3 12 18.2l7.4-3.9 2.1 1.1L12 20.4z" opacity="0.35"/></svg>`,
+
+    // NEW. A fork -- one signal in, two candidate detectors out. The
+    // algorithm button used to be bare text ("PT"), which named the
+    // choice without ever saying what KIND of choice it was.
+    icon_algorithm: `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M3 11.1h8.5v1.8H3z"/><path d="M11.5 5.6h1.8v12.8h-1.8z"/><path d="M13.3 5.6h4.2v1.8h-4.2z"/><path d="M13.3 16.6h4.2v1.8h-4.2z"/><circle cx="19.3" cy="6.5" r="2.2"/><circle cx="19.3" cy="17.5" r="2.2"/></svg>`,
+
+    // NEW. A caliper: two posts with arrows pushing out to them. A SPAN,
+    // which is what an interval control sets -- a clock face would say
+    // "a moment" instead.
+    icon_interval: `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M3 4h2.2v16H3z"/><path d="M18.8 4H21v16h-2.2z"/><path d="M9 11.2h6v1.6H9z"/><path d="M9 9.2v5.6L5.2 12z"/><path d="M15 9.2v5.6L18.8 12z"/></svg>`,
+
+    // NEW. An eye, for the jargon/plain switch. A bookmark or a book
+    // would mean "terms"; the control's actual state is shown or hidden,
+    // and naming the STATE is what lets the glyph carry a value.
+    icon_defs: `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 5.2c5.6 0 9.8 6.8 9.8 6.8s-4.2 6.8-9.8 6.8S2.2 12 2.2 12 6.4 5.2 12 5.2z" opacity="0.38"/><circle cx="12" cy="12" r="3.6"/></svg>`,
+
+    // THE SAME GLYPH, FLIPPED, for when invert is ON. Both halves are
+    // the two paths above with their opacities swapped, so the pair can
+    // never drift apart in shape.
+    //
+    // WHY THE STATE AND NOT THE ACTION. flashPlayback() takes the
+    // opposite line one file over -- a paused card shows a PLAY glyph,
+    // because the icon names what you can do next rather than where you
+    // are -- and that is right for a transport control whose two states
+    // look different.
+    //
+    // It cannot work here. Invert is SYMMETRIC: the action available
+    // while inverted is "invert back", and the glyph for it is the same
+    // glyph. Naming the action would leave the button looking identical
+    // in both states, which is the situation we are in now. So this one
+    // names the state, and the mirrored solid half says which way the
+    // trace is currently running.
+    icon_flip_vertical_on: `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M3 11.1h18v1.8H3z"/><path d="M4.5 8.6 12 2l7.5 6.6z" opacity="0.45"/><path d="M4.5 15.4 12 22l7.5-6.6z"/></svg>`,
+
+    // DEPTH, the third global control. The same eye as icon_defs, which
+    // is deliberate: Depth is what the Defs button was reaching for and
+    // could not do, so it inherits the shape rather than inventing one.
+    //
+    // TWO FORMS, NOT THREE, for a three-state control. The glyph says
+    // whether help is turned up at all; the value label under it says
+    // which of the two upper stops you are on. A third eye drawn to mean
+    // "guided, not simple" would be a distinction nobody could see at
+    // 20px, and the label already carries it unambiguously.
+    icon_depth: `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 5.2c5.6 0 9.8 6.8 9.8 6.8s-4.2 6.8-9.8 6.8S2.2 12 2.2 12 6.4 5.2 12 5.2z" opacity="0.38"/><circle cx="12" cy="12" r="3.6"/></svg>`,
+
+    // The low stop. Dimmer and struck through -- NOT an empty or closed
+    // eye, because nothing is actually switched off at "basic": the
+    // pointers thin out, they do not vanish. A closed eye would promise
+    // a blank plot.
+    icon_depth_off: `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M12 5.2c5.6 0 9.8 6.8 9.8 6.8s-4.2 6.8-9.8 6.8S2.2 12 2.2 12 6.4 5.2 12 5.2z" opacity="0.2"/><circle cx="12" cy="12" r="3.6" opacity="0.45"/><path d="M3.6 5.0 5.0 3.6 20.4 19.0 19.0 20.4z"/></svg>`,
+
+    // NEW, AND IT WAS ALREADY BEING ASKED FOR. The universal Share
+    // control (see the `universal` array in buildRail) has named
+    // "icon_share" since the day it was added, and RAIL_ICONS never had
+    // it -- so the lookup missed, the final else fired, and the button
+    // has been rendering the WORD "Share" in a rail of icons ever since,
+    // at 0.72rem mono in a 40px circle. Nobody reported it because it
+    // looked deliberate.
+    icon_share: `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><rect x="7" y="11.1" width="10" height="1.8" transform="rotate(-27 12 12)"/><rect x="7" y="11.1" width="10" height="1.8" transform="rotate(27 12 12)"/><circle cx="5.5" cy="12" r="3"/><circle cx="18.5" cy="6" r="3"/><circle cx="18.5" cy="18" r="3"/></svg>`,
 };
 
-// Speed's icon is DYNAMIC, not static -- the number of stacked chevrons
-// hints at the current speed step (1 chevron at the slowest, up to 4 at
-// the fastest), the same triangle style the old static icon_speed used,
-// just generated to match however many steps GLOBAL_SPEED_OPTIONS
-// actually has, so this stays correct even if that list's length ever
-// changes. Since Speed's button is now icon-only (no text), this is the
-// only way its current value is visible at all.
+// ── GLYPHS THAT HAVE AN "ON" FORM ──────────────────────────────────────
+// A boolean rail control is a TOGGLE, and a toggle that looks the same in
+// both states is a button you have to press to find out what it did.
+//
+// Kept as a lookup rather than a naming convention ("<icon>_on") so that
+// adding a glyph cannot accidentally create an on-state for a control
+// that does not have one -- and so that an icon with no entry here simply
+// keeps its single form, which is every other glyph in the set today.
+const ICON_ON_VARIANTS = {
+    icon_flip_vertical: "icon_flip_vertical_on",
+};
+
+// ── GLYPHS FOR THE DERIVED CONTROLS ────────────────────────────────────
+// Derived controls come from choices() on the DSPE or the renderer, and a
+// choice declares a key, a label and its values -- not an icon. Rather
+// than touch every engine that declares one (exchange_view.js and the BLE
+// engines included) this maps a control to a glyph by its own key or
+// label.
+//
+// A STOPGAP, named as one. The right home is an `icon` field on the
+// choice itself, which resolveDerivedIcon already PREFERS when it is
+// there -- so adding it to an engine later needs no change here. What
+// this buys today is that a rail change stays a two-file change.
+//
+// An unmatched control gets NO glyph and keeps its text label, which is
+// exactly what it had before. A wrong icon is worse than a word.
+const DERIVED_ICON_RULES = [
+    { match: /interval|period|spacing|window|duration|gap|ifs/i, icon: "icon_interval"      },
+    { match: /term|def|gloss|jargon|plain|legend/i,              icon: "icon_defs"          },
+    { match: /invert|flip|mirror|polarity/i,                     icon: "icon_flip_vertical" },
+    { match: /theme|palette|skin/i,                              icon: "icon_theme"         },
+    { match: /render|view|surface|canvas|webgl/i,                icon: "icon_renderer"      },
+    { match: /algo|detect|filter|method|branch|route|path/i,      icon: "icon_algorithm"     },
+    { match: /show|hide|visible|display|label|annot/i,            icon: "icon_defs"          },
+];
+
+function resolveDerivedIcon(choice, label) {
+    const hay = `${choice?.key ?? ""} ${label ?? ""}`;
+    for (const rule of DERIVED_ICON_RULES) {
+        if (rule.match.test(hay)) return rule.icon;
+    }
+    return null;
+}
+
+// The value shown under a glyph comes from DATA -- a choice's display
+// map, a record's meta -- so it is escaped rather than trusted. Small,
+// and the alternative is innerHTML assembled from a recipe field.
+function escapeRailText(v) {
+    return String(v).replace(/[&<>"']/g, c => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    })[c]);
+}
+
+// ── GLYPH ABOVE, CURRENT VALUE BENEATH ─────────────────────────────────
+// The one place a rail button's contents are written.
+//
+// WHY A VISIBLE VALUE AT ALL: four of these controls are derived, and
+// their whole purpose is comparison -- the premise of the app is that you
+// learn by seeing two things against each other. Until now the value
+// lived only in btn.title, because "Oxygen: present" does not fit a 40px
+// circle. A tooltip is also a thing a phone does not have, so on the
+// device most of this is viewed on the value was not available at all.
+//
+// A 9px label under a 20px glyph does fit, and it sits in a FIXED-SIZE
+// box, so a value changing length cannot reflow the rail -- which is the
+// thing the tooltip-only version was protecting against.
+//
+// Speed passes no value on purpose: the number of chevrons IS the value,
+// so a label would say the same thing twice.
+function paintRailButton(btn, iconName, valueText, rawSvg, textFallback) {
+    const svg = rawSvg ?? (iconName ? RAIL_ICONS[iconName] : null);
+    const value = (valueText === undefined || valueText === null)
+                ? "" : String(valueText);
+    const hasValue = value !== "";
+
+    if (!svg) {
+        // No glyph for this control: text, exactly as before. The CALLER
+        // says which text, because the right answer differs -- a derived
+        // control reads better as its variable ("Interval"), an algorithm
+        // picker as its value ("PT").
+        btn.textContent = textFallback ?? btn.dataset.railLabel ?? "";
+        btn.classList.remove("has-value");
+        btn.classList.add("text-only");
+        return;
+    }
+
+    btn.classList.remove("text-only");
+    btn.classList.toggle("has-value", hasValue);
+    btn.innerHTML = svg + (hasValue
+        ? `<span class="rail-value">${escapeRailText(value)}</span>`
+        : "");
+}
+
+// ── SPEED'S GLYPH IS A DIAL, AND IT USED TO BE CHEVRONS ────────────────
+// The chevron count WAS the value: one chevron at the slowest step, four
+// at the fastest. It had to be, because the button carried no text.
+//
+// And it was unreadable, for a reason that is obvious once said. One
+// triangle is the universal PLAY glyph. Two is FAST-FORWARD. Both of
+// those are transport controls, and this card already has a tap-to-pause
+// and a tap-to-advance -- so the slowest speed looked like a play button
+// and the next one up looked like skip. A viewer reading it that way was
+// reading it correctly; the glyph was wrong.
+//
+// A half gauge with a needle has no transport reading at all, because
+// nothing in that family is round with a pointer. The needle sweeps 160
+// degrees (slowest) to 20 (fastest) across however many steps the ladder
+// actually has, so this stays correct if the ladder changes length.
+//
+// The needle is still dynamic, but it is no longer load-bearing: the
+// value label under the glyph carries the number now, and the needle is
+// the pre-attentive read you get before your eye reaches it.
 function buildSpeedIcon(speedValue) {
     const stepIndex = GLOBAL_SPEED_OPTIONS.indexOf(speedValue);
-    const chevronCount = stepIndex === -1 ? 1 : stepIndex + 1; // -1 guard: an unrecognized value still renders SOMETHING rather than an empty icon
-    const spanStart = 2, spanEnd = 22; // matches RAIL_ICONS' 24x24 viewBox convention
-    const segmentWidth = (spanEnd - spanStart) / chevronCount;
-    const chevronWidth = segmentWidth * 0.82; // slightly narrower than its segment, leaving a small visual gap between chevrons
-    let paths = "";
-    for (let i = 0; i < chevronCount; i++) {
-        const x = spanStart + i * segmentWidth;
-        paths += `<path d="M${x.toFixed(1)} 5l${chevronWidth.toFixed(1)} 7-${chevronWidth.toFixed(1)} 7V5z"/>`;
-    }
-    return `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">${paths}</svg>`;
+    // -1 guard: an unrecognised value still renders a needle rather than
+    // a bare dial, same spirit as the old chevron fallback.
+    const i = stepIndex === -1 ? 0 : stepIndex;
+    const steps = Math.max(1, GLOBAL_SPEED_OPTIONS.length - 1);
+
+    const SWEEP_FROM = 160, SWEEP_TO = 20;   // degrees, anticlockwise-positive
+    const rad = (SWEEP_FROM + (SWEEP_TO - SWEEP_FROM) * (i / steps)) * Math.PI / 180;
+
+    const cx = 12, cy = 15;      // the dial's pivot, low in the 24x24 box
+    const TIP_R = 8.2, HUB_R = 1.6, HALF_W = 1.9;
+    // Screen coordinates, so y is negated: the maths is anticlockwise and
+    // the canvas is not.
+    const ux = Math.cos(rad), uy = -Math.sin(rad);
+    const px = -uy, py = ux;     // unit normal, for the needle's base
+    const f = v => v.toFixed(1);
+
+    const tipX = cx + ux * TIP_R,  tipY = cy + uy * TIP_R;
+    const aX = cx + px * HALF_W + ux * HUB_R, aY = cy + py * HALF_W + uy * HUB_R;
+    const bX = cx - px * HALF_W + ux * HUB_R, bY = cy - py * HALF_W + uy * HUB_R;
+
+    // The band is an ANNULUS SECTOR, not a stroked arc, for the same
+    // reason icon_cycle is: a filled ring's weight does not change with
+    // the rendered size, so the dial does not thin out at 20px when the
+    // button also shows its value label.
+    return `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">`
+         + `<path d="M2.5 15A9.5 9.5 0 0 1 21.5 15L18.5 15A6.5 6.5 0 0 0 5.5 15Z" opacity="0.35"/>`
+         + `<path d="M${f(tipX)} ${f(tipY)} ${f(aX)} ${f(aY)} ${f(bX)} ${f(bY)}z"/>`
+         + `<circle cx="12" cy="15" r="2.2"/>`
+         + `</svg>`;
 }
 
 // Methods that CYCLE a value (as opposed to toggling a boolean or firing
@@ -91,6 +340,10 @@ const VALUE_DISPLAY_METHODS = {
     switchAlgorithm: {
         getMethod: "getActiveAlgorithm",
         suffix:    "",
+        // The glyph says WHAT is being chosen, the label says WHICH.
+        // On its own, "PT" named a detector to anyone who already knew
+        // there was a detector to name.
+        icon:      "icon_algorithm",
         labelMap: {
             pan_tompkins:      "PT",
             pan_tompkins_py:   "PT2",   // superscript "py" rendered too small to read
@@ -105,6 +358,7 @@ const VALUE_DISPLAY_METHODS = {
     switchRenderer: {
         getMethod: "getActiveRenderer",
         suffix:    "",
+        icon:      "icon_renderer",
         labelMap: {
             chart_v1:            "SVG",
             chart_v1_canvas:     "2D",
@@ -253,7 +507,30 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         cycleSpeed() {
             // payload.options intentionally ignored now -- see the file
             // header for why speedOptions isn't recipe-configurable.
-            globalSpeedIndex = (globalSpeedIndex + 1) % GLOBAL_SPEED_OPTIONS.length;
+            //
+            // The direction lives in speedStepDirection, which the hold
+            // gesture sets just before the click lands. Deliberately NOT
+            // a second method: the dispatcher verb a recipe names stays
+            // "cycleSpeed" whichever way it goes, so no recipe has to
+            // learn about holding.
+            stepSpeed();
+        },
+        // ── DEPTH ──────────────────────────────────────────────────────
+        // Relays to rail_controls.js, exactly as cycleTheme does. The
+        // dial is global -- one value for the whole feed -- for the same
+        // reason Speed is: a viewer who asked for plain wording has asked
+        // for it on the next card too, and a per-card value would reset
+        // on every scroll.
+        //
+        // typeof-guarded because rail_controls.js owns it and a bare test
+        // page may not load it; the matching guards in
+        // refreshButtonContent keep the button honest in that case.
+        cycleDepth() {
+            if (typeof cycleDepth === "function") cycleDepth();
+        },
+        getDepth() {
+            return typeof getActiveDepthLabel === "function"
+                 ? getActiveDepthLabel() : null;
         },
         cycleTheme() {
             // Delegates to rail_controls.js's real, rewritten cycleTheme()
@@ -285,6 +562,89 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             }
         },
     };
+
+    // ── GLOSSARY, for {{TERM}} substitution in a stage's prose ─────────
+    // Journey-level rather than per-stage. terms_for() already ships a
+    // per-stage SUBSET for the glossary chip, and that subset is an
+    // editorial choice about which terms a card introduces -- a different
+    // question from which terms its sentences happen to mention. Resolving
+    // tokens against the editorial subset would leave a literal
+    // "{{T_IFS}}" on any card that referenced a term it did not introduce.
+    //
+    // Empty object when a recipe declares none, so every un-migrated
+    // journey behaves exactly as before: no tokens, nothing to resolve.
+    const journeyGlossary = journeyJson.glossary ?? {};
+
+    // ── WOULD A DEPTH BUTTON DO ANYTHING ON THIS JOURNEY? ──────────────
+    // Depth moves two things: the wording (needs a glossary and {{tokens}}
+    // in the prose) and the annotation density (needs an annotations
+    // block). A journey with neither would get a button that changes
+    // nothing a viewer can see.
+    //
+    // Hidden rather than shipped inert, and that is a rule this codebase
+    // already learned the hard way: a "Route" control once sat on the
+    // citric acid cycle doing nothing, because no reaction there was ever
+    // conditional, and choices() exists precisely so a control appears
+    // only where it means something. A dead button does not read as "not
+    // applicable here" -- it reads as broken.
+    //
+    // Computed once per journey rather than per rail build: it depends on
+    // the recipe, which does not change while a card is on screen.
+    //
+    // THREE SOURCES, AND THE THIRD WAS MISSED FIRST TIME ROUND. There are
+    // two different glossaries in a BLE recipe and they are not the same
+    // object:
+    //
+    //   journeyJson.glossary                      -- {acronym, short, emoji}
+    //       journey-wide VOCABULARY, from glossary_for_client(). Feeds
+    //       fill()'s {{TOKEN}} substitution in the prose.
+    //
+    //   stage.renderingEngine.config.glossary     -- {acronym, full, plain}
+    //       a per-stage editorial SUBSET, from terms_for(). Feeds the
+    //       definitions strip exchange_view draws at the foot of the card.
+    //
+    // The first version of this gate checked only the journey-wide one,
+    // and ble_connect came out false: the strip glossary has been there
+    // since v1 while the journey-wide one arrived later. So the journey
+    // with the most acronyms in the app was the one journey that got no
+    // Depth button, which is close to the opposite of the intent.
+    //
+    // The strip counts because Depth MOVES it -- showDefs is one of the
+    // three things a depth level carries. A journey with a strip and
+    // nothing else still has something for the control to do.
+    const journeyExplains =
+        Object.keys(journeyJson.glossary ?? {}).length > 0
+        || (journeyJson.stages ?? []).some(s =>
+               (s.annotations ?? []).length > 0
+            || (s.renderingEngine?.config?.glossary ?? []).length > 0);
+
+    // ── THE RECIPE'S OWN STARTING DEPTH ────────────────────────────────
+    // Honoured on entry and ignored after the viewer's first tap -- see
+    // setDepthDefault in rail_controls.js for why the recipe proposes
+    // rather than owns. ble_connect wants to open at "simple"; a plain
+    // ECG sweep does not.
+    if (typeof setDepthDefault === "function" && journeyJson.defaultDepth) {
+        setDepthDefault(journeyJson.defaultDepth);
+    }
+
+    // "full" | "plain", from the active visual theme via its CSS variable.
+    //
+    // Read fresh on every call rather than captured once: the DEPTH rail
+    // button changes it mid-card, and a captured value would leave the
+    // prose in the previous register until the next stage.
+    //
+    // It used to be the Theme button that moved this, which is the whole
+    // reason Depth exists -- the variable's name and this reader are
+    // unchanged, only who writes it.
+    function activeTermLevel() {
+        try {
+            const v = getComputedStyle(document.documentElement)
+                        .getPropertyValue("--term-level").trim();
+            return v === "plain" ? "plain" : "full";
+        } catch (e) {
+            return "full";
+        }
+    }
 
     function getActiveTheme() {
         return journeyJson.globalThemes.themes.find(t => t.id === journeyJson.globalThemes.activeTheme);
@@ -598,7 +958,33 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             globalThis._DEV_ACTIVE_SAMPLE    = sampleId;
             globalThis._DEV_ACTIVE_STAGE     = currentStageIndex;
 
+         //   renderingEngine.render(chartContainer, dspOutput, sampleId, data.fs, actualDuration);
             renderingEngine.render(chartContainer, dspOutput, sampleId, data.fs, actualDuration);
+
+            // Annotations mount AFTER render, never before. render() clears
+            // the container and calls startSweepLoop(), which replaces the
+            // whole activeSweepControl entry with a fresh, unwrapped drawFn
+            // -- so mounting first would attach the overlay to a container
+            // about to be emptied and wrap a function about to be thrown
+            // away. Mounting after is also what keeps the drawFn wrapper
+            // from stacking across re-renders.
+            if (typeof mountAnnotations === "function") {
+                mountAnnotations(chartContainer, stageJson, sampleId, dspOutput);
+            }
+            // AFTER annotations, deliberately. Both wrap the sweep's
+            // drawFn, so mounting effects second makes the chain run
+            // renderer -> annotations -> pulse. It also pairs with
+            // unmounting in reverse in goToStage(), which is what lets
+            // each layer recognise its OWN wrapper and restore cleanly.
+            //
+            // Attaches nothing at all unless the active theme asks for
+            // effects, so the sober themes pay no compositing cost for a
+            // feature they are not using.
+            if (typeof mountEffects === "function") {
+                mountEffects(chartContainer, sampleId, dspOutput);
+            }
+
+
 
             if (stageJson.stageOutput) {
                 const exported = {};
@@ -641,14 +1027,81 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         // Unresolved tokens are left as-is rather than blanked: a visible
         // {typo} on the card is far easier to notice than a sentence
         // that silently lost half its meaning.
-        const fill = (s) => String(s ?? "").replace(/\{([\w.]+)\}/g, (whole, path) => {
-            const v = path.split(".").reduce((o, k) => o?.[k], lastEnvelope?.meta);
-            return v === undefined || v === null ? whole : String(v);
-        });
+        //
+        // TWO SUBSTITUTIONS, deliberately different syntax:
+        //
+        //   {pathway.name}   envelope meta  -- varies by SAMPLE
+        //   {{L2CAP}}        glossary term  -- varies by THEME
+        //
+        // Double braces for terms so the two cannot collide: a glossary
+        // key is a bare word and would otherwise be indistinguishable
+        // from a one-segment meta path, and the failure would be silent
+        // in whichever direction lost.
+        //
+        // TERMS RESOLVE FIRST, because a term's short form is fixed text
+        // that could never contain a meta path, while a meta VALUE could
+        // plausibly contain an acronym in braces one day. Doing meta
+        // second means a substituted value is never re-scanned for terms,
+        // which is the behaviour you want: data is data, not a template.
+        // ARTICLE-AWARE, and it has to be. A short form is a noun phrase
+        // and carries its article -- "the multiplexing layer" -- because
+        // a token often opens a sentence:
+        //
+        //     "{{L2CAP}} adds four bytes"
+        //       -> "the multiplexing layer adds four bytes"   correct
+        //
+        // But an acronym takes no article, so prose written for the jargon
+        // register puts the determiner in itself:
+        //
+        //     "marks each {{R_PEAK}}"
+        //       -> "marks each the beat's peak"               broken
+        //
+        // One stored form cannot satisfy both, and the asymmetry is in the
+        // language rather than in the data. So the substitution drops a
+        // leading article when the token already follows a determiner.
+        // Mechanical, and it means nobody writing a card has to remember
+        // the rule -- which is the only kind of rule that survives.
+        const DETERMINER = /(?:^|\s)(?:a|an|the|each|every|this|that|those|these|its|their)\s+(?:\w*[-\d][\w-]*\s+){0,2}$/i;
+        const fill = (s) => {
+            let out = String(s ?? "");
+            out = out.replace(/\{\{(\w+)\}\}/g, (whole, key, offset, full) => {
+                const term = journeyGlossary[key];
+                // Left as-is rather than blanked, same rule as below: a
+                // visible {{TYPO}} on the card is far easier to notice
+                // than a sentence that silently lost its subject.
+                if (!term) return whole;
+                if (activeTermLevel() !== "plain") return term.acronym ?? key;
 
-        if (titleEl) titleEl.textContent = fill(stageJson.uiFillers.title);
-        if (captionEl) captionEl.textContent = fill(stageJson.uiFillers.caption);
-        if (descriptionEl) descriptionEl.textContent = fill(stageJson.uiFillers.description || "");
+                let text = term.short ?? term.acronym ?? key;
+                if (DETERMINER.test(full.slice(0, offset))) {
+                    text = text.replace(/^(?:the|a|an)\s+/i, "");
+                }
+                // Emoji only in the plain register, and only where the
+                // glossary bothered to set one -- it is sparse on purpose.
+                return (term.emoji ? term.emoji + " " : "") + text;
+            });
+            out = out.replace(/\{([\w.]+)\}/g, (whole, path) => {
+                const v = path.split(".").reduce((o, k) => o?.[k], lastEnvelope?.meta);
+                return v === undefined || v === null ? whole : String(v);
+            });
+            return out;
+        };
+
+        // Extracted so the Theme button can RE-RUN it. The prose now
+        // depends on the active theme (via termLevel), and cycleTheme only
+        // re-rendered the plot -- so switching theme changed the picture
+        // and left the words in the previous register. Assigning the text
+        // in one named place is what makes "re-apply the copy" a thing
+        // that can be asked for.
+        function applyCopy() {
+            if (titleEl) titleEl.textContent = fill(stageJson.uiFillers.title);
+            if (captionEl) captionEl.textContent = fill(stageJson.uiFillers.caption);
+            if (descriptionEl) descriptionEl.textContent = fill(stageJson.uiFillers.description || "");
+        }
+        applyCopy();
+        // Exposed on the card so the rail handler can reach it without
+        // threading a reference through every closure in between.
+        chartContainer.__kymoApplyCopy = applyCopy;
         updateProgressBar(index, actualDuration);
 
         // Wrapped so it can be RE-RUN. Switching the renderer changes
@@ -715,8 +1168,17 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                     // "Oxygen: present" does not fit. The card header already
                     // states the values, so the state is never hidden; the
                     // tooltip repeats it for anyone hovering.
+                    const derivedLabel = override.label ?? ch.label ?? ch.key;
                     derived.push({
-                        ui: { label: override.label ?? ch.label ?? ch.key },
+                        // THREE TIERS, most specific first: the recipe can
+                        // name a glyph, the choice itself can declare one
+                        // (nothing does yet -- this is the field to add when
+                        // an engine wants to be explicit), and failing both
+                        // the key/label pattern match has a go. All three
+                        // can come back null, which means text, as before.
+                        ui: { label: derivedLabel,
+                              icon: override.icon ?? ch.icon
+                                    ?? resolveDerivedIcon(ch, derivedLabel) },
                         _valueNow: shown,
                         action: { target: ch._target ?? "dspEngine", method: "setParameter",
                                   payload: { key: ch.key, operation: "cycle",
@@ -745,10 +1207,32 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
             // implies: one journey missed it entirely, and three had it
             // on stage 1 only. A recipe can still opt out with
             // "share": false.
-            const universal = stageJson.share === false ? [] : [{
-                ui: { label: "Share", icon: "icon_share" },
-                action: { target: "journey", method: "share", payload: {} },
-            }];
+            // ── UNIVERSAL CONTROLS, added by the engine ────────────────
+            // Declared here rather than in ten recipes, for the reason
+            // Share already proved: declaring it per recipe produced one
+            // journey that missed it entirely and three that had it on
+            // stage 1 only. Anything whose behaviour is identical on every
+            // journey belongs to the engine.
+            //
+            // Each can still be refused by the recipe -- "share": false,
+            // "depth": false -- so a journey that genuinely should not
+            // offer one has a way to say so.
+            const universal = [];
+            if (stageJson.share !== false) {
+                universal.push({
+                    ui: { label: "Share", icon: "icon_share" },
+                    action: { target: "journey", method: "share", payload: {} },
+                });
+            }
+            // Depth is also gated on whether it would DO anything here --
+            // see journeyExplains. The recipe's "depth": false is a veto
+            // on top of that, not a way to force it on.
+            if (journeyExplains && stageJson.depth !== false) {
+                universal.push({
+                    ui: { label: "Depth", icon: "icon_depth" },
+                    action: { target: "journey", method: "cycleDepth", payload: {} },
+                });
+            }
 
             [...stageJson.railControls, ...universal, ...derived].forEach(control => {
                 const btn = document.createElement("button");
@@ -775,6 +1259,24 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 btn.dataset.railLabel  = control.ui.label;
                 btn.dataset.railMethod = control.action.method;
 
+                // BOOLEANS ONLY, and null for everything else.
+                //
+                // A derived control also dispatches setParameter, but with
+                // operation "cycle" over a list of values -- those are not
+                // toggles and must not get an on-state. Testing the VALUE's
+                // type rather than the operation string catches that without
+                // depending on a recipe spelling "toggle" correctly, and a
+                // two-value cycle of true/false is a toggle whatever it calls
+                // itself.
+                function toggleStateOf(ctl) {
+                    if (ctl.action.method !== "setParameter") return null;
+                    const key = ctl.action.payload?.key;
+                    if (!key) return null;
+                    const tgt = context[ctl.action.target];
+                    const v = tgt?.getParameter?.(key);
+                    return typeof v === "boolean" ? v : null;
+                }
+
                 function refreshButtonContent() {
                     const valueDisplay = VALUE_DISPLAY_METHODS[control.action.method];
                     if (valueDisplay) {
@@ -782,20 +1284,87 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                         const currentValue = targetObj[valueDisplay.getMethod]();
                         const short = valueDisplay.labelMap?.[currentValue]
                                       ?? shortenId(currentValue);
-                        btn.textContent = short + valueDisplay.suffix;
-                        // Full id in the tooltip -- the button has room for
-                        // three characters, not "hamilton_tompkins".
+                        const shown = short + valueDisplay.suffix;
+                        // Glyph AND value now, not the value alone. The last
+                        // argument is the text to fall back to if the glyph
+                        // ever goes missing -- the value, not the label,
+                        // because that is what this button was showing before.
+                        paintRailButton(btn, valueDisplay.icon, shown, null, shown);
+                        // Full id in the tooltip -- the label under the glyph
+                        // has room for three characters, not
+                        // "hamilton_tompkins".
                         btn.title = `${control.ui.label}: ${currentValue}`;
                     } else if (control.action.method === "cycleSpeed") {
-                        // Dynamic, not a static RAIL_ICONS lookup -- the number
-                        // of chevrons reflects the CURRENT speed value, read
-                        // fresh every time this runs (including right after a
-                        // click, so the icon updates immediately).
-                        btn.innerHTML = buildSpeedIcon(journeyTarget.getSpeed());
-                    } else if (control.ui.icon && RAIL_ICONS[control.ui.icon]) {
-                        btn.innerHTML = RAIL_ICONS[control.ui.icon];
+                        // Dynamic, not a static RAIL_ICONS lookup -- the needle
+                        // angle reflects the CURRENT speed, read fresh every
+                        // time this runs (including right after a click, so it
+                        // updates immediately).
+                        //
+                        // AND A VALUE LABEL NOW. The glyph says "speed" and the
+                        // label says which -- the split that let the chevrons
+                        // go. "0.25x" is five characters, which is why the
+                        // ladder stops at two decimal places.
+                        const speedNow = journeyTarget.getSpeed();
+                        paintRailButton(btn, null, formatSpeed(speedNow),
+                                        buildSpeedIcon(speedNow));
+                        btn.title = `${control.ui.label}: ${formatSpeed(speedNow)}`
+                                  + ` (hold to slow down)`;
+                    } else if (control.action.method === "cycleDepth") {
+                        // Glyph says whether help is turned up; the label
+                        // says which stop. Read fresh, like Speed, so a
+                        // tap updates it immediately.
+                        const d = typeof getActiveDepth === "function"
+                                ? getActiveDepth() : null;
+                        paintRailButton(btn,
+                            d && d.id === "basic" ? "icon_depth_off" : "icon_depth",
+                            d ? d.label : null, null, control.ui.label);
+                        btn.title = d
+                            ? `${control.ui.label}: ${d.label}`
+                            : control.ui.label;
+                    } else if (control._choice) {
+                        // Derived: glyph resolved at push time, value beneath.
+                        // Falls back to the VARIABLE name rather than the
+                        // value, which is what an unglyphed derived button
+                        // showed before -- "hidden" in 0.72rem mono does not
+                        // fit 40px, and the tooltip carries it anyway.
+                        paintRailButton(btn, control.ui.icon, control._valueNow,
+                                        null, control.ui.label);
                     } else {
-                        btn.textContent = control.ui.label;
+                        // Recipe control. paintRailButton already falls back to
+                        // text when ui.icon names nothing in RAIL_ICONS, so the
+                        // old icon-or-text pair of branches collapses to one
+                        // call -- and Share, whose icon was missing from
+                        // RAIL_ICONS entirely, now resolves instead of landing
+                        // here.
+                        //
+                        // A BOOLEAN ONE ALSO REPORTS ITS STATE. Invert is the
+                        // case that prompted this: it changed the picture and
+                        // then looked exactly as it had before, so the only way
+                        // to know whether the trace was flipped was to read the
+                        // trace. See ICON_ON_VARIANTS.
+                        const on = toggleStateOf(control);
+                        if (on === null) {
+                            // Not a toggle -- an action, or a cycling value.
+                            // Deliberately REMOVED rather than left alone: a
+                            // rail is rebuilt on every stage change and a
+                            // stale aria-pressed on a control that is not a
+                            // toggle is a lie to a screen reader.
+                            btn.removeAttribute("aria-pressed");
+                            paintRailButton(btn, control.ui.icon, null,
+                                            null, control.ui.label);
+                        } else {
+                            // aria-pressed is the attribute a toggle button is
+                            // supposed to carry, and it is what the CSS styles
+                            // off -- one source of truth rather than a class
+                            // and an attribute that can disagree.
+                            btn.setAttribute("aria-pressed", String(on));
+                            const variant = on
+                                ? ICON_ON_VARIANTS[control.ui.icon]
+                                : null;
+                            paintRailButton(btn, variant ?? control.ui.icon,
+                                            null, null, control.ui.label);
+                            btn.title = `${control.ui.label}: ${on ? "on" : "off"}`;
+                        }
                     }
                 }
                 refreshButtonContent();
@@ -809,7 +1378,72 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                         btn,
                         choice: control._choice,
                         labelBase: control.ui.label,
+                        // Carried so the refresh below can repaint the
+                        // button without re-running the pattern match.
+                        icon: control.ui.icon,
                     });
+                }
+
+                // ── TAP SPEEDS UP, HOLD SLOWS DOWN ─────────────────────
+                // One cycling button wraps, so every step is reachable --
+                // but only forwards, and from 1x that is three taps to
+                // reach 0.5x. The slow steps are exactly the ones wanted
+                // when something is already going too fast to read, so
+                // making them the furthest away is backwards.
+                //
+                // IT ACTS ON RELEASE, NOT AT THE THRESHOLD. The hold only
+                // sets the DIRECTION; the click that follows does all the
+                // work, through the one handler below. Firing at 420ms
+                // instead would mean a second copy of that handler's cache
+                // eviction, re-render and timer arithmetic, and two copies
+                // of that is how the auto-advance timer got out of step
+                // twice already.
+                //
+                // pointerup always precedes click, so the direction is in
+                // place by the time dispatch runs.
+                //
+                // THE CLASS IS NOT DECORATION. The press does nothing
+                // until release, so without a mark at 420ms a hold feels
+                // like a tap that was ignored for half a second -- and
+                // "the control did nothing" is the bug this rail has
+                // already been debugged for twice.
+                if (control.action.method === "cycleSpeed") {
+                    const HOLD_MS = 420;
+                    let holdTimer = null;
+                    let held = false;
+
+                    const clearHold = () => {
+                        if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+                        btn.classList.remove("rail-held");
+                    };
+
+                    btn.addEventListener("pointerdown", () => {
+                        held = false;
+                        clearHold();
+                        holdTimer = setTimeout(() => {
+                            held = true;
+                            btn.classList.add("rail-held");
+                        }, HOLD_MS);
+                    });
+
+                    btn.addEventListener("pointerup", () => {
+                        speedStepDirection = held ? -1 : 1;
+                        held = false;
+                        clearHold();
+                    });
+
+                    // A finger that slides off the button fires neither
+                    // pointerup nor click here, so the direction would be
+                    // left at whatever the last gesture set. Reset it
+                    // rather than leave a -1 lying in wait for the next
+                    // ordinary tap.
+                    const abandon = () => {
+                        held = false;
+                        clearHold();
+                        speedStepDirection = 1;
+                    };
+                    btn.addEventListener("pointercancel", abandon);
+                    btn.addEventListener("pointerleave", abandon);
                 }
 
                 btn.addEventListener("click", () => {
@@ -858,8 +1492,13 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                                   ? renderingEngine : dspEngines.get(index);
                         const v = src?.getParameter?.(d.choice.key);
                         const shownNow = d.choice.display?.[String(v)] ?? v;
-                        // Text stays the variable name; only the tooltip
-                        // carries the value, so the button never reflows.
+                        // THE VISIBLE VALUE NOW, not just the tooltip. The
+                        // glyph is fixed and the label lives in a fixed-size
+                        // box, so repainting cannot reflow the rail -- which
+                        // is the reason the value used to be tooltip-only.
+                        // And a tooltip is not a thing a phone has.
+                        paintRailButton(d.btn, d.icon, shownNow,
+                                        null, d.labelBase);
                         d.btn.title = `${d.labelBase}: ${shownNow}`;
                     }
 
@@ -874,16 +1513,59 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                 // DOM-styled parts and nothing else -- which is why a
                 // skinned renderer appeared stuck on whichever theme
                 // happened to be active when the card was built.
-                if (control.action.method === "cycleTheme") {
-                    runAndRender(index);
-                }
 
+
+
+//                if (control.action.method === "cycleTheme") {
+//                    runAndRender(index);
+//                }
+//
+//                if (control.action.method === "cycleSpeed") {
+//                    actualDuration = (stageJson.baseDurationMs || STAGE_DURATION_MS)
+//                                   / journeyTarget.getSpeed();
+//                    updateProgressBar(index, actualDuration);
+//                    runAndRender(index);
+//                }
+
+
+                // cycleTheme needs no render call of its own -- the
+                // unconditional runAndRender() at the end of this handler
+                // covers it, and Canvas renderers read the theme when they
+                // DRAW, so that redraw is what picks the new one up.
+                //
+                // It DOES need the copy re-applied, though. A theme now
+                // carries termLevel, so the prose register changes with it
+                // -- and runAndRender only touches the plot. Without this
+                // the picture switched to Arcade while the words stayed in
+                // Clinical's jargon, which looks like the switch is broken
+                // rather than unwired.
+                //
+                // cycleDepth is here for the SAME reason and is in fact
+                // the one that needs it: Depth is what moves termLevel
+                // now, so without this the plot would redraw with new
+                // annotation density while every sentence stayed in the
+                // previous register. cycleTheme is kept alongside it
+                // because a theme still changes the glyphs an annotation
+                // is drawn with, and those carry labels.
+                if (control.action.method === "cycleTheme" ||
+                    control.action.method === "cycleDepth") {
+                    chartContainer.__kymoApplyCopy?.();
+                }
+                //
+                // These two blocks used to call runAndRender(index). That
+                // argument lands on the `precomputedOutput` parameter, so
+                // the renderer was handed the NUMBER 1 as its dspOutput on
+                // any stage past the first and threw on .finalOutput --
+                // killing the rest of this handler, including the real
+                // render below. Stage 0 escaped it only because 0 is falsy.
                 if (control.action.method === "cycleSpeed") {
                     actualDuration = (stageJson.baseDurationMs || STAGE_DURATION_MS)
                                    / journeyTarget.getSpeed();
                     updateProgressBar(index, actualDuration);
-                    runAndRender(index);
                 }
+
+                
+
 
                 // Changing the renderer or the algorithm can change
                 // WHICH controls exist, so the rail is rebuilt. Not for
@@ -909,8 +1591,44 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                         }
                     }
 
+
+
+
+
+
+
+
+                    //runAndRender();
+                    //refreshButtonContent();
+
+                                        // WHERE WE ARE, AS A FRACTION, BEFORE THE RE-RENDER
+                    // WIPES IT. runAndRender() makes the renderer register
+                    // a brand-new sweep control starting at 0, so the only
+                    // chance to read the old position is now.
+                    //
+                    // A fraction, not milliseconds, because Speed is one of
+                    // the buttons that lands here: the new stage duration
+                    // can differ from the old one, and the viewer's place in
+                    // the stage is a proportion, not a timestamp.
+                    const prevCtl  = activeSweepControl.get(sampleId);
+                    const heldFrac = (isPaused && prevCtl && prevCtl.totalDurationMs > 0)
+                        ? Math.min(1, Math.max(0,
+                              prevCtl.lastElapsedMs / prevCtl.totalDurationMs))
+                        : 0;
+
                     runAndRender();
                     refreshButtonContent();
+
+
+
+
+
+
+
+
+
+
+
 
                     // Both the progress bar AND the auto-advance timer must
                     // restart unconditionally when any rail button is clicked --
@@ -940,10 +1658,58 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
                         autoAdvanceTimer = setTimeout(() => goToStage(currentStageIndex + 1), actualDuration);
                     }
 
+            //        if (isPaused) {
+            //            isPaused = false;
+            //        }
+            
+        
+
+
+                                // A RAIL CONTROL CHANGES WHAT IS SHOWN, NEVER WHETHER
+                    // IT IS PLAYING.
+                    //
+                    // This used to be `if (isPaused) { isPaused = false; }`,
+                    // which un-paused silently and left three things out of
+                    // step: the sweep ran, the play glyph stayed on screen
+                    // because flashPlayback() was never called, and
+                    // auto-advance stayed off because the timer block above
+                    // had already been skipped on the old value of isPaused.
+                    //
+                    // Same rule the scrub bar already follows: someone who
+                    // paused is inspecting a moment, and taking it away
+                    // because they pressed Invert is the opposite of what
+                    // they asked for.
                     if (isPaused) {
-                        isPaused = false;
+                        const hold = () => {
+                            // The renderer has just started a fresh sweep.
+                            cancelSweepAnimation(sampleId);
+                            const ctl = activeSweepControl.get(sampleId);
+                            if (!ctl) return false;
+                            const at = heldFrac * ctl.totalDurationMs;
+                            ctl.lastElapsedMs = at;
+                            try {
+                                ctl.drawFn(at);
+                            } catch (err) {
+                                console.error("[JOURNEY] paused redraw failed", err);
+                            }
+                            // Same arm-then-offset the scrub bar uses: the
+                            // fill was just restarted RUNNING by
+                            // updateProgressBar above.
+                            armFillsForSeek();
+                            eachFill(f => seekFill(f, at));
+                            return true;
+                        };
+                        // Twice, because a renderer that registers its sweep
+                        // control asynchronously would not be there on the
+                        // first pass. The second call is idempotent -- same
+                        // frame, same position.
+                        if (!hold()) requestAnimationFrame(hold);
                     }
-                });
+                    
+        
+        
+        
+        });
                 railContainer.appendChild(btn);
             });
         }
@@ -984,6 +1750,26 @@ function interpretJourney(journeyJson, sampleId, chartContainer, railContainer, 
         autoAdvanceRemainingMs = null;
         offscreenRemainingMs = null;
         cancelSweepAnimation(sampleId);
+
+
+        // The overlay's DOM dies with the container on the next render,
+        // but its drawFn wrapper and bookkeeping object outlive it. Left
+        // in place, the wrapper would keep positioning marks against the
+        // PREVIOUS stage's projection.
+        // REVERSE of the mount order. Effects wrapped the annotation
+        // wrapper, so unwinding outermost-first is what lets each one see
+        // its own wrapper still installed and put back the right function.
+        // Unwinding the other way leaves the inner wrapper in place,
+        // closed over the previous render's canvas.
+        if (typeof unmountEffects === "function") {
+            unmountEffects(chartContainer, sampleId);
+        }
+        if (typeof unmountAnnotations === "function") {
+            unmountAnnotations(chartContainer, sampleId);
+        }
+
+
+        
         currentStageIndex = index;
         await buildStage(currentStageIndex);
     }

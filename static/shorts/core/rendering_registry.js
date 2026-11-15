@@ -57,9 +57,24 @@ function createRenderingEngine(config) {
             const ids = config.availableRenderers.map(r => r.id);
             activeId = ids[(ids.indexOf(activeId) + 1) % ids.length];
         },
+        // The RECIPE's globalThemes palette, not the visual theme -- two
+        // different things that unhelpfully share a name (see
+        // getActiveTheme in journey_interpreter vs getActiveVisualTheme in
+        // rail_controls).
+        //
+        // peakMarkerColor NO LONGER SET HERE. It used to copy the recipe's
+        // accent into the renderer config, which is why the peak dot was
+        // the same orange on every theme: a per-journey colour overriding
+        // what should be a global look. The marker now comes from
+        // --peak-marker-color, and every renderer falls back to its config
+        // value if no theme publishes one -- so a recipe that still
+        // declares peakMarkerColor keeps working, it just stops winning.
+        //
+        // signalColor is left in place: nothing this repo currently reads
+        // uses it, and removing a config key blind is how a renderer
+        // discovers a dependency at runtime.
         applyTheme(theme) {
-            renderConfig.signalColor = theme.palette.primary;
-            renderConfig.peakMarkerColor = theme.palette.accent;
+            renderConfig.signalColor = theme?.palette?.primary;
         },
     };
 }
