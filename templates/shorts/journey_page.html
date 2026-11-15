@@ -690,29 +690,37 @@
     .journey-card .chart .scatterlayer .points path {
         filter: drop-shadow(0 0 5px rgba(0, 229, 255, 0.6));
     }
-    /* shorts_feed.css's .stage-caption is position:absolute, designed for
-       the OLDER system's different layout -- overridden here (higher
-       specificity via .journey-card, naturally wins) so it participates
-       normally in this flex-based zone layout instead of ignoring it. */
-    .journey-card .stage-title,
-    .journey-card .stage-caption,
-    .journey-card .stage-description {
-        position: static;
-        margin: 0;
-        opacity: 1; /* shorts_feed.css's .stage-caption defaults to opacity:0, only revealed via a .visible class that the CURRENT system never adds (that was the OLD system's fade-in, driven by now-deleted JS) -- left as-is, caption was permanently invisible regardless of any layout/positioning fix */
-        text-align: left; /* was center -- switched specifically for this YT-Shorts-style bottom overlay, since Shorts' own text block is left-aligned, not centered. Flagging this as a deliberate change from the earlier explicit "center" request. */
-        font-family: 'Roboto', sans-serif;
-    }
-    .journey-card .stage-title { font-weight: 700; } /* bold -- matches YT's own channel-name weight */
-    .journey-card .stage-caption,
-    .journey-card .stage-description { font-weight: 400; } /* regular -- matches the lighter description text below a Short's channel name */
-    /* clamp(min, preferred, max) -- preferred is viewport-width-based (vw),
-       so text genuinely scales with screen size rather than staying one
-       fixed rem value on every device. Floor/ceiling keep it from ever
-       becoming unreadably small or comically large at the extremes. */
-    .journey-card .stage-title { font-size: clamp(1.1rem, 4vw, 1.6rem); }
-    .journey-card .stage-caption { color: #ccc; font-size: clamp(0.85rem, 3vw, 1.1rem); }
-    .journey-card .stage-description { color: #aaa; font-size: clamp(0.95rem, 3.2vw, 1.2rem); }
+    /* ── REMOVED: the .journey-card .stage-* text block ──────────────
+       This styled the title, caption and description for the OLD bottom
+       overlay. The stage sheet in shorts_feed.css now owns all three, and
+       this block was fighting it.
+
+       The sheet's comment says its rules are scoped through .stage-sheet
+       at (0,3,0) so they beat "the (0,2,0) the template uses" -- true for
+       .stage-caption and .stage-description, and NOT true for the title:
+       `.stage-sheet .stage-title` is itself (0,2,0), identical to
+       `.journey-card .stage-title`. Ties go to source order, and this
+       inline <style> comes AFTER the stylesheet's <link>, so the template
+       won.
+
+       What that cost, silently: the sheet deliberately lowered the title
+       to clamp(0.98rem, 3.3vw, 1.12rem) because the old 1.5rem ceiling
+       "is what made the peek heavy on a laptop" -- and this block put
+       clamp(1.1rem, 4vw, 1.6rem) straight back on top of it. The fix was
+       in place and overridden, which is why the peek still looked heavy.
+
+       Colour went the same way: the sheet uses #9aa4b0 for the
+       description because #aaa and var(--text-dim) both fail WCAG AA on
+       the panel. This block set #aaa.
+
+       Deleting rather than commenting out, per the stylesheet's own
+       section 44 step 1. The sheet needs none of it: position, margin,
+       opacity, text-align, font and weight are all set there, and the
+       font and weight are now themeable (--title-font, --title-weight,
+       --prose-font, --prose-dim).
+
+       KEPT BELOW: the .chart rules and the .stage-rail zone anchors,
+       which the sheet has nothing to do with. */
     /* Rail's vertical anchor, configurable via layout.railControls --
        still always right-aligned (position:absolute; right), only the
        vertical anchor point changes. "bottom" matches the ORIGINAL
@@ -915,12 +923,30 @@
     <script src="{{ url_for('static', filename='shorts/core/rail_controls.js') }}"></script>
     <script src="{{ url_for('static', filename='shorts/core/shared_signal_utils.js') }}"></script>
 
+
+   
+
     <!-- dsp_registry.js and rendering_registry.js must load BEFORE the
          algorithm/renderer files below, since those files call
          registerDspAlgorithm() / registerRenderingAlgorithm() on load. -->
     <script src="{{ url_for('static', filename='shorts/core/dsp_registry.js') }}"></script>
     <script src="{{ url_for('static', filename='shorts/core/rendering_registry.js') }}"></script>
 
+
+    <script src="{{ url_for('static', filename='shorts/core/annotation_layer.js') }}"></script>
+
+    <!-- The effects layer: scanlines, vignette, and a pulse driven off the
+         signal's own detected features rather than a keyframe. Reads
+         themeStyles/themeNumber from rail_controls.js and activeSweepControl
+         from shared_signal_utils.js, both already loaded above.
+
+         Optional in the same way event_collector.js is: journey_interpreter
+         guards with `typeof mountEffects === "function"`, so a failed load
+         costs the effects and nothing else. A theme that asks for none
+         attaches no element at all, so the four sober themes pay nothing. -->
+    <script src="{{ url_for('static', filename='shorts/core/theme_effects.js') }}"></script>
+
+     
     <!-- Data registry + adapters -- must load before DSP/RE files so
          fetchAndNormalise() exists when journey_interpreter.js calls it -->
     <script src="{{ url_for('static', filename='shorts/core/data_registry.js') }}"></script>
