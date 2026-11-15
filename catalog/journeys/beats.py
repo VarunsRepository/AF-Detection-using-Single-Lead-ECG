@@ -25,7 +25,14 @@ import catalog
 journey_store = catalog.journey_store
 
 journey_store.register_journey("beats", {
-    "version": 5,   # v5: 350ms pre-R window for P/f-wave visibility
+    # BUMP THIS ON EVERY RECIPE CHANGE. journey_store.register_journey
+    # compares it against the copy in data_cache/JourneyStore and SKIPS
+    # the update when it is not higher -- so an edited recipe with a
+    # stale version is silently ignored, and the log line says
+    # "up to date", which reads like success.
+    "version": 10,  # v10: mark every visible beat (was: first only)
+                    # v9:  annotation on the beats_detect stage
+                    # v6:  slower sweep on stage 1
     "label": "Every Beat At Once",
     "description": "Detect the beats, then stack them on top of each other",
     "status": "stable",
@@ -71,6 +78,35 @@ journey_store.register_journey("beats", {
                 ],
                 "config": {"peakMarkerColor": "#eb7b2b"},
             },
+
+
+            # ── ATTENTION ──────────────────────────────────────────────
+            # The orange dot was never too small; it was unexplained. The
+            # caption already says Pan-Tompkins marks each R-apex, and
+            # this is the line that connects that sentence to a pixel.
+            #
+            # "all" marks every beat, so a mark rides along with the
+            # sweep -- one appears as each beat is drawn and drops off as
+            # it scrolls away. MAX_VISIBLE_ANNOTATIONS in
+            # annotation_layer.js caps how many show at once (3), which
+            # is about how many beats the 3s window holds anyway. Set
+            # this back to "first" if it reads as busy: one mark teaches
+            # what the marker MEANS, after which every dot reads for free.
+            #
+            # No appearAt on purpose. A fixed fraction has to be tuned
+            # against where one record's beats happen to fall, and fails
+            # silently on the next sample. Omitted, each mark's dwell
+            # starts the first frame its own beat is visible.
+            "annotations": [
+                {
+                    "role": "point_at",
+                    "anchor": {"field": "finalOutput.peakIndices",
+                               "which": "all"},
+                    "dwellMs": 2600,
+                },
+            ],
+
+
             "uiFillers": {
                 "title": "Finding Every Beat",
                 "caption": "Pan-Tompkins marks each R-apex",
@@ -95,7 +131,7 @@ journey_store.register_journey("beats", {
                 {"ui": {"label": "Theme", "icon": "icon_theme"},
                  "action": {"target": "journey", "method": "cycleTheme", "payload": {}}},
             ],
-            "baseDurationMs": 9000,
+            "baseDurationMs": 14000,
             # Exports the whole peak-detection output, because stacked_beats
             # needs filteredSignal AND peakIndices AND (optionally)
             # wavePoints -- not a single field.
