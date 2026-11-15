@@ -77,16 +77,27 @@ journey_store = catalog.journey_store
 TOURS = {
 
     # EVERY journey, one card each. This is what "seed" used to be, and
-    # it is kept because it is the only page that proves all fifteen
-    # journeys still render -- a smoke test you can watch. It is no
-    # longer the front door: fifteen flat cards is a long scroll for a
-    # first visit, and being flat it says nothing about ECG having four
-    # journeys and crypto having four.
+    # it is kept because it is the only page that proves every journey
+    # still renders -- a smoke test you can watch. It is no longer the
+    # front door: nineteen flat cards is a long scroll for a first visit,
+    # and being flat it says nothing about ECG having six journeys and
+    # crypto having four.
+    #
+    # COUNT DELIBERATELY NOT WRITTEN AS A NUMBER ANY MORE. It said
+    # "fifteen" while the list held seventeen, because the list grew and
+    # the sentence did not. A count in prose beside the thing it counts is
+    # a fact with a half-life.
+    #
+    # STILL MISSING: bgp_maxprefix. Left out rather than guessed at --
+    # adding a stop needs the registered journey name and a sample id, and
+    # a wrong name here is a startup log line (check_journeys_exist) while
+    # a wrong sample id is a blank card at request time.
     "everything": {
         "label": "Every journey",
         "description": "One card from every journey, across every domain.",
         "stops": [
             {"journey": "ecg_primer",     "sample": None},
+            {"journey": "ecg_noise",      "sample": "ambulance"},
             {"journey": "ecg",            "sample": None},
             {"journey": "beats",          "sample": None},
             {"journey": "spectrum",       "sample": None},
@@ -105,6 +116,14 @@ TOURS = {
             {"journey": "photosynthesis", "sample": "photo_c4_hot"},
             {"journey": "pathway",        "sample": "path_tca"},
             {"journey": "suction",        "sample": "fan_bt46b"},
+            # ADDED, AND THIS TOUR IS THE REASON IT MATTERS. "the only page
+            # that proves all the journeys still render" stops being true
+            # the moment a journey is missing from it, and it had been
+            # missing both of these since they were built -- so the two
+            # newest, least-exercised recipes were the two this smoke test
+            # did not cover.
+            {"journey": "ble_connect",    "sample": None},
+            {"journey": "ble_txpath",     "sample": None},
         ],
     },
 
@@ -129,6 +148,11 @@ TOURS = {
             # cannot be confused for anything else.
             {"journey": "ecg_primer", "sample": None,
              "label": "What a heartbeat looks like"},
+
+            # Adding the ecg_noise journey that introduces the user with real world and shows them  textbook vs Reakworld  
+            {"journey": "ecg_noise", "sample": "ambulance",
+             "label": "What the world does to it"},
+
             {"journey": "ecg",      "sample": None,
              "label": "Finding every beat"},
             {"journey": "beats",    "sample": None,
@@ -179,15 +203,37 @@ TOURS = {
         ],
     },
 
+    # BLE LIVES HERE, NOT IN A TOUR OF ITS OWN -- for now.
+    #
+    # The backlog proposes /tour/wireless, and it is the right end state:
+    # once advertising channels, AFH and connection parameters exist, six
+    # wireless journeys want their own rung. But a two-stop tour is not a
+    # tour, it would need a sixth MASTER_ORDER entry and a sixth front-door
+    # card, and the two BLE journeys are eighteen stages with nowhere to
+    # send anyone today. Reachable beats tidy.
+    #
+    # Splitting later costs one edit to this list, because a tour's stops
+    # are explicit -- the recipes keep "category": "wireless" and already
+    # say what they are. A tour says where to find something; a category
+    # says what it is. Those are allowed to disagree for a while.
+    #
+    # Ordered so the domain reads as one argument: two chips agreeing on a
+    # wire, then two radios doing the same thing with no wire and no shared
+    # clock, then what the silicon underneath is made of.
     "hardware": {
         "label": "Things made of silicon and air",
-        "description": "How chips talk, how they scaled, and one that cheats.",
+        "description": "How chips talk, how radios meet, how both scaled "
+                       "-- and one that cheats.",
         "stops": [
-            {"journey": "protocols", "sample": None,
+            {"journey": "protocols",   "sample": None,
              "label": "How two chips agree"},
-            {"journey": "silicon",   "sample": "moore_all",
+            {"journey": "ble_connect", "sample": None,
+             "label": "Twenty-six packets to say hello"},
+            {"journey": "ble_txpath",  "sample": None,
+             "label": "And 23 bytes per reading"},
+            {"journey": "silicon",     "sample": "moore_all",
              "label": "What 3nm actually measures"},
-            {"journey": "suction",   "sample": "fan_bt46b",
+            {"journey": "suction",     "sample": "fan_bt46b",
              "label": "Downforce without speed"},
         ],
     },

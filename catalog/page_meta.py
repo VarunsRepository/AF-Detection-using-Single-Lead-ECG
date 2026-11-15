@@ -195,6 +195,14 @@ JOURNEY_META = {
                         "BT46B, and a modern claim worth checking."),
         "image": f"{SITE_URL}/static/icons/og_suction.png?v=1",
     },
+        "drm": {
+        "title": "Why a Netflix screenshot comes out black — Kymograph",
+        "description": ("Nothing is blocking your capture. The decrypted "
+                        "frame was never in memory the operating system "
+                        "can read — and the published resolution caps are "
+                        "the fingerprint of where it actually lives."),
+        "image": f"{SITE_URL}/static/icons/og_drm.png?v=1",
+    },
 }
 
 

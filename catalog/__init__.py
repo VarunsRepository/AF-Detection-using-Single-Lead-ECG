@@ -33,6 +33,14 @@ from catalog import sources                      # noqa: E402,F401
 from catalog import tours 
 
 
+
+# noqa (No Quality Assurance). This instructs the linter to skip its usual automated quality checks for that specific line.
+# E402 (Module level import not at top of file). This suppresses a pycodestyle E402 warning triggered when you put an import statement after other executable code, rather than at the very top of the file.
+# F401 (Module imported but unused). This suppresses a Pyflakes F401 warning triggered when you import a library or variable into a file without directly referencing it anywhere else in that same file.
+
+
+
+
 # 2. Components, BY DOMAIN. Each pack registers its algorithms and
 #    renderers together with their contracts -- one call per component
 #    instead of an entry in a components file plus a matching one in a
@@ -47,6 +55,10 @@ from catalog.packs import protocols as _pack_protocols # noqa: E402,F401
 from catalog.packs import silicon 
 from catalog.packs import aero as _pack_aero 
 from catalog.packs import ecg_primer as _pack_prime
+from catalog.packs import drm as _pack_drm        # noqa: E402,F401
+from catalog.packs import ecg_noise as _pack_ecg_noise   # noqa: E402,F401
+from catalog.packs import wireless as _pack_wireless   # noqa: E402,F401
+
 
 # 4. Recipes -- these reference everything above, so they come last
 from catalog.journeys import ecg                 # noqa: E402,F401
@@ -65,6 +77,11 @@ from catalog.journeys import protocols as _j_protocols # noqa: E402,F401
 from catalog.journeys import silicon  
 from catalog.journeys import aero as _j_aero 
 from catalog.journeys import ecg_primer
+from catalog.journeys import drm as _j_drm        # noqa: E402,F401
+from catalog.journeys import ecg_noise   # noqa: E402,F401
+from catalog.journeys import ble_connect               # noqa: E402,F401
+from catalog.journeys import ble_txpath                # noqa: E402,F401
+
 
 # Components registered without a contract. Reported at startup because
 # "all contracts valid" reads identically whether a pipeline was checked
