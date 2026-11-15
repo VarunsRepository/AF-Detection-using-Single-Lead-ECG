@@ -132,8 +132,29 @@ registerRenderingAlgorithm("chart_v1_webgl", {
         const ro = new ResizeObserver(entries => {
             const { width, height } = entries[0].contentRect;
             if (!width || !height) return;
+
+            // GUARD: skip entirely when the pixel size has not changed.
+            // ResizeObserver fires an initial callback on observe()
+            // reporting the size sizeTo() just applied, and assigning
+            // canvas.width reallocates the framebuffer even when the value
+            // is identical. The redraw below covers it either way, so this
+            // is not correctness -- it saves a full GL clear and redraw on
+            // every single render, which on the first frame of a card is
+            // exactly when there is least budget for it.
+            const w = Math.round(width * dpr);
+            const h = Math.round(height * dpr);
+            if (canvas.width === w && canvas.height === h) return;
+
             sizeTo(width, height);
             drawAxes();
+
+            // Repaint at the position we are actually at: resizing wiped
+            // the framebuffer, and if the sweep is paused nothing else
+            // will. Via control.drawFn rather than drawAtElapsed so any
+            // annotation or effect wrapper gets to reposition against the
+            // new geometry too.
+            const ctl = activeSweepControl.get(sampleId);
+            if (ctl) ctl.drawFn(ctl.lastElapsedMs ?? 0);
         });
         ro.observe(container);
 
@@ -141,7 +162,16 @@ registerRenderingAlgorithm("chart_v1_webgl", {
         const gl = canvas.getContext("webgl", {
             antialias:              true,
             premultipliedAlpha:     false,
-            preserveDrawingBuffer:  false,
+            // TRUE, not false. With it false the drawing buffer's contents
+            // are UNDEFINED after the browser composites, so a frame is
+            // only guaranteed to survive until the next composite. That is
+            // fine for a 30fps sweep, where another frame is always
+            // coming -- and not fine for a card you can pause and look at,
+            // where the last frame drawn has to stay on screen
+            // indefinitely. The cost is that the browser cannot discard
+            // the buffer between frames, which is a memory trade, not a
+            // speed one.
+            preserveDrawingBuffer:  true,
         });
 
         if (!gl) {
@@ -269,14 +299,31 @@ registerRenderingAlgorithm("chart_v1_webgl", {
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // additive blending = natural glow
 
-        const traceHex   = (typeof THEMES !== "undefined"
-                            && THEMES[themeIndex]?.traceColor) || "#e8f4f8";
+        // ── Theme values, read ONE way ──────────────────────────────────
+        // Through the CSS variables, like every other renderer. This file
+        // used to read THEMES[themeIndex].traceColor directly, which was
+        // the second path the single-path change removed.
+        //
+        // typeof-guarded because rail_controls.js owns the readers and
+        // renderer load order is decided by rendering_store.resolve().
+        const glStyles = typeof themeStyles === "function"
+                       ? themeStyles()
+                       : getComputedStyle(document.documentElement);
+        const glColor = (name, fallback) =>
+            typeof themeColor === "function"
+                ? themeColor(glStyles, name, fallback)
+                : (glStyles.getPropertyValue(name).trim() || fallback);
+
+        const traceHex   = glColor("--trace-color", "#e8f4f8");
         const traceRGBA  = hexToVec4(traceHex, 1.0);
         const glowRGBA   = hexToVec4(traceHex, 0.15);
 
         // SAME SOURCE AS THE CANVAS RENDERER, so switching renderer cannot
-        // silently change the colour of the markers.
-        const peakHex    = cfg.peakMarkerColor || "#ff4d4d";
+        // silently change the colour of the markers. The theme wins and the
+        // recipe is the fallback -- the marker is what an annotation points
+        // at, so it follows the look rather than the journey.
+        const peakHex    = glColor("--peak-marker-color",
+                                   cfg.peakMarkerColor || "#ff4d4d");
         const peakRGBA   = hexToVec4(peakHex, 1.0);
         const peakGlow   = hexToVec4(peakHex, 0.18);
 
@@ -394,8 +441,11 @@ registerRenderingAlgorithm("chart_v1_webgl", {
             const MB     = 28 * dpr; // bottom margin
 
             ctx.clearRect(0, 0, W, H);
-            ctx.font      = `${10 * dpr}px 'IBM Plex Mono', monospace`;
-            ctx.fillStyle = "#747d8c";
+            // Themed, like the canvas renderer's axis layer. Read here
+            // rather than captured above because drawAxes() also runs from
+            // the resize callback, and a theme may have changed in between.
+            ctx.font      = `${10 * dpr}px ${glColor("--axis-font", "'IBM Plex Mono', monospace")}`;
+            ctx.fillStyle = glColor("--axis-label-color", "#747d8c");
             ctx.textAlign = "right";
 
             const steps = 4;
