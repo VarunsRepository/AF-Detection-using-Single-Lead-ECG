@@ -728,6 +728,25 @@
     .stage-rail[data-zone="top"] { top: 60px; bottom: auto; }
     .stage-rail[data-zone="center"] { top: 50%; bottom: auto; transform: translateY(-50%); }
     .stage-rail[data-zone="bottom"] { bottom: 100px; top: auto; }
+
+    /* ── SPLASH CREDIT ───────────────────────────────────────────────
+       Authors' names pinned to the bottom of the boot splash, in the
+       "from Meta" position. Absolute so it stays out of the centred
+       bar/label stack. Names use the loading bar's gradient; each
+       <strong> is its own line so a long name never wraps mid-name. */
+    .boot-credit {
+        position: absolute; left: 0; right: 0;
+        bottom: calc(28px + env(safe-area-inset-bottom));
+        text-align: center; font-size: 11px;
+        letter-spacing: 0.14em; text-transform: lowercase; color: #7a6e8a;
+    }
+    .boot-credit strong {
+        display: block; margin-top: 4px;
+        font-size: 13px; font-weight: 600; letter-spacing: 0.06em;
+        text-transform: none;
+        background: linear-gradient(90deg, #ff2e88, #ff6ec7 45%, #21d4fd);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
 </style>
 
 
@@ -759,6 +778,11 @@
     <div id="boot-splash" role="status" aria-live="polite">
         <div class="boot-bar"><span></span></div>
         <div class="boot-sub" id="boot-sub">loading</div>
+        <div class="boot-credit">
+            built by
+            <strong>Varun Nim</strong>
+            <strong>Antonio Bautista Santos-Olmo</strong>
+        </div>
     </div>
 
     <!-- Hidden 120Hz unlock element -- see CSS above -->
